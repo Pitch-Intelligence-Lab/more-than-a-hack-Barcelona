@@ -48,6 +48,7 @@ $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 - [Team roster](docs/team-roster.md)
 - [Decision log](docs/decision-log.md)
 - [Experiment log](docs/experiment-log.md)
+- [Tooling policy](docs/tooling-policy.md)
 - [Technical report](docs/technical-report.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)
