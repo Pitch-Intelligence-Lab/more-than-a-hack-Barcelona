@@ -1,0 +1,9 @@
+Task ID,Task,Owner,Status,Priority,Due date,Depends on,Evidence,GitHub issue
+T-001,确认每位成员的 GitHub 用户名和协作角色,TBD,Ready,High,2026-11-05,,Roster complete,
+T-002,建立统一数据根并配置 MTAH_DATA_DIR,TBD,Backlog,High,2026-11-05,T-001,Data-integrity check,
+T-003,用 tactical 数据复现官方 baseline,TBD,Backlog,High,2026-11-06,T-002,199319-row CSV and hash,
+T-004,实现球缺失时的状态延续,TBD,Backlog,High,2026-11-09,T-003,Auto tests and experiment log,
+T-005,实现 Smart Tagging 死球边界证据,TBD,Backlog,High,2026-11-09,T-003,Auto tests and decision log,
+T-006,建立官方 validate_submission 自动测试,TBD,Backlog,High,2026-11-08,T-003,Validation output,
+T-007,完成技术说明初稿,TBD,Backlog,Medium,2026-11-13,T-003;T-004;T-005,Markdown report,
+T-008,干净环境复现和最终提交彩排,TBD,Backlog,High,2026-11-16,T-006;T-007,Same SHA-256 and receipt,

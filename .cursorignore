@@ -1,0 +1,14 @@
+# Never let AI coding tools index or read local competition data.
+data/
+*.mp4
+*.rar
+*.zip
+*.crdownload
+*_atd.txt
+*_atd.xml
+*_homography.csv
+*_smart_tagging.xml
+outputs/
+reports/
+.env
+.env.*
