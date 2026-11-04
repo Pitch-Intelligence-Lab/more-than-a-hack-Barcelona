@@ -70,6 +70,8 @@ Team QA must run the real-data builder, run the official validator, repeat gener
 
 The team-local run passed. The output contained 199,319 rows with H=72,553, A=53,918, D=72,848 and X=0. The official validator passed, and a second independent build produced the identical SHA-256 `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`.
 
+As an implementation check after freezing this baseline, the official public five-minute scorer reported macroF1 0.6209 and spellF1 0.3256. No parameter was changed in response to that result.
+
 ## Validation
 
 The project validator checks:

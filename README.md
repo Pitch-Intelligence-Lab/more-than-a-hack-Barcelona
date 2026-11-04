@@ -22,6 +22,8 @@ The scored output is a 199,319-row CSV with labels H, A, D and X. The ranking me
 - Do not train, fit or tune on the provided match video or possession ground truth.
 - Use external data only when its licence permits the intended use.
 
+Coding agents must follow [AGENTS.md](AGENTS.md). They work directly in `E:\mtah2027-code`, use `E:\mtah2027-data` only through configuration, and deliver commits on feature branches rather than standalone ZIP files.
+
 ## Planned local layout
 
 ```text
@@ -43,6 +45,7 @@ $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 - DP-001 through DP-004 implemented in `feature/DP-001-DP-004-tactical-baseline`.
 - Synthetic and team-local tactical runs pass.
 - Final tactical output: 199,319 rows, SHA-256 `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`.
+- Public-window pipeline check: macroF1 0.6209, spellF1 0.3256. This is a correctness reference, not a tuning target.
 
 ## Install
 
@@ -94,6 +97,7 @@ The 50-frame setting is a pre-registered continuity preset, not a value tuned on
 - [Tooling policy](docs/tooling-policy.md)
 - [Technical report](docs/technical-report.md)
 - [Engineering handoff](docs/handoff.md)
+- [External reference register](docs/reference-register.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)
 - [Notion task board import](notion/task-board.csv)

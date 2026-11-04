@@ -28,3 +28,15 @@ The category counts in the synthetic 199,319-row test are not claims about the m
 - Rule compliance: no broadcast, video, ground truth, manual labels, training, or tuning
 
 The initial implementation produced all-D output because NaN slots contaminated each team's minimum distance. The fix ignores non-finite positions and has an explicit synthetic regression test.
+
+## E-003: Public-window implementation check
+
+- Date: 2026-11-05
+- Purpose: confirm the implemented baseline is coherent with the published baseline, without selecting parameters from the public answer
+- macroF1: 0.6209
+- spellF1: 0.3256
+- Predicted possessions in the public window: 26
+- Mean predicted possession duration: 10.8 seconds
+- Decision: no parameter changes based on this result
+
+The public five-minute answer was used only for an automated sanity check after the algorithm and configuration were frozen. It was not used for training or repeated parameter selection.
