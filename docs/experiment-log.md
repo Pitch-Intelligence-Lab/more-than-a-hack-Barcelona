@@ -1,24 +1,30 @@
 # Experiment Log
 
-Record one row per experiment. Never paste competition data, frame excerpts, videos or screenshots into this public file.
+Never paste competition data, frame excerpts, videos or screenshots into this public file.
 
-| ID | Date | Owner | Hypothesis | Data scope | Training data / licence | Parameter source | Command | Output SHA-256 | Automated checks | Decision |
-|---|---|---|---|---|---|---|---|---|---|---|
-| EXP-001 | TBD | TBD | TBD | Public code or aggregate status only | TBD | External data only if tuned | TBD | TBD | TBD | TBD |
+## E-001: Synthetic engineering verification
 
-## Required evidence
+- Date: 2026-11-05
+- Inputs: synthetic metadata and raw ATD only
+- Ground truth: none
+- Real tactical data: not read
+- Coverage: environment failures, frame-ID conversion, missing observations, slot count, truncation, metric distance, tie handling, team mapping, majority vote, 199,319-row generation, validation failure, atomic cleanup, determinism, forbidden paths and repository asset scan
+- Result: 30 tests passed; Ruff check and format check passed
+- Decision: proceed to integration review and team-local tactical run
 
-- Commit or pull request.
-- Reproducible command.
-- Dependency lock or environment record.
-- Output file hash.
-- Format validation result.
-- Rule compliance statement.
+The category counts in the synthetic 199,319-row test are not claims about the match.
 
-## Prohibited entries
+## E-002: Team-local tactical baseline
 
-- Frame-level competition data.
-- Screenshots or video clips from the provided match.
-- Hand-labelled match data.
-- Results derived by comparing output with video.
-- Parameter choices selected on the provided ground truth or video.
+- Date: 2026-11-05
+- Status: passed after a missing-slot regression fix
+- First run: 199,319 rows; H=72,553, A=53,918, D=72,848, X=0
+- Repeat run: identical byte output
+- SHA-256: `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`
+- Project validator: passed
+- Official validator: passed
+- Possession count reported by the official validator: 669 segments of mean 7.6 seconds
+- Inputs: tactical ATD metadata and raw tracking only
+- Rule compliance: no broadcast, video, ground truth, manual labels, training, or tuning
+
+The initial implementation produced all-D output because NaN slots contaminated each team's minimum distance. The fix ignores non-finite positions and has an explicit synthetic regression test.
