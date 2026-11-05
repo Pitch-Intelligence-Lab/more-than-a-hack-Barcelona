@@ -2,7 +2,8 @@
 
 ```text
 Branch: feature/DP-006A-leakage-promotion-gate
-Local commit: local branch HEAD; not pushed
+Local commit: feature branch HEAD
+Pull request: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/3
 Changed files:
   src/mtah_possession/evaluation/external.py
   src/mtah_possession/evaluation/splits.py
@@ -24,15 +25,15 @@ External data accessed: no
 Network calls:
   only `git fetch origin` to synchronize repository state;
   no SkillCorner API, external file access or external evaluation
-Push/PR/merge: no
+Push/PR: yes after explicit approval; merge: no
 Known limitations:
   the existing one-match split remains diagnostic only;
   validation and holdout are still empty;
   no external metric report was regenerated;
   phase-derived DP-006 results remain structurally coupled to the proxy.
 Approval decisions required:
-  review the local diff;
-  approve any later push or pull-request update;
+  review stacked PR #3;
+  separately approve any merge into the DP-006 research branch;
   approve any separate external-data follow-up request.
 ```
 
