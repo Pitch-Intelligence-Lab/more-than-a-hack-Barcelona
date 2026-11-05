@@ -133,6 +133,7 @@ The second-half pre-kickoff defect is fixed, but the public D result shows that 
 - [Technical report](docs/technical-report.md)
 - [Engineering handoff](docs/handoff.md)
 - [DP-005 engineering sprint](docs/engineering-sprint-dp005.md)
+- [DP-006 engineering package](docs/engineering-sprint-dp006.md)
 - [External reference register](docs/reference-register.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)
