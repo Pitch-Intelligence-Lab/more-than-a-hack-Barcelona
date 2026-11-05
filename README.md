@@ -97,6 +97,7 @@ The 50-frame setting is a pre-registered continuity preset, not a value tuned on
 - [Tooling policy](docs/tooling-policy.md)
 - [Technical report](docs/technical-report.md)
 - [Engineering handoff](docs/handoff.md)
+- [DP-005 engineering sprint](docs/engineering-sprint-dp005.md)
 - [External reference register](docs/reference-register.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)

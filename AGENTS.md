@@ -17,8 +17,9 @@ Do not read, copy, commit, log, upload, or inspect competition videos, tracking 
 1. Run `git status --short --branch`.
 2. Do not discard uncommitted work.
 3. Fetch `origin`.
-4. Create or switch to the assigned `feature/<task-id>-short-name` branch from the latest integrated base.
-5. Confirm that the task has a measurable acceptance condition.
+4. Start new work from `origin/dev`.
+5. Create or switch to the assigned `feature/<task-id>-short-name` branch.
+6. Confirm that the task has a measurable acceptance condition.
 
 ## Delivery
 
@@ -27,7 +28,7 @@ Do not read, copy, commit, log, upload, or inspect competition videos, tracking 
 - Add or update tests for behavior changes.
 - Run `python -m pytest`, `ruff check .`, and `ruff format --check .`.
 - Commit only to the assigned feature branch.
-- Never push directly to `main`.
+- Never push directly to `main` or `dev`.
 - Push the feature branch and provide its commit hash and pull-request link.
 - Keep generated CSVs under `outputs/`; they are ignored.
 
