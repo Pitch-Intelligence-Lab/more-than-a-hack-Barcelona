@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 
 class SplitManifestError(ValueError):
     """Raised when external match splits overlap or are malformed."""
+
+
+class EvaluationMode(StrEnum):
+    DIAGNOSTIC = "diagnostic"
+    PROMOTION = "promotion"
 
 
 @dataclass(frozen=True)
@@ -26,6 +32,12 @@ class SplitManifest:
             if normalized in getattr(self, name):
                 return name
         return None
+
+
+@dataclass(frozen=True)
+class PromotionGateResult:
+    allowed: bool
+    reasons: tuple[str, ...]
 
 
 def load_split_manifest(path: str | os.PathLike[str]) -> SplitManifest:
@@ -68,7 +80,36 @@ def load_split_manifest(path: str | os.PathLike[str]) -> SplitManifest:
     )
 
 
-def require_split(manifest: SplitManifest, match_id: str, expected: str) -> None:
+def assess_promotion_gate(manifest: SplitManifest) -> PromotionGateResult:
+    reasons: list[str] = []
+    if not manifest.development:
+        reasons.append("development split is empty")
+    if not manifest.validation:
+        reasons.append("validation split is empty")
+    if not manifest.holdout:
+        reasons.append("holdout split is empty")
+    if manifest.status != "ready_for_validation":
+        reasons.append("status is not ready_for_validation")
+    return PromotionGateResult(allowed=not reasons, reasons=tuple(reasons))
+
+
+def require_promotion_ready(manifest: SplitManifest) -> None:
+    gate = assess_promotion_gate(manifest)
+    if not gate.allowed:
+        raise SplitManifestError("promotion gate failed: " + "; ".join(gate.reasons))
+
+
+def require_split(
+    manifest: SplitManifest,
+    match_id: str,
+    expected: str,
+    *,
+    mode: EvaluationMode = EvaluationMode.DIAGNOSTIC,
+) -> None:
+    if mode == EvaluationMode.PROMOTION:
+        require_promotion_ready(manifest)
+    elif mode != EvaluationMode.DIAGNOSTIC:
+        raise SplitManifestError(f"unknown evaluation mode: {mode!r}")
     actual = manifest.split_for(match_id)
     if actual != expected:
         raise SplitManifestError(

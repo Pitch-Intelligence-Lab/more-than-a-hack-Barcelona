@@ -180,3 +180,14 @@ The aggregate comparison report `outputs/external-dp006-development.json` has SH
 - Official target format validator: passed
 - Target output unchanged: 199,319 rows, SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
 - Repository scan: no competition or external JSONL/archive data tracked
+
+## E-013: DP-006A synthetic gate hardening
+
+- Date: 2026-11-05
+- External data accessed: no
+- External evaluation run: no
+- Target submission built: no
+- Scope: possession-label leakage regression, transition F1, diagnostic/promotion gate and evaluation contract
+- Result: 86 tests passed; warning-free tests passed; Ruff check and format passed
+
+This entry records code-only local drafting under the v1.4 approval gate. Existing external results must not be recomputed during DP-006A review.

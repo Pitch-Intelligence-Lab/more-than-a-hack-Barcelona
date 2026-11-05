@@ -160,6 +160,7 @@ Only match `2017461` was audited and it is assigned to development. There is no 
 - [DP-006 engineering package](docs/engineering-sprint-dp006.md)
 - [External data audit](docs/external-data-audit.md)
 - [External development evaluation](docs/external-evaluation.md)
+- [Evaluation contract](docs/evaluation-contract.md)
 - [External reference register](docs/reference-register.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)

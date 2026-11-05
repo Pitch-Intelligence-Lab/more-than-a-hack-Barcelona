@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +14,7 @@ from mtah_possession.data.neutral import (
     neutral_to_tracking,
 )
 from mtah_possession.data.observations import prepare_ball_observations
+from mtah_possession.data.tracking import TrackingData
 from mtah_possession.features.evidence import build_evidence_series
 from mtah_possession.states.possession_state import run_state_engine
 
@@ -87,6 +88,31 @@ def test_neutral_metres_convert_to_engine_normalised_coordinates() -> None:
     tracking = neutral_to_tracking(data)
     np.testing.assert_allclose(tracking.ball_positions[0], [0.5, 0.5], atol=1e-6)
     np.testing.assert_allclose(tracking.slot_positions[0, 0], [0.49, 0.5], atol=1e-6)
+
+
+def test_possession_labels_cannot_change_model_input_or_leak_into_type() -> None:
+    left = neutral(
+        frame_count=4,
+        frame_present=[True] * 4,
+        possession_side=[0, 0, 1, 1],
+        possession_status=[0] * 4,
+    )
+    right = replace(
+        left,
+        possession_side=np.asarray([1, 1, 0, 0], dtype=np.int8),
+        possession_status=np.asarray([2, 1, 0, 0], dtype=np.int8),
+    )
+    left_tracking = neutral_to_tracking(left)
+    right_tracking = neutral_to_tracking(right)
+    for field in fields(TrackingData):
+        left_value = getattr(left_tracking, field.name)
+        right_value = getattr(right_tracking, field.name)
+        if isinstance(left_value, np.ndarray):
+            np.testing.assert_allclose(left_value, right_value, equal_nan=True)
+        else:
+            assert left_value == right_value
+    model_fields = {field.name for field in fields(TrackingData)}
+    assert not any("possession" in name for name in model_fields)
 
 
 def test_blocks_from_mask_uses_inclusive_frame_pairs() -> None:

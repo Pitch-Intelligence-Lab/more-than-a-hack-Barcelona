@@ -38,6 +38,7 @@ class ExternalMetrics:
     segment_f1_mean: float
     transition_precision: float
     transition_recall: float
+    transition_f1: float
     matched_transitions: int
     false_dead_frames: int
     false_dead_duration_s: float
@@ -84,6 +85,7 @@ class ExternalMatchEvaluation:
                         "segment_f1_mean": result.metrics.segment_f1_mean,
                         "transition_precision": result.metrics.transition_precision,
                         "transition_recall": result.metrics.transition_recall,
+                        "transition_f1": result.metrics.transition_f1,
                         "matched_transitions": result.metrics.matched_transitions,
                         "false_dead_frames": result.metrics.false_dead_frames,
                         "false_dead_duration_s": result.metrics.false_dead_duration_s,
@@ -190,6 +192,7 @@ def evaluate_predictions(
         prediction,
         tolerance_frames=transition_tolerance_frames,
     )
+    transition_f1 = _harmonic_f1(transition_precision, transition_recall)
     labels, counts = np.unique(prediction, return_counts=True)
     possession_segments = _possession_segments(prediction)
     live_frames = int(np.sum(np.isin(prediction, ("H", "A"))))
@@ -206,6 +209,7 @@ def evaluate_predictions(
         segment_f1_mean=_segment_f1(target, prediction),
         transition_precision=transition_precision,
         transition_recall=transition_recall,
+        transition_f1=transition_f1,
         matched_transitions=matched,
         false_dead_frames=false_dead_frames,
         false_dead_duration_s=false_dead_frames / float(fps),
@@ -388,6 +392,11 @@ def _team_switches(labels: NDArray[np.str_]) -> int:
                 switches += 1
             previous_team = label
     return switches
+
+
+def _harmonic_f1(precision: float, recall: float) -> float:
+    denominator = precision + recall
+    return (2.0 * precision * recall / denominator) if denominator else 0.0
 
 
 def _value_counts(values: NDArray[np.str_]) -> dict[str, int]:

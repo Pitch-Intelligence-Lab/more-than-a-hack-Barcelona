@@ -14,9 +14,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from mtah_possession.algorithm_config import load_algorithm_config  # noqa: E402
-from mtah_possession.data.skillcorner import load_skillcorner_match  # noqa: E402
+from mtah_possession.data.skillcorner import (  # noqa: E402
+    load_skillcorner_manifest,
+    load_skillcorner_match,
+)
 from mtah_possession.evaluation.external import evaluate_external_match  # noqa: E402
 from mtah_possession.evaluation.splits import (  # noqa: E402
+    EvaluationMode,
     load_split_manifest,
     require_split,
     split_manifest_dict,
@@ -50,17 +54,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state-config", default=str(ROOT / "configs" / "state-engine.json"))
     parser.add_argument("--splits", default=str(ROOT / "configs" / "external-splits.json"))
     parser.add_argument("--external-root", default=None)
+    parser.add_argument(
+        "--mode",
+        choices=[mode.value for mode in EvaluationMode],
+        default=EvaluationMode.DIAGNOSTIC.value,
+    )
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
 
-    external_root = args.external_root or os.environ.get("MTAH_EXTERNAL_DATA_DIR")
-    if not external_root:
-        print("FAIL  MTAH_EXTERNAL_DATA_DIR is not set", file=sys.stderr)
-        return 1
     try:
-        match = load_skillcorner_match(args.config, external_root)
         splits = load_split_manifest(args.splits)
-        require_split(splits, match.match_id, "development")
+        manifest = load_skillcorner_manifest(args.config)
+        mode = EvaluationMode(args.mode)
+        require_split(
+            splits,
+            str(manifest["match_id"]),
+            "development",
+            mode=mode,
+        )
+        external_root = args.external_root or os.environ.get("MTAH_EXTERNAL_DATA_DIR")
+        if not external_root:
+            raise ValueError("MTAH_EXTERNAL_DATA_DIR is not set")
+        match = load_skillcorner_match(args.config, external_root)
         state_config = load_algorithm_config(args.state_config)
         evaluation = evaluate_external_match(match, state_config, split="development")
         report = evaluation.to_dict()
@@ -70,13 +85,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL  {error}", file=sys.stderr)
         return 1
 
-    print(f"match={evaluation.match_id} split={evaluation.split}")
+    print(f"match={evaluation.match_id} split={evaluation.split} mode={args.mode}")
     print(f"proxy={dict(evaluation.proxy.counts)}")
     for name, candidate in evaluation.candidates.items():
         metrics = candidate.metrics
         print(
             f"{name}: macroF1={metrics.macro_f1:.4f} "
             f"segmentF1={metrics.segment_f1_mean:.4f} "
+            f"transitionF1={metrics.transition_f1:.4f} "
             f"falseD={metrics.false_dead_frames} "
             f"missedD={metrics.missed_dead_frames} "
             f"switches={metrics.team_switches} "

@@ -225,3 +225,31 @@ Record durable project decisions here. Do not record private competition data.
 - Status: accepted
 - Decision: Keep DP-005 v1.2 as the provisional target candidate. Do not promote the phase-proxy DP-006 candidate without an equivalent target phase source and an untouched external holdout.
 - Reason: DP-006's development advantage uses a phase source that also defines much of the proxy's D class. The result is diagnostic and structurally coupled, not independent generalisation evidence.
+
+## D-033: Possession labels are evaluation-only
+
+- Date: 2026-11-05
+- Status: accepted for DP-006A local draft
+- Decision: Possession labels and status must not change `neutral_to_tracking` output or appear in the state-engine input type.
+- Reason: A model that sees the evaluation proxy cannot be independently compared against it.
+
+## D-034: Transition F1 is reported with precision and recall
+
+- Date: 2026-11-05
+- Status: accepted for DP-006A local draft
+- Decision: External metrics include transition F1 as the harmonic mean of transition precision and recall while retaining both components.
+- Reason: The F1 provides a compact comparison without hiding missed or spurious transitions.
+
+## D-035: One-match split cannot be promoted
+
+- Date: 2026-11-05
+- Status: accepted for DP-006A local draft
+- Decision: Promotion requires non-empty development, validation and holdout splits plus status `ready_for_validation`.
+- Reason: A one-match diagnostic cannot establish cross-match generalisation.
+
+## D-036: Diagnostic and promotion modes are explicit
+
+- Date: 2026-11-05
+- Status: accepted for DP-006A local draft
+- Decision: The one-match development workflow remains available in diagnostic mode. Promotion mode checks split readiness before reading external match data.
+- Reason: Research iteration should remain possible without weakening the final selection gate.
