@@ -3,8 +3,8 @@
 ```text
 Task ID: DP-005.1 through DP-005.7
 Branch: feature/DP-005-general-state-machine
-Commit: feature-branch HEAD reported with the pull request
-Pull request: pending authenticated GitHub PR creation
+Commit: feature-branch HEAD; exact hash is reported on PR #1
+Pull request: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/1
 Changed files:
   configs/state-engine.json
   src/mtah_possession/algorithm_config.py
@@ -56,8 +56,7 @@ Known limitations:
   shielding with a stoppage; local player evidence can fail in a crowded box;
   optional Smart Tagging, restart-zone and reachability features are disabled
 Blockers:
-  GitHub PR creation still needs an authenticated interactive session. No algorithm,
-  validation or data-compliance blocker remains.
+  none. The pull request is open against dev.
 ```
 
 ## Verification notes
