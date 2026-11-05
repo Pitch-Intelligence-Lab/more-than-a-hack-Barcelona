@@ -4,7 +4,7 @@
 Task: DP-006
 Branch: feature/DP-006-generalisation-dead-ball
 Commit: feature-branch HEAD reported with the pull request
-Pull request: pending authenticated GitHub PR creation
+Pull request: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/2
 External data licence:
   SkillCorner Open Data, MIT repository licence at commit
   4340d274572876239c154c90bc507a9b3250a656. README explicitly states the
