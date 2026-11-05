@@ -44,6 +44,7 @@ $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 - Public scorer: reproduced.
 - DP-001 through DP-004 implemented in `feature/DP-001-DP-004-tactical-baseline`.
 - DP-005 configurable state engine implemented in `feature/DP-005-general-state-machine`.
+- DP-006 provider-neutral external adapter and phase/dead-ball experiment implemented in `feature/DP-006-generalisation-dead-ball`.
 - Synthetic and team-local tactical runs pass.
 - DP-005 v1.2 tactical output: 199,319 rows, SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`.
 - Baseline fallback: SHA-256 `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`.
@@ -123,6 +124,28 @@ Every state-engine parameter is stored in `configs/state-engine.json` with its u
 
 The second-half pre-kickoff defect is fixed, but the public D result shows that dead-ball recognition remains incomplete. Good possession continuity and spellF1 do not establish that every task state is solved.
 
+## DP-006 external generalisation work
+
+DP-006 adds:
+
+- a provider-neutral match representation with explicit coordinate, quality, possession-proxy, phase and checksum metadata;
+- a SkillCorner adapter with provider field names isolated from state inference;
+- a separate phase/restart/dead-ball evidence layer;
+- match-level split validation and an external proxy evaluation harness;
+- a one-match SkillCorner audit and development comparison.
+
+External data is not tracked. Set its root separately:
+
+```powershell
+$env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
+.\.venv\Scripts\python scripts\audit_external.py `
+  --output outputs\external-data-audit.json
+.\.venv\Scripts\python scripts\evaluate_external.py `
+  --output outputs\external-dp006-development.json
+```
+
+Only match `2017461` was audited and it is assigned to development. There is no validation or holdout match, so the external result cannot establish generalisation. The DP-006 phase candidate performs well against the development proxy partly because its phase-gap input and the proxy's D definition share the same source. DP-006 is therefore not selected as the final submission model. DP-005 v1.2 remains the provisional target candidate, with DP-001–004 retained as fallback.
+
 ## Documents
 
 - [Team operating model](docs/team-operating-model.md)
@@ -132,8 +155,11 @@ The second-half pre-kickoff defect is fixed, but the public D result shows that 
 - [Tooling policy](docs/tooling-policy.md)
 - [Technical report](docs/technical-report.md)
 - [Engineering handoff](docs/handoff.md)
+- [DP-006 handoff](docs/handoff-dp006.md)
 - [DP-005 engineering sprint](docs/engineering-sprint-dp005.md)
 - [DP-006 engineering package](docs/engineering-sprint-dp006.md)
+- [External data audit](docs/external-data-audit.md)
+- [External development evaluation](docs/external-evaluation.md)
 - [External reference register](docs/reference-register.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)

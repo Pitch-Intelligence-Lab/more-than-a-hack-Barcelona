@@ -183,3 +183,45 @@ Record durable project decisions here. Do not record private competition data.
 - Status: accepted
 - Decision: Team distance margins are computed with masked subtraction only where both team minima are finite. A fully missing team always retains the no-candidate state.
 - Reason: Direct subtraction of two `inf` values creates an undefined gap and a runtime warning. The state should remain explicitly unresolved instead.
+
+## D-027: External data access is limited to one audited match
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Download and evaluate only SkillCorner match `2017461`.
+- Reason: Gate A allows one audited match before licence, schema and proxy semantics are understood. Downloading the full collection would exceed the approved scope.
+
+## D-028: SkillCorner possession is a proxy, not ground truth
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: External metrics use a documented H/A/D/X proxy and do not claim equivalence to organiser labels.
+- Reason: SkillCorner possession semantics, broadcast tracking and phase definitions differ from the target data.
+
+## D-029: Null possession is classified by context
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Missing possession inside an active phase maps to X. Missing possession with no phase inside a declared period maps to D with an explicit source. Outside-period and missing-row frames map to X.
+- Reason: Absence of a possession ID alone is insufficient evidence of a stoppage.
+
+## D-030: External splits are match-level
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Match `2017461` is development only; validation and holdout are explicitly empty.
+- Reason: A frame-level split would leak match-specific structure. One available match cannot establish generalisation.
+
+## D-031: DP-006 phase evidence remains separate
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Phase, restart and confirmed-dead evidence are compiled in a separate layer and protected from cleanup.
+- Reason: Dead-ball semantics should be inspectable and testable independently from team possession inference.
+
+## D-032: DP-006 is not automatically selected
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Keep DP-005 v1.2 as the provisional target candidate. Do not promote the phase-proxy DP-006 candidate without an equivalent target phase source and an untouched external holdout.
+- Reason: DP-006's development advantage uses a phase source that also defines much of the proxy's D class. The result is diagnostic and structurally coupled, not independent generalisation evidence.

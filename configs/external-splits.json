@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "split_unit": "match",
+  "development": [
+    "2017461"
+  ],
+  "validation": [],
+  "holdout": [],
+  "status": "insufficient_for_generalisation",
+  "reason": "Gate A permits one external match; no untouched validation or holdout match is available."
+}

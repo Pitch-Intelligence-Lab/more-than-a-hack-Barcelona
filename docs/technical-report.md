@@ -2,7 +2,7 @@
 
 **Team:** Pitch Intelligence Lab
 
-**Status:** DP-005 v1.2 PR remediation; DP-001 through DP-004 retained as fallback
+**Status:** DP-005 v1.2 provisional target model; DP-006 external experiment evaluated but not selected
 
 **Code repository:** <https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona>
 
@@ -35,6 +35,8 @@ Deliberately unused:
 - Homography
 - Competition possession ground truth for design or parameter selection
 - External labels or trained models
+
+DP-006 additionally audited one SkillCorner Open Data match as a development-only external proxy. External observations were not added to the target training data or target parameter selection.
 
 ## Pipeline
 
@@ -70,6 +72,44 @@ Deliberately unused:
 - A team candidate for 0.4 seconds can restart play from D. Active restart evidence reduces this to 0.2 seconds; missing or disabled restart evidence preserves 0.4 seconds.
 - H to A and A to H are direct. The engine never inserts D merely to bridge two teams.
 - Known ungraded frame blocks produce X. They also terminate temporal continuity across halftime or match boundaries.
+
+## DP-006 provider-neutral external path
+
+The DP-006 path introduces:
+
+- a provider-neutral match representation containing match ID, FPS, frame/time range, coordinate convention, team identities, player and ball observations, possession-proxy observations, quality flags, phases, periods and source checksums;
+- a SkillCorner adapter where provider-specific field names are isolated from the state engine;
+- a separate phase layer that can emit confirmed dead masks and restart evidence;
+- match-level split validation and aggregate external metrics.
+
+The single audited external match is `2017461`, at 10 FPS. Its 89,543,442-byte tracking file, phases and metadata are pinned by SHA-256 in `configs/external-skillcorner.json`. The data remains outside Git.
+
+The phase restart window defaults to 0.5 seconds and transition matching uses a 0.5-second tolerance. Both are engineering-assumption diagnostics, not values selected from target ground truth. DP-006 external comparison disables ball rest as proof of D.
+
+External target mapping:
+
+- SkillCorner home/away possession group maps to H/A;
+- no possession inside an active in-play phase maps to X;
+- no possession with no phase inside a declared period maps to D;
+- outside-period and missing-row frames map to X.
+
+This is a proxy target, not organiser ground truth. Full audit details are in `docs/external-data-audit.md`.
+
+### External development comparison
+
+All candidates used the same external tracking observations and declared period boundaries:
+
+| Candidate | macro F1 | segment F1 proxy | false D frames | missed D frames |
+|---|---:|---:|---:|---:|
+| DP-001–004 baseline | 0.6703 | 0.2038 | 925 | 9,153 |
+| DP-005 | 0.3265 | 0.2575 | 21 | 28,421 |
+| DP-006 phase proxy | 0.7910 | 0.3258 | 2,515 | 0 |
+
+False-D durations are 92.5 s, 2.1 s and 251.5 s. Missed-D durations are 915.3 s, 2,842.1 s and 0 s.
+
+DP-006's phase-gap candidate is structurally coupled to the proxy because both use the same phase source for D. The result is a diagnostic upper-bound-like comparison, not independent generalisation evidence.
+
+Only one external match is available, assigned to development. Validation and holdout are empty. Consequently, the external work cannot establish generalisation or justify promoting DP-006. DP-005 v1.2 remains the provisional target candidate; DP-001–004 remains fallback. Full details are in `docs/external-evaluation.md`.
 
 ## Structural cleanup
 
@@ -158,6 +198,8 @@ The DP-001 through DP-004 baseline can still be rebuilt with `configs/baseline.j
 - Strict duration priors have not yet been validated on licensed external matches.
 - The public five-minute answer was not used to compare DP-005 design variants.
 - Possession continuity is improved, but the model does not yet solve all three graded states; dead-ball recognition remains incomplete.
+- The current target path has no validated phase-gap source equivalent to the external DP-006 candidate.
+- One development match cannot estimate cross-match variance, and no external holdout exists.
 
 ## Reproduction
 
@@ -176,6 +218,16 @@ $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 .\.venv\Scripts\python scripts\validate_submission.py outputs\submission-state-engine.csv
 ```
 
+External audit and development evaluation:
+
+```powershell
+$env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
+.\.venv\Scripts\python scripts\audit_external.py `
+  --output outputs\external-data-audit.json
+.\.venv\Scripts\python scripts\evaluate_external.py `
+  --output outputs\external-dp006-development.json
+```
+
 ## Compliance
 
-No competition video, extracted tracking row, screenshot or clip was sent to a cloud AI service or committed. No hand label or manual correction was used. The local tactical run was performed by code through `MTAH_DATA_DIR`; only aggregate counts, validation status and hashes are reported.
+No competition video, extracted tracking row, screenshot or clip was sent to a cloud AI service or committed. No hand label or manual correction was used. The local tactical run was performed by code through `MTAH_DATA_DIR`; only aggregate counts, validation status and hashes are reported. SkillCorner data is MIT-licensed repository content kept outside Git; only aggregate external metrics and checksums are reported.
