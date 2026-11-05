@@ -34,3 +34,11 @@ def test_repository_contains_no_match_assets() -> None:
         if path.is_file() and path.suffix.lower() in forbidden_suffixes
     ]
     assert found == []
+
+
+def test_gitignore_root_data_rule_does_not_hide_source_package() -> None:
+    lines = [
+        line.strip() for line in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "/data/" in lines
+    assert "data/" not in lines

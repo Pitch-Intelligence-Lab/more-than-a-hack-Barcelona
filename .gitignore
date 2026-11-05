@@ -1,5 +1,5 @@
 # Competition data must remain outside this repository and untracked.
-data/
+/data/
 *.mp4
 *.rar
 *.zip

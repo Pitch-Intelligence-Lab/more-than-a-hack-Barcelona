@@ -26,6 +26,8 @@ def test_loads_metadata_raw_tracking_and_zero_based_frames(tmp_path: Path) -> No
     assert tracking.alignment.video_frame_range == (0, 1)
     assert tracking.ball_visible.tolist() == [True, False]
     np.testing.assert_allclose(tracking.ball_positions[0], [0.15, 0.15], atol=1e-6)
+    assert tracking.slot_speeds is not None
+    np.testing.assert_allclose(tracking.slot_speeds[0], [4.0, 4.0, 4.0, 4.0])
 
 
 def test_missing_player_values_are_nan(tmp_path: Path) -> None:

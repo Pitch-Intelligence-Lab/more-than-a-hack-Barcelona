@@ -3,29 +3,45 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import tempfile
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
+import numpy as np
+
+from mtah_possession.algorithm_config import (
+    AlgorithmConfigError,
+    BaselineConfig,
+    StateEngineConfig,
+    load_algorithm_config,
+)
 from mtah_possession.config import (
     ConfigurationError,
     load_settings,
     require_tactical_assets,
 )
+from mtah_possession.data.observations import BallObservations, prepare_ball_observations
 from mtah_possession.data.tracking import TrackingData, TrackingDataError, load_tactical_tracking
 from mtah_possession.features.ball import nearest_team_candidates
+from mtah_possession.features.evidence import EvidenceSeries, build_evidence_series
 from mtah_possession.features.possession import majority_vote_labels
+from mtah_possession.pipeline.health import (
+    HealthReport,
+    build_health_report,
+    write_health_report,
+)
+from mtah_possession.states.cleanup import CleanupResult, apply_structural_cleanup
+from mtah_possession.states.possession_state import run_state_engine
 from mtah_possession.validation.submission import (
     SubmissionValidationError,
+    ValidationReport,
+    sha256_file,
     validate_submission,
 )
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "baseline.json"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "state-engine.json"
 
 
 class BuildError(RuntimeError):
@@ -33,55 +49,17 @@ class BuildError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class AlgorithmConfig:
-    expected_frames: int
-    window_half_width_frames: int
-    pitch_length_m: float
-    pitch_width_m: float
-
-    @classmethod
-    def from_mapping(cls, values: Mapping[str, Any]) -> AlgorithmConfig:
-        required = {
-            "expected_frames",
-            "window_half_width_frames",
-            "pitch_length_m",
-            "pitch_width_m",
-        }
-        missing = required.difference(values)
-        unknown = set(values).difference(required)
-        if missing:
-            raise BuildError(f"configuration is missing keys: {sorted(missing)}")
-        if unknown:
-            raise BuildError(f"configuration has unknown keys: {sorted(unknown)}")
-
-        try:
-            expected_frames = int(values["expected_frames"])
-            window = int(values["window_half_width_frames"])
-            length = float(values["pitch_length_m"])
-            width = float(values["pitch_width_m"])
-        except (TypeError, ValueError) as error:
-            raise BuildError("configuration values must be numeric") from error
-        if expected_frames <= 0:
-            raise BuildError("expected_frames must be positive")
-        if window < 0:
-            raise BuildError("window_half_width_frames must be non-negative")
-        if length <= 0 or width <= 0:
-            raise BuildError("pitch dimensions must be positive")
-        return cls(expected_frames, window, length, width)
+class BuildResult:
+    tracking: TrackingData
+    labels: np.ndarray
+    observations: BallObservations
+    evidence: EvidenceSeries | None
+    validation: ValidationReport
+    health: HealthReport
+    cleanup: CleanupResult | None
 
 
-def load_algorithm_config(path: str | os.PathLike[str]) -> AlgorithmConfig:
-    config_path = Path(path)
-    try:
-        values = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise BuildError(f"could not read configuration at {config_path}") from error
-    if not isinstance(values, dict):
-        raise BuildError("configuration root must be a JSON object")
-    return AlgorithmConfig.from_mapping(values)
-
-
-def build_labels(tracking: TrackingData, config: AlgorithmConfig):
+def build_labels(tracking: TrackingData, config: BaselineConfig):
     if tracking.frame_count != config.expected_frames:
         raise BuildError(
             f"tracking has {tracking.frame_count} frames; "
@@ -144,27 +122,86 @@ def _confirm_overwrite(path: Path, force: bool) -> None:
         raise BuildError("overwrite declined")
 
 
+def _state_engine_labels(
+    tracking: TrackingData,
+    config: StateEngineConfig,
+) -> tuple[
+    np.ndarray,
+    BallObservations,
+    EvidenceSeries,
+    np.ndarray,
+    CleanupResult,
+]:
+    observations = prepare_ball_observations(
+        tracking,
+        fps=config.fps,
+        max_interpolation_gap_s=config.number("ball_interpolation_max_s"),
+    )
+    evidence = build_evidence_series(tracking, observations, config)
+    raw = run_state_engine(evidence, config)
+    cleanup = apply_structural_cleanup(raw.labels, config)
+    reasons = raw.reasons.copy()
+    if cleanup.changed.any():
+        reasons[cleanup.changed] = "structural_cleanup"
+    return cleanup.labels, observations, evidence, reasons, cleanup
+
+
 def build_submission(
     *,
     output_path: str | os.PathLike[str],
     data_root: str | os.PathLike[str] | None = None,
     config_path: str | os.PathLike[str] = DEFAULT_CONFIG_PATH,
-):
+) -> BuildResult:
     config = load_algorithm_config(config_path)
-    settings = load_settings(data_root)
-    require_tactical_assets(settings, ("atd_meta", "atd_raw"))
+    settings = load_settings(data_root, match_id=config.match_id)
+    paths = require_tactical_assets(settings, ("atd_meta", "atd_raw"))
+    input_hashes = {name: sha256_file(path) for name, path in paths.items()}
     tracking = load_tactical_tracking(
         settings.root,
         expected_frames=config.expected_frames,
+        match_id=config.match_id,
     )
-    labels = build_labels(tracking, config)
+    evidence: EvidenceSeries | None = None
+    cleanup: CleanupResult | None = None
+    if isinstance(config, StateEngineConfig):
+        labels, observations, evidence, reasons, cleanup = _state_engine_labels(
+            tracking,
+            config,
+        )
+        cleanup_steps = cleanup.applied_steps
+    else:
+        labels = build_labels(tracking, config)
+        observations = prepare_ball_observations(
+            tracking,
+            fps=25,
+            max_interpolation_gap_s=0.0,
+        )
+        reasons = np.full(tracking.frame_count, "baseline", dtype="<U16")
+        cleanup_steps = ()
     destination = write_submission_atomic(
         output_path,
         labels,
         expected_frames=config.expected_frames,
     )
-    report = validate_submission(destination, expected_rows=config.expected_frames)
-    return tracking, labels, report
+    validation = validate_submission(destination, expected_rows=config.expected_frames)
+    health = build_health_report(
+        labels=labels,
+        observations=observations,
+        reasons=reasons,
+        validation=validation,
+        input_sha256=input_hashes,
+        fps=config.fps if isinstance(config, StateEngineConfig) else 25,
+        cleanup_steps=cleanup_steps,
+    )
+    return BuildResult(
+        tracking=tracking,
+        labels=labels,
+        observations=observations,
+        evidence=evidence,
+        validation=validation,
+        health=health,
+        cleanup=cleanup,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -173,6 +210,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="algorithm JSON")
     parser.add_argument("--data-dir", default=None, help="overrides MTAH_DATA_DIR")
     parser.add_argument("--force", action="store_true", help="replace an existing output")
+    parser.add_argument("--health-report", default=None, help="optional aggregate JSON report")
     return parser
 
 
@@ -181,13 +219,16 @@ def main(argv: list[str] | None = None) -> int:
     destination = Path(args.output)
     try:
         _confirm_overwrite(destination, args.force)
-        tracking, _labels, report = build_submission(
+        result = build_submission(
             output_path=destination,
             data_root=args.data_dir,
             config_path=args.config,
         )
+        if args.health_report:
+            write_health_report(args.health_report, result.health)
     except (
         ConfigurationError,
+        AlgorithmConfigError,
         TrackingDataError,
         SubmissionValidationError,
         BuildError,
@@ -199,10 +240,28 @@ def main(argv: list[str] | None = None) -> int:
         print("FAIL  interrupted", file=sys.stderr)
         return 130
 
+    report = result.validation
     counts = ", ".join(f"{label}={report.label_counts[label]}" for label in "HADX")
     print(f"OK    wrote {report.rows} frames to {report.path}")
-    print(f"      ball visible on {int(tracking.ball_visible.sum())} frames")
+    print(f"      ball visible on {int(result.tracking.ball_visible.sum())} frames")
     print(f"      labels: {counts}")
+    print(
+        "      segments: "
+        + ", ".join(f"{label}={count}" for label, count in result.health.segments_by_label.items())
+    )
+    print(
+        "      observations: "
+        + ", ".join(
+            f"{name}={count}" for name, count in result.health.observation_quality_counts.items()
+        )
+    )
+    print(
+        "      transitions: "
+        + (
+            ", ".join(f"{name}={count}" for name, count in result.health.transition_counts.items())
+            or "none"
+        )
+    )
     print(f"      sha256: {report.sha256}")
     return 0
 

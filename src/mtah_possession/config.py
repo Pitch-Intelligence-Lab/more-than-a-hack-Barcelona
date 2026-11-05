@@ -40,20 +40,21 @@ class DataSettings:
     root: Path
     tactical_dir: Path
     broadcast_dir: Path
+    match_id: str = DEFAULT_MATCH_STEM
 
     def tactical_asset(self, name: str) -> Path:
         try:
             suffix = TACTICAL_ASSETS[name]
         except KeyError as error:
             raise ConfigurationError(f"unknown tactical asset: {name!r}") from error
-        return self.tactical_dir / f"{DEFAULT_MATCH_STEM}{suffix}"
+        return self.tactical_dir / f"{self.match_id}{suffix}"
 
     def broadcast_asset(self, name: str) -> Path:
         try:
             suffix = BROADCAST_ASSETS[name]
         except KeyError as error:
             raise ConfigurationError(f"unknown broadcast asset: {name!r}") from error
-        return self.broadcast_dir / f"{DEFAULT_MATCH_STEM}{suffix}"
+        return self.broadcast_dir / f"{self.match_id}{suffix}"
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,8 @@ class DataLayoutReport:
 def load_settings(
     data_root: str | os.PathLike[str] | None = None,
     environ: Mapping[str, str] | None = None,
+    *,
+    match_id: str = DEFAULT_MATCH_STEM,
 ) -> DataSettings:
     """Resolve ``MTAH_DATA_DIR`` without embedding a machine-specific path."""
 
@@ -82,11 +85,14 @@ def load_settings(
             f"{DATA_ROOT_ENV} is not set. Set it to the root containing tactical/ and broadcast/."
         )
 
+    if not match_id.strip() or any(separator in match_id for separator in ("/", "\\")):
+        raise ConfigurationError("match_id must be a non-empty file stem")
     root = Path(raw_root).expanduser().resolve(strict=False)
     return DataSettings(
         root=root,
         tactical_dir=root / "tactical",
         broadcast_dir=root / "broadcast",
+        match_id=match_id,
     )
 
 

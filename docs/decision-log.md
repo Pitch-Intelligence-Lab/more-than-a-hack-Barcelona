@@ -92,3 +92,66 @@ Record durable project decisions here. Do not record private competition data.
 - Status: accepted
 - Decision: Ignore non-finite player positions when finding the closest visible player for each team.
 - Reason: Real tactical data has missing slots in most frames. Taking a raw minimum over NaN values made every frame look as though both teams had no visible player and produced an all-D output. A regression test now covers a missing slot alongside valid home and away traces.
+
+## D-014: DP-005 uses explicit observation quality
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Ball observations are classified as observed, interpolated or missing. Only internally bracketed gaps up to 0.4 seconds are interpolated.
+- Reason: The ball is missing on a large fraction of graded frames. Carrying a quality flag prevents interpolation from being mistaken for a real observation.
+
+## D-015: Missing ball is not a dead-ball label
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: A missing ball freezes or weakens possession evidence but does not itself force D.
+- Reason: Occlusion and tracking loss are not equivalent to a referee stoppage. The verified baseline conflated the two.
+
+## D-016: Team possession changes can be direct
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: H to A and A to H are valid direct transitions. D is never inserted as a required bridge.
+- Reason: Controlled possession can transfer directly in open play; a synthetic D segment would create a false stoppage.
+
+## D-017: State changes require persistent evidence
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: An in-play team change requires 0.8 seconds of persistent opposing evidence. The nearest team and visible three-player neighbourhood must not conflict.
+- Reason: A touch, deflection or rapid pass near an opponent should not immediately change possession.
+
+## D-018: Dead-ball evidence is explicit and sustained
+
+- Date: 2026-11-05
+- Status: provisional engineering assumption
+- Decision: D requires explicit evidence for 0.8 seconds. The enabled default evidence is an observed ball remaining below 0.5 m/s for at least 1.5 seconds.
+- Reason: This provides a deterministic first D trigger without equating missing data with stoppage. Ball rest may also occur during shielding, so this rule still needs external validation.
+
+## D-019: Restarts may recover faster than open-play switches
+
+- Date: 2026-11-05
+- Status: engineering assumption
+- Decision: A 0.4-second team candidate is sufficient to leave D.
+- Reason: The restart itself provides clearer transition context than loose open-play evidence.
+
+## D-020: Structural cleanup is separate and conservative
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Enabled cleanup absorbs only a short segment bracketed by the same state; it never bridges X. Minimum-segment and isolated-D cleanup are disabled.
+- Reason: Cleanup must not erase deliberate short possessions or real dead-ball evidence without external support.
+
+## D-021: X is restricted to known ungraded blocks
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Emit X only for the published pre-match, halftime and post-match frame blocks. Every known graded frame is H, A or D.
+- Reason: This preserves scoring semantics and prevents broad abstention from masquerading as a model.
+
+## D-022: Every algorithm parameter carries provenance
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: The state-engine configuration records unit, source and rationale for every numeric or boolean parameter.
+- Reason: The match ground truth cannot be used for parameter selection, so the repository must make the basis of each default inspectable.

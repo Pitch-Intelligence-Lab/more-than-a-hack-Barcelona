@@ -43,9 +43,11 @@ $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 - Tactical and broadcast data: received and structurally checked.
 - Public scorer: reproduced.
 - DP-001 through DP-004 implemented in `feature/DP-001-DP-004-tactical-baseline`.
+- DP-005 configurable state engine implemented in `feature/DP-005-general-state-machine`.
 - Synthetic and team-local tactical runs pass.
-- Final tactical output: 199,319 rows, SHA-256 `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`.
-- Public-window pipeline check: macroF1 0.6209, spellF1 0.3256. This is a correctness reference, not a tuning target.
+- DP-005 tactical output: 199,319 rows, SHA-256 `db132162c9711f01dd5ff9bca4b9867baac8ed64ded80b700944bc2c13dc0177`.
+- Baseline fallback: SHA-256 `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`.
+- Public-window macroF1 0.6209 and spellF1 0.3256 are baseline references, not tuning targets.
 
 ## Install
 
@@ -65,28 +67,58 @@ The tests need no match data.
 .\.venv\Scripts\ruff.exe format --check .
 ```
 
-## Build and validate the tactical baseline
+## Build and validate the state engine
 
 ```powershell
 $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 .\.venv\Scripts\python scripts\build_submission.py `
-  --output outputs\submission.csv `
-  --config configs\baseline.json
-.\.venv\Scripts\python scripts\validate_submission.py outputs\submission.csv
+  --output outputs\submission-state-engine.csv `
+  --config configs\state-engine.json `
+  --health-report outputs\submission-state-engine.health.json `
+  --force
+.\.venv\Scripts\python scripts\validate_submission.py outputs\submission-state-engine.csv
 ```
 
-The data root must contain `tactical/` and `broadcast/`. An existing output is only replaced with `--force`. The builder writes and validates a temporary CSV before atomically replacing the destination.
+The data root must contain `tactical/` and `broadcast/`. An existing output is only replaced with `--force`. The builder writes and validates a temporary CSV before atomically replacing the destination. The health report contains aggregate observation quality, segments, transitions, reasons and hashes only.
 
-## Baseline algorithm
+The verified DP-001 through DP-004 baseline remains available as a fallback:
+
+```powershell
+.\.venv\Scripts\python scripts\build_submission.py `
+  --output outputs\submission-baseline-fallback.csv `
+  --config configs\baseline.json `
+  --force
+```
+
+## DP-005 algorithm
 
 1. Read the first `Team` metadata entry as home and the second as away.
 2. Map every player slot through its `teamId`.
 3. Convert ATD `frame_id` to submission frame `frame_id - 1`.
 4. Convert normalised coordinates to metres using the 105.3 x 68.0 m pitch.
-5. Use no candidate when the ball or players are missing, or when the closest home and away distances tie.
-6. Apply a centred 50-frame half-width majority vote and emit H, A or D.
+5. Mark ball observations as observed, interpolated or missing. Interpolation is bounded to 0.4 seconds and never extends from an edge.
+6. Compute independent nearest-team, visible near-player vote, ball rest, restart-zone and optimistic reachability evidence. Missing slots are ignored; missing ball observations carry forward the current state.
+7. Require persistent opposing evidence for 0.8 seconds before a direct H to A or A to H change.
+8. Enter D only after sustained explicit dead-ball evidence. Ball rest for 1.5 seconds is the default weak evidence; missing ball alone is not D.
+9. Permit a restart from D after 0.4 seconds of team evidence.
+10. Absorb only short same-neighbour flicker after inference. Minimum-segment and isolated-D cleanup remain disabled.
+11. Emit X only on the configured, officially known ungraded blocks: before kickoff, halftime and after the final whistle.
 
-The 50-frame setting is a pre-registered continuity preset, not a value tuned on this match. It does not yet implement controlled possession or a true dead-ball detector.
+Every state-engine parameter is stored in `configs/state-engine.json` with its unit, source and rationale. The configuration supports FPS, frame count, pitch dimensions, match identifier, coordinate representation, team-mapping source and optional assets. State durations are specified in seconds.
+
+## Verified aggregate run
+
+- Rows: 199,319; frame range 0 through 199318
+- Labels: H=81,311, A=74,490, D=3,056, X=40,462
+- H/A/D segments: H=166, A=175, D=19
+- Ball observations: observed=113,488, interpolated=108, missing=85,723
+- Repeat generation: byte-identical, SHA-256 `db132162c9711f01dd5ff9bca4b9867baac8ed64ded80b700944bc2c13dc0177`
+- Project validator: pass
+- Official format validator: pass
+- Baseline fallback rebuild: exact previous SHA-256
+- Frozen public smoke: macroF1 0.4998, spellF1 0.3897, D-class F1 0 (no post-smoke tuning)
+
+No match data, generated CSV or health report is tracked by Git.
 
 ## Documents
 
