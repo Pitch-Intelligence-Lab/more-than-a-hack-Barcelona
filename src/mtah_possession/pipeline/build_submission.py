@@ -139,7 +139,11 @@ def _state_engine_labels(
     )
     evidence = build_evidence_series(tracking, observations, config)
     raw = run_state_engine(evidence, config)
-    cleanup = apply_structural_cleanup(raw.labels, config)
+    cleanup = apply_structural_cleanup(
+        raw.labels,
+        config,
+        protected_mask=evidence.forced_dead_mask,
+    )
     reasons = raw.reasons.copy()
     if cleanup.changed.any():
         reasons[cleanup.changed] = "structural_cleanup"
@@ -192,6 +196,14 @@ def build_submission(
         input_sha256=input_hashes,
         fps=config.fps if isinstance(config, StateEngineConfig) else 25,
         cleanup_steps=cleanup_steps,
+        cleanup_removed_label_counts=(
+            cleanup.removed_label_counts if cleanup is not None else None
+        ),
+        forced_dead_mask=(
+            evidence.forced_dead_mask
+            if evidence is not None
+            else np.zeros(tracking.frame_count, dtype=bool)
+        ),
     )
     return BuildResult(
         tracking=tracking,
@@ -262,6 +274,13 @@ def main(argv: list[str] | None = None) -> int:
             or "none"
         )
     )
+    print(
+        "      forced D: "
+        f"frames={result.health.forced_dead_frames}, "
+        f"all_d={result.health.forced_dead_all_d}, "
+        f"labels={dict(result.health.forced_dead_label_counts)}"
+    )
+    print(f"      cleanup removed: {dict(result.health.cleanup_removed_label_counts)}")
     print(f"      sha256: {report.sha256}")
     return 0
 

@@ -45,7 +45,7 @@ $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 - DP-001 through DP-004 implemented in `feature/DP-001-DP-004-tactical-baseline`.
 - DP-005 configurable state engine implemented in `feature/DP-005-general-state-machine`.
 - Synthetic and team-local tactical runs pass.
-- DP-005 tactical output: 199,319 rows, SHA-256 `db132162c9711f01dd5ff9bca4b9867baac8ed64ded80b700944bc2c13dc0177`.
+- DP-005 v1.2 tactical output: 199,319 rows, SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`.
 - Baseline fallback: SHA-256 `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`.
 - Public-window macroF1 0.6209 and spellF1 0.3256 are baseline references, not tuning targets.
 
@@ -97,28 +97,31 @@ The verified DP-001 through DP-004 baseline remains available as a fallback:
 3. Convert ATD `frame_id` to submission frame `frame_id - 1`.
 4. Convert normalised coordinates to metres using the 105.3 x 68.0 m pitch.
 5. Mark ball observations as observed, interpolated or missing. Interpolation is bounded to 0.4 seconds and never extends from an edge.
-6. Compute independent nearest-team, visible near-player vote, ball rest, restart-zone and optimistic reachability evidence. Missing slots are ignored; missing ball observations carry forward the current state.
+6. Compute independent nearest-team, visible near-player vote, ball rest, restart, restart-zone and optimistic reachability evidence. Missing slots are ignored; missing ball observations carry forward the current state.
 7. Require persistent opposing evidence for 0.8 seconds before a direct H to A or A to H change.
-8. Enter D only after sustained explicit dead-ball evidence. Ball rest for 1.5 seconds is the default weak evidence; missing ball alone is not D.
-9. Permit a restart from D after 0.4 seconds of team evidence.
-10. Absorb only short same-neighbour flicker after inference. Minimum-segment and isolated-D cleanup remain disabled.
-11. Emit X only on the configured, officially known ungraded blocks: before kickoff, halftime and after the final whistle.
+8. Force D for frames 110808 through 113741, the interval between the official second-half start and the actual kickoff. State inference and cleanup cannot remove this block.
+9. Enter D elsewhere only after sustained explicit dead-ball evidence. Ball rest for 1.5 seconds is the default weak evidence; missing ball alone is not D.
+10. Permit a restart from D after 0.4 seconds of team evidence, shortened to 0.2 seconds only while independent restart evidence remains active.
+11. Absorb only short same-neighbour H/A flicker after inference. D is preserved by default; forced-dead frames are protected under every cleanup configuration.
+12. Emit X only on the configured, officially known ungraded blocks: before kickoff, halftime and after the final whistle.
 
 Every state-engine parameter is stored in `configs/state-engine.json` with its unit, source and rationale. The configuration supports FPS, frame count, pitch dimensions, match identifier, coordinate representation, team-mapping source and optional assets. State durations are specified in seconds.
 
 ## Verified aggregate run
 
 - Rows: 199,319; frame range 0 through 199318
-- Labels: H=81,311, A=74,490, D=3,056, X=40,462
-- H/A/D segments: H=166, A=175, D=19
+- Labels: H=79,250, A=73,608, D=5,999, X=40,462
+- Forced second-half pre-kickoff block: 2,934 frames, all D
+- H/A/D segments: H=161, A=170, D=20
 - Ball observations: observed=113,488, interpolated=108, missing=85,723
-- Repeat generation: byte-identical, SHA-256 `db132162c9711f01dd5ff9bca4b9867baac8ed64ded80b700944bc2c13dc0177`
+- Cleanup removed label counts: H=0, A=0, D=0
+- Repeat generation: byte-identical, SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
 - Project validator: pass
 - Official format validator: pass
 - Baseline fallback rebuild: exact previous SHA-256
 - Frozen public smoke: macroF1 0.4998, spellF1 0.3897, D-class F1 0 (no post-smoke tuning)
 
-No match data, generated CSV or health report is tracked by Git.
+The second-half pre-kickoff defect is fixed, but the public D result shows that dead-ball recognition remains incomplete. Good possession continuity and spellF1 do not establish that every task state is solved.
 
 ## Documents
 

@@ -20,6 +20,7 @@ def test_state_engine_config_has_sources_and_generic_machine_settings() -> None:
     assert config.expected_frames == 199_319
     assert config.coordinate_representation == "normalized-origin-corner"
     assert config.team_mapping_source == "atd-metadata-order"
+    assert config.forced_dead_blocks == ((110_808, 113_741),)
     assert all(parameter.source for parameter in config.parameters.values())
     assert all(parameter.rationale for parameter in config.parameters.values())
 
@@ -49,4 +50,13 @@ def test_video_and_broadcast_cannot_be_enabled(tmp_path: Path) -> None:
     path = tmp_path / "invalid.json"
     path.write_text(json.dumps(values), encoding="utf-8")
     with pytest.raises(AlgorithmConfigError, match="not wired"):
+        load_algorithm_config(path)
+
+
+def test_forced_dead_blocks_cannot_overlap_ungraded_blocks(tmp_path: Path) -> None:
+    values = json.loads(STATE_CONFIG.read_text(encoding="utf-8"))
+    values["forced_dead_blocks"] = [[90_652, 90_700]]
+    path = tmp_path / "invalid.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    with pytest.raises(AlgorithmConfigError, match="cannot overlap"):
         load_algorithm_config(path)

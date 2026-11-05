@@ -86,6 +86,7 @@ def test_state_engine_end_to_end_reports_quality_and_segments(tmp_path: Path) ->
     values = json.loads((ROOT / "configs" / "state-engine.json").read_text(encoding="utf-8"))
     values["expected_frames"] = 30
     values["ungraded_blocks"] = [[0, 4], [25, 29]]
+    values["forced_dead_blocks"] = []
     config = tmp_path / "state-config.json"
     config.write_text(json.dumps(values), encoding="utf-8")
 
@@ -115,4 +116,7 @@ def test_state_engine_end_to_end_reports_quality_and_segments(tmp_path: Path) ->
     assert result.evidence is not None
     assert set(result.health.input_sha256) == {"atd_meta", "atd_raw"}
     assert result.health.validator_status == "pass"
+    assert result.health.forced_dead_frames == 0
+    assert result.health.forced_dead_all_d is False
+    assert result.health.cleanup_removed_label_counts["D"] == 0
     assert result.validation.sha256 == repeated.validation.sha256

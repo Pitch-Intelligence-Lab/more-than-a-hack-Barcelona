@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -16,12 +17,19 @@ class CleanupResult:
     labels: NDArray[np.str_]
     changed: NDArray[np.bool_]
     applied_steps: tuple[str, ...]
+    removed_label_counts: Mapping[str, int]
 
 
 def apply_structural_cleanup(
     labels: NDArray[np.str_],
     config: StateEngineConfig,
+    *,
+    protected_mask: NDArray[np.bool_] | None = None,
 ) -> CleanupResult:
+    if protected_mask is None:
+        protected_mask = np.zeros(labels.shape, dtype=bool)
+    if protected_mask.shape != labels.shape:
+        raise ValueError("protected_mask must match labels shape")
     output = labels.copy()
     changed = np.zeros(labels.shape, dtype=bool)
     applied: list[str] = []
@@ -34,7 +42,8 @@ def apply_structural_cleanup(
                 config.number("cleanup_short_flicker_max_s"),
                 config.fps,
             ),
-            labels_to_absorb={"H", "A", "D"},
+            labels_to_absorb={"H", "A"},
+            protected_mask=protected_mask,
         )
         applied.append("short_flicker_absorption")
 
@@ -47,6 +56,7 @@ def apply_structural_cleanup(
                 duration_to_frames(config.number("cleanup_minimum_segment_s"), config.fps) - 1,
             ),
             labels_to_absorb={"H", "A"},
+            protected_mask=protected_mask,
         )
         applied.append("minimum_segment_duration")
 
@@ -59,10 +69,14 @@ def apply_structural_cleanup(
                 config.fps,
             ),
             labels_to_absorb={"D"},
+            protected_mask=protected_mask,
         )
         applied.append("isolated_dead_ball_removal")
 
-    return CleanupResult(output, changed, tuple(applied))
+    removed_label_counts = {
+        label: int(np.sum((labels == label) & (output != label))) for label in ("H", "A", "D")
+    }
+    return CleanupResult(output, changed, tuple(applied), removed_label_counts)
 
 
 def label_segments(labels: NDArray[np.str_]) -> list[tuple[int, int, str]]:
@@ -91,6 +105,7 @@ def _absorb_flicker(
     *,
     max_frames: int,
     labels_to_absorb: set[str],
+    protected_mask: NDArray[np.bool_],
 ) -> None:
     if max_frames <= 0:
         return
@@ -98,6 +113,8 @@ def _absorb_flicker(
     for index in range(1, len(segments) - 1):
         start, end, value = segments[index]
         if value not in labels_to_absorb or end - start > max_frames:
+            continue
+        if protected_mask[start:end].any():
             continue
         previous = segments[index - 1][2]
         following = segments[index + 1][2]

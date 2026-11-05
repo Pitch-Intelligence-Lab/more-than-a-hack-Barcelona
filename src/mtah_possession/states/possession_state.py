@@ -26,6 +26,7 @@ class TransitionReason(StrEnum):
     NO_OBSERVATION_PERSIST = "no_observation_persist"
     AWAITING_CONFIRMATION = "awaiting_confirmation"
     UNGRADED = "ungraded"
+    FORCED_DEAD_BLOCK = "forced_dead_block"
 
 
 @dataclass(frozen=True)
@@ -69,20 +70,45 @@ def run_state_engine(
 
     switch_frames = duration_to_frames(config.number("candidate_confirmation_s"), config.fps)
     restart_frames = duration_to_frames(config.number("restart_confirmation_s"), config.fps)
+    restart_evidence_frames = duration_to_frames(
+        config.number("restart_evidence_confirmation_s"),
+        config.fps,
+    )
     dead_frames = duration_to_frames(config.number("dead_ball_confirmation_s"), config.fps)
 
     current: str | None = None
     pending_candidate = NO_CANDIDATE
     pending_frames = 0
+    pending_restart_evidence_frames = 0
     dead_frames_run = 0
 
     for frame, candidate in enumerate(evidence.team_candidate):
+        if evidence.forced_dead_mask[frame]:
+            if current != "D":
+                transitions.append(
+                    StateTransition(
+                        frame=frame,
+                        previous=current or "D",
+                        current="D",
+                        reason=TransitionReason.FORCED_DEAD_BLOCK,
+                    )
+                )
+            current = "D"
+            labels[frame] = "D"
+            reasons[frame] = TransitionReason.FORCED_DEAD_BLOCK
+            pending_candidate = NO_CANDIDATE
+            pending_frames = 0
+            pending_restart_evidence_frames = 0
+            dead_frames_run = 0
+            continue
+
         if evidence.ungraded_mask[frame]:
             labels[frame] = "X"
             reasons[frame] = TransitionReason.UNGRADED
             current = None
             pending_candidate = NO_CANDIDATE
             pending_frames = 0
+            pending_restart_evidence_frames = 0
             dead_frames_run = 0
             continue
 
@@ -106,6 +132,7 @@ def run_state_engine(
             reasons[frame] = TransitionReason.DEAD_BALL_CONFIRMED
             pending_candidate = NO_CANDIDATE
             pending_frames = 0
+            pending_restart_evidence_frames = 0
             continue
 
         if candidate == NO_CANDIDATE:
@@ -117,13 +144,19 @@ def run_state_engine(
             )
             pending_candidate = NO_CANDIDATE
             pending_frames = 0
+            pending_restart_evidence_frames = 0
             continue
 
         if candidate == pending_candidate:
             pending_frames += 1
+            if evidence.restart_evidence[frame]:
+                pending_restart_evidence_frames += 1
+            else:
+                pending_restart_evidence_frames = 0
         else:
             pending_candidate = candidate
             pending_frames = 1
+            pending_restart_evidence_frames = int(bool(evidence.restart_evidence[frame]))
         candidate_label = "H" if candidate == HOME else "A"
 
         if current is None:
@@ -143,10 +176,16 @@ def run_state_engine(
             reasons[frame] = TransitionReason.PERSIST
             pending_frames = 0
             pending_candidate = NO_CANDIDATE
+            pending_restart_evidence_frames = 0
             continue
 
         if current == "D":
-            if pending_frames >= restart_frames:
+            required_frames = (
+                restart_evidence_frames
+                if pending_restart_evidence_frames >= restart_evidence_frames
+                else restart_frames
+            )
+            if pending_frames >= required_frames:
                 current = candidate_label
                 reason = (
                     TransitionReason.RESTART_TO_HOME
@@ -158,6 +197,7 @@ def run_state_engine(
                 reasons[frame] = reason
                 pending_frames = 0
                 pending_candidate = NO_CANDIDATE
+                pending_restart_evidence_frames = 0
             else:
                 labels[frame] = "D"
                 reasons[frame] = TransitionReason.AWAITING_CONFIRMATION
@@ -176,6 +216,7 @@ def run_state_engine(
             reasons[frame] = reason
             pending_frames = 0
             pending_candidate = NO_CANDIDATE
+            pending_restart_evidence_frames = 0
         else:
             labels[frame] = current
             reasons[frame] = TransitionReason.AWAITING_CONFIRMATION

@@ -89,3 +89,37 @@ The run produced no evidence that X leaked outside the configured ungraded block
 - Decision: no parameter or design change after the smoke test
 
 The weak D result confirms that sustained ball rest is not sufficient to recognise most dead-ball intervals. This is now a known limitation for external-data validation, not a basis for tuning on the provided match.
+
+## E-007: PR #1 remediation and second-half boundary validation
+
+- Date: 2026-11-05
+- Tests: 64 passed
+- Warning-free tests: 64 passed with `-W error`
+- Ruff check and format check: passed
+- Forced-dead configuration: frames 110808 through 113741
+- Forced-dead result: 2,934 of 2,934 frames were D
+- Rows: 199,319; frame range 0 through 199318
+- Labels: H=79,250, A=73,608, D=5,999, X=40,462
+- Graded total H+A+D: 158,857; X: 40,462
+- H/A/D segments: H=161, A=170, D=20
+- Segment durations: mean H=19.689 s, A=17.320 s, D=11.998 s
+- Cleanup removals: H=0, A=0, D=0
+- Transitions: H->A=157, A->H=154, H->D=4, A->D=14, D->H=7, D->A=13
+- Output SHA-256: `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
+- Repeat generation: byte-identical
+- Project validator: passed
+- Official format validator: passed
+- Baseline fallback: rebuilt with unchanged SHA-256 `caf42b0775d695e29859f775c67d42162a92d32655facb202c548b3b59fb220f`
+
+## E-008: Frozen public smoke after remediation
+
+- Date: 2026-11-05
+- Timing: one run after the v1.2 fixes and parameters were frozen
+- macroF1: 0.4998
+- spellF1: 0.3897
+- D class: precision 0, recall 0, F1 0
+- Predicted possessions: 22 of mean 13.6 s
+- Fragmentation ratio: 1.10
+- Decision: no parameter or design change after the score
+
+The public window does not cover the repaired 110808..113741 block, so it cannot measure that defect. The unchanged public score means only that the remediation did not alter the smoke window. The D-class result remains a major unresolved limitation.

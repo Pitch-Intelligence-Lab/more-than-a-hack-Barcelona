@@ -70,6 +70,7 @@ class EvidenceSeries:
     team_candidate: NDArray[np.int8]
     dead_ball_evidence: NDArray[np.bool_]
     restart_evidence: NDArray[np.bool_]
+    forced_dead_mask: NDArray[np.bool_]
     ungraded_mask: NDArray[np.bool_]
 
 
@@ -106,15 +107,16 @@ def nearest_team_evidence(
     home_min = np.sqrt(home_min_sq)
     away_min = np.sqrt(away_min_sq)
     both = np.isfinite(home_min) & np.isfinite(away_min)
-    frame_gap = away_min - home_min
+    frame_gap = np.full(int(usable_ball.sum()), np.nan, dtype=np.float64)
+    np.subtract(away_min, home_min, out=frame_gap, where=both)
+    squared_gap = np.full(int(usable_ball.sum()), np.nan, dtype=np.float64)
+    np.subtract(away_min_sq, home_min_sq, out=squared_gap, where=both)
     frame_candidate = np.full(int(usable_ball.sum()), NO_CANDIDATE, dtype=np.int8)
-    # Candidate values are encoded as squared distances for the same tolerance
-    # used by the verified baseline.
-    frame_candidate[both & ((home_min_sq - away_min_sq) < -_DISTANCE_TOLERANCE_M2)] = HOME
-    frame_candidate[both & ((away_min_sq - home_min_sq) < -_DISTANCE_TOLERANCE_M2)] = AWAY
+    frame_candidate[both & (squared_gap > _DISTANCE_TOLERANCE_M2)] = HOME
+    frame_candidate[both & (squared_gap < -_DISTANCE_TOLERANCE_M2)] = AWAY
 
-    home_distance[usable_ball] = home_min
-    away_distance[usable_ball] = away_min
+    home_distance[usable_ball] = np.where(np.isfinite(home_min), home_min, np.nan)
+    away_distance[usable_ball] = np.where(np.isfinite(away_min), away_min, np.nan)
     gap[usable_ball] = frame_gap
     candidate[usable_ball] = frame_candidate
     return NearestTeamEvidence(candidate, home_distance, away_distance, gap)
@@ -381,7 +383,8 @@ def build_evidence_series(
         dead |= tagging.dead_ball_evidence
         restart_evidence |= tagging.restart_evidence
 
-    ungraded = ungraded_mask(tracking.frame_count, config.ungraded_blocks)
+    ungraded = frame_block_mask(tracking.frame_count, config.ungraded_blocks)
+    forced_dead = frame_block_mask(tracking.frame_count, config.forced_dead_blocks)
     return EvidenceSeries(
         nearest=nearest,
         near_player_vote=vote,
@@ -391,11 +394,12 @@ def build_evidence_series(
         team_candidate=candidate,
         dead_ball_evidence=dead,
         restart_evidence=restart_evidence,
+        forced_dead_mask=forced_dead,
         ungraded_mask=ungraded,
     )
 
 
-def ungraded_mask(
+def frame_block_mask(
     frame_count: int,
     blocks: Sequence[tuple[int, int]],
 ) -> NDArray[np.bool_]:

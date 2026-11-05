@@ -85,6 +85,7 @@ class StateEngineConfig:
     coordinate_representation: str
     team_mapping_source: str
     ungraded_blocks: tuple[tuple[int, int], ...]
+    forced_dead_blocks: tuple[tuple[int, int], ...]
     optional_assets: Mapping[str, bool]
     parameters: Mapping[str, Parameter]
 
@@ -113,6 +114,8 @@ class StateEngineConfig:
             "team_mapping_source",
             "ungraded_blocks",
             "ungraded_blocks_source",
+            "forced_dead_blocks",
+            "forced_dead_blocks_source",
             "optional_assets",
             "parameters",
         }
@@ -122,8 +125,8 @@ class StateEngineConfig:
             raise AlgorithmConfigError(f"configuration is missing keys: {sorted(missing)}")
         if unknown:
             raise AlgorithmConfigError(f"configuration has unknown keys: {sorted(unknown)}")
-        if values["schema_version"] != "2.0":
-            raise AlgorithmConfigError("state-engine schema_version must be '2.0'")
+        if values["schema_version"] != "2.1":
+            raise AlgorithmConfigError("state-engine schema_version must be '2.1'")
         if values["algorithm"] != "state_engine":
             raise AlgorithmConfigError("state-engine algorithm must be 'state_engine'")
 
@@ -181,12 +184,21 @@ class StateEngineConfig:
             )
         _validate_parameter_types(parameters)
 
-        ungraded_blocks = _parse_ungraded_blocks(
+        ungraded_blocks = _parse_frame_blocks(
             values["ungraded_blocks"],
             expected_frames=expected_frames,
+            name="ungraded_blocks",
         )
         if values["ungraded_blocks_source"] not in PARAMETER_SOURCES:
             raise AlgorithmConfigError("ungraded_blocks_source is not recognized")
+        forced_dead_blocks = _parse_frame_blocks(
+            values["forced_dead_blocks"],
+            expected_frames=expected_frames,
+            name="forced_dead_blocks",
+        )
+        if values["forced_dead_blocks_source"] not in PARAMETER_SOURCES:
+            raise AlgorithmConfigError("forced_dead_blocks_source is not recognized")
+        _reject_block_overlap(ungraded_blocks, forced_dead_blocks)
 
         return cls(
             match_id=match_id,
@@ -197,6 +209,7 @@ class StateEngineConfig:
             coordinate_representation=coordinate,
             team_mapping_source=team_source,
             ungraded_blocks=ungraded_blocks,
+            forced_dead_blocks=forced_dead_blocks,
             optional_assets=dict(optional_assets),
             parameters=parameters,
         )
@@ -213,7 +226,7 @@ def load_algorithm_config(path: str | os.PathLike[str]) -> AlgorithmConfig:
         raise AlgorithmConfigError(f"could not read configuration at {config_path}") from error
     if not isinstance(values, dict):
         raise AlgorithmConfigError("configuration root must be a JSON object")
-    if values.get("schema_version") == "2.0":
+    if values.get("schema_version") == "2.1":
         return StateEngineConfig.from_mapping(values)
     return BaselineConfig.from_mapping(values)
 
@@ -266,31 +279,46 @@ def _parse_parameter(name: str, raw: Any) -> Parameter:
     )
 
 
-def _parse_ungraded_blocks(
+def _parse_frame_blocks(
     raw: Any,
     *,
     expected_frames: int,
+    name: str,
 ) -> tuple[tuple[int, int], ...]:
     if not isinstance(raw, list):
-        raise AlgorithmConfigError("ungraded_blocks must be a list")
+        raise AlgorithmConfigError(f"{name} must be a list")
     blocks: list[tuple[int, int]] = []
     previous_end = -1
     for item in raw:
         if not isinstance(item, list) or len(item) != 2:
-            raise AlgorithmConfigError("each ungraded block must be [first_frame, last_frame]")
+            raise AlgorithmConfigError(f"each {name} block must be [first_frame, last_frame]")
         try:
             first, last = int(item[0]), int(item[1])
         except (TypeError, ValueError) as error:
-            raise AlgorithmConfigError("ungraded block frames must be integers") from error
+            raise AlgorithmConfigError(f"{name} block frames must be integers") from error
         if first != item[0] or last != item[1]:
-            raise AlgorithmConfigError("ungraded block frames must be integers")
+            raise AlgorithmConfigError(f"{name} block frames must be integers")
         if first < 0 or last < first or last >= expected_frames:
-            raise AlgorithmConfigError(f"invalid ungraded block: {item!r}")
+            raise AlgorithmConfigError(f"invalid {name} block: {item!r}")
         if first <= previous_end:
-            raise AlgorithmConfigError("ungraded blocks must be sorted and non-overlapping")
+            raise AlgorithmConfigError(f"{name} must be sorted and non-overlapping")
         blocks.append((first, last))
         previous_end = last
     return tuple(blocks)
+
+
+def _reject_block_overlap(
+    ungraded: tuple[tuple[int, int], ...],
+    forced_dead: tuple[tuple[int, int], ...],
+) -> None:
+    if not ungraded or not forced_dead:
+        return
+    if any(
+        first <= forced_last and forced_first <= last
+        for first, last in ungraded
+        for forced_first, forced_last in forced_dead
+    ):
+        raise AlgorithmConfigError("forced_dead_blocks cannot overlap ungraded_blocks")
 
 
 def _validate_parameter_types(parameters: Mapping[str, Parameter]) -> None:
@@ -329,6 +357,7 @@ NON_NEGATIVE_SECONDS_PARAMETERS = frozenset(
         "ball_interpolation_max_s",
         "candidate_confirmation_s",
         "restart_confirmation_s",
+        "restart_evidence_confirmation_s",
         "dead_ball_confirmation_s",
         "ball_rest_min_s",
         "cleanup_short_flicker_max_s",

@@ -155,3 +155,31 @@ Record durable project decisions here. Do not record private competition data.
 - Status: accepted
 - Decision: The state-engine configuration records unit, source and rationale for every numeric or boolean parameter.
 - Reason: The match ground truth cannot be used for parameter selection, so the repository must make the basis of each default inspectable.
+
+## D-023: Forced dead blocks override inference and cleanup
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Frames 110808 through 113741 are configured as a forced-dead block, separate from ungraded X blocks. State inference and every cleanup step must preserve D on those frames.
+- Reason: The official second half starts at 110808, but the actual restart is at 113742. The previous output incorrectly inferred H/A in this interval. This is an official boundary fact, not a public-score choice.
+
+## D-024: Restart evidence may shorten only D-to-team confirmation
+
+- Date: 2026-11-05
+- Status: engineering assumption
+- Decision: Active restart evidence can reduce D-to-team confirmation from 0.4 to 0.2 seconds. With no active or enabled restart evidence, the previous 0.4-second behavior is unchanged.
+- Reason: Leaving a calculated restart signal unused made the feature misleading. Restricting its effect to leaving D avoids changing open-play possession transitions.
+
+## D-025: Preserve D in short-flicker cleanup by default
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Short-flicker absorption applies only to H/A segments. Isolated-D removal remains separately configurable and disabled by default.
+- Reason: No external validation currently supports erasing a short D interval. Default D preservation avoids converting possible stoppages into possession.
+
+## D-026: Missing-team comparisons use finite-only arithmetic
+
+- Date: 2026-11-05
+- Status: accepted
+- Decision: Team distance margins are computed with masked subtraction only where both team minima are finite. A fully missing team always retains the no-candidate state.
+- Reason: Direct subtraction of two `inf` values creates an undefined gap and a runtime warning. The state should remain explicitly unresolved instead.

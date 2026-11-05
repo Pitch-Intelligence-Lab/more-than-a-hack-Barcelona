@@ -11,6 +11,7 @@ from mtah_possession.features.evidence import (
     NearestTeamEvidence,
     NearPlayerVoteEvidence,
     ReachabilityEvidence,
+    frame_block_mask,
 )
 from mtah_possession.states.cleanup import apply_structural_cleanup
 from mtah_possession.states.possession_state import run_state_engine
@@ -25,6 +26,8 @@ def evidence(
     dead: list[bool] | None = None,
     ungraded: list[bool] | None = None,
     speeds: list[float] | None = None,
+    restart: list[bool] | None = None,
+    forced_dead: list[bool] | None = None,
 ) -> EvidenceSeries:
     count = len(candidates)
     candidate_array = np.asarray(candidates, dtype=np.int8)
@@ -51,7 +54,8 @@ def evidence(
         reachability=ReachabilityEvidence(zeros_float.copy(), zeros_float.copy()),
         team_candidate=candidate_array,
         dead_ball_evidence=np.asarray(dead or [False] * count, dtype=bool),
-        restart_evidence=np.ones(count, dtype=bool),
+        restart_evidence=np.asarray(restart or [False] * count, dtype=bool),
+        forced_dead_mask=np.asarray(forced_dead or [False] * count, dtype=bool),
         ungraded_mask=np.asarray(ungraded or [False] * count, dtype=bool),
     )
 
@@ -117,14 +121,101 @@ def test_ungraded_frames_are_x_and_reset_temporal_state() -> None:
     assert set(result.labels[5:25]) == {"H"}
 
 
-def test_short_flicker_is_cleaned_but_distinct_neighbors_are_preserved() -> None:
-    labels = np.asarray(list("HHHDDHHH") + ["A"] * 20 + list("HHH"), dtype="<U1")
+def test_short_team_flicker_is_cleaned_but_d_is_preserved() -> None:
+    labels = np.asarray(list("HHAAHH"), dtype="<U1")
     result = apply_structural_cleanup(labels, CONFIG)
-    assert result.labels[3:5].tolist() == ["H", "H"]
-    assert result.labels[8:28].tolist() == ["A"] * 20
+    assert result.labels.tolist() == list("HHHHHH")
+    assert result.removed_label_counts == {"H": 0, "A": 2, "D": 0}
+
+
+def test_default_cleanup_preserves_h_d_h_and_a_d_a() -> None:
+    labels = np.asarray(list("HDHADAH"), dtype="<U1")
+    result = apply_structural_cleanup(labels, CONFIG)
+    assert result.labels.tolist() == labels.tolist()
+    assert result.removed_label_counts["D"] == 0
+
+
+def test_optional_isolated_d_cleanup_records_removed_d_frames() -> None:
+    parameters = dict(CONFIG.parameters)
+    isolated = parameters["enable_isolated_dead_ball_cleanup"]
+    parameters["enable_isolated_dead_ball_cleanup"] = replace(isolated, value=True)
+    enabled = replace(CONFIG, parameters=parameters)
+    labels = np.asarray(list("HDDH"), dtype="<U1")
+    result = apply_structural_cleanup(labels, enabled)
+    assert result.labels.tolist() == list("HHHH")
+    assert result.removed_label_counts["D"] == 2
 
 
 def test_cleanup_never_bridges_x_boundaries() -> None:
     labels = np.asarray(list("HHXDXHH"), dtype="<U1")
     result = apply_structural_cleanup(labels, CONFIG)
     assert result.labels.tolist() == list("HHXDXHH")
+
+
+def test_forced_dead_block_is_d_and_resets_restart_state() -> None:
+    candidates = [HOME, HOME, NO_CANDIDATE, NO_CANDIDATE] + [HOME] * 20
+    forced = [False, False, True, True] + [False] * 20
+    result = run_state_engine(evidence(candidates, forced_dead=forced), CONFIG)
+    assert result.labels[1] == "H"
+    assert result.labels[2] == "D"
+    assert result.labels[3] == "D"
+    assert result.labels[4:13].tolist() == ["D"] * 9
+    assert result.labels[13] == "H"
+    forced_reasons = [item for item in result.transitions if item.reason == "forced_dead_block"]
+    assert len(forced_reasons) == 1
+
+
+def test_restart_evidence_shortens_d_to_team_confirmation() -> None:
+    candidates = [NO_CANDIDATE] * 5 + [HOME] * 20
+    forced = [True] * 5 + [False] * 20
+    with_evidence = run_state_engine(
+        evidence(candidates, forced_dead=forced, restart=[False] * 5 + [True] * 20),
+        CONFIG,
+    )
+    without_evidence = run_state_engine(
+        evidence(candidates, forced_dead=forced, restart=[False] * 25),
+        CONFIG,
+    )
+    assert with_evidence.labels[9] == "H"
+    assert with_evidence.labels[8] == "D"
+    assert without_evidence.labels[12] == "D"
+    assert without_evidence.labels[14] == "H"
+
+
+def test_cleanup_cannot_remove_protected_forced_dead_block() -> None:
+    parameters = dict(CONFIG.parameters)
+    isolated = parameters["enable_isolated_dead_ball_cleanup"]
+    parameters["enable_isolated_dead_ball_cleanup"] = replace(isolated, value=True)
+    enabled = replace(CONFIG, parameters=parameters)
+    labels = np.asarray(list("HDDH"), dtype="<U1")
+    protected = np.asarray([False, True, True, False])
+    result = apply_structural_cleanup(labels, enabled, protected_mask=protected)
+    assert result.labels.tolist() == list("HDDH")
+    assert result.removed_label_counts["D"] == 0
+
+
+def test_official_second_half_boundary_uses_real_frame_numbers() -> None:
+    frame_count = CONFIG.expected_frames
+    candidates = np.full(frame_count, NO_CANDIDATE, dtype=np.int8)
+    candidates[113_742:] = HOME
+    ungraded = frame_block_mask(frame_count, CONFIG.ungraded_blocks)
+    forced_dead = frame_block_mask(frame_count, CONFIG.forced_dead_blocks)
+    result = run_state_engine(
+        evidence(
+            candidates.tolist(),
+            ungraded=ungraded.tolist(),
+            forced_dead=forced_dead.tolist(),
+        ),
+        CONFIG,
+    )
+    assert result.labels[110_807] == "X"
+    assert result.labels[110_808] == "D"
+    assert result.labels[113_741] == "D"
+    assert result.labels[113_742] == "D"
+    assert result.labels[113_751] == "H"
+    cleaned = apply_structural_cleanup(
+        result.labels,
+        CONFIG,
+        protected_mask=forced_dead,
+    )
+    assert np.all(cleaned.labels[110_808:113_742] == "D")

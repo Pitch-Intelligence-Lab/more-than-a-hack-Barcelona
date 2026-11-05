@@ -33,6 +33,10 @@ class HealthReport:
     reason_counts: Mapping[str, int]
     validator_status: str
     cleanup_steps: tuple[str, ...]
+    cleanup_removed_label_counts: Mapping[str, int]
+    forced_dead_frames: int
+    forced_dead_label_counts: Mapping[str, int]
+    forced_dead_all_d: bool
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,6 +55,10 @@ class HealthReport:
             "reason_counts": dict(self.reason_counts),
             "validator_status": self.validator_status,
             "cleanup_steps": list(self.cleanup_steps),
+            "cleanup_removed_label_counts": dict(self.cleanup_removed_label_counts),
+            "forced_dead_frames": self.forced_dead_frames,
+            "forced_dead_label_counts": dict(self.forced_dead_label_counts),
+            "forced_dead_all_d": self.forced_dead_all_d,
         }
 
 
@@ -63,6 +71,8 @@ def build_health_report(
     input_sha256: Mapping[str, str],
     fps: int,
     cleanup_steps: tuple[str, ...] = (),
+    cleanup_removed_label_counts: Mapping[str, int] | None = None,
+    forced_dead_mask: NDArray[np.bool_] | None = None,
 ) -> HealthReport:
     if fps <= 0:
         raise ValueError("fps must be positive")
@@ -87,6 +97,14 @@ def build_health_report(
         "missing": int(np.sum(graded_quality == BallQuality.MISSING)),
     }
     reason_values, reason_counts = np.unique(reasons, return_counts=True)
+    if forced_dead_mask is None:
+        forced_dead_mask = np.zeros(labels.shape, dtype=bool)
+    if forced_dead_mask.shape != labels.shape:
+        raise ValueError("forced_dead_mask must match labels shape")
+    forced_labels = labels[forced_dead_mask]
+    forced_dead_label_counts = {
+        label: int(np.sum(forced_labels == label)) for label in ("H", "A", "D", "X")
+    }
     return HealthReport(
         input_sha256=dict(input_sha256),
         output_sha256=validation.sha256,
@@ -104,6 +122,10 @@ def build_health_report(
         },
         validator_status="pass",
         cleanup_steps=cleanup_steps,
+        cleanup_removed_label_counts=dict(cleanup_removed_label_counts or {}),
+        forced_dead_frames=int(forced_dead_mask.sum()),
+        forced_dead_label_counts=forced_dead_label_counts,
+        forced_dead_all_d=bool(forced_dead_mask.any() and np.all(forced_labels == "D")),
     )
 
 

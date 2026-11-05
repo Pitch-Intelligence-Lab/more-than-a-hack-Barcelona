@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "algorithm": "state_engine",
   "match_id": "BAR-ATH",
   "fps": 25,
@@ -16,6 +16,10 @@
     [190198, 199318]
   ],
   "ungraded_blocks_source": "official-fact",
+  "forced_dead_blocks": [
+    [110808, 113741]
+  ],
+  "forced_dead_blocks_source": "official-fact",
   "optional_assets": {
     "smart_tagging": false,
     "homography": false,
@@ -40,6 +44,12 @@
       "unit": "s",
       "source": "general-football-prior",
       "rationale": "Allow a clear restart to become live faster than an open-play switch."
+    },
+    "restart_evidence_confirmation_s": {
+      "value": 0.2,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Shorten D-to-team confirmation only while independent restart evidence is active."
     },
     "dead_ball_confirmation_s": {
       "value": 0.8,

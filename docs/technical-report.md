@@ -2,7 +2,7 @@
 
 **Team:** Pitch Intelligence Lab
 
-**Status:** DP-005 first implementation; DP-001 through DP-004 retained as fallback
+**Status:** DP-005 v1.2 PR remediation; DP-001 through DP-004 retained as fallback
 
 **Code repository:** <https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona>
 
@@ -66,15 +66,16 @@ Deliberately unused:
 - A direct H to A or A to H change requires 0.8 seconds of persistent opposing evidence.
 - D requires explicit evidence for 0.8 seconds.
 - The enabled default D evidence is an observed ball under 0.5 m/s for at least 1.5 seconds.
-- A team candidate for 0.4 seconds can restart play from D.
+- Frames 110808 through 113741 are a forced-dead block. State inference and cleanup cannot change them from D.
+- A team candidate for 0.4 seconds can restart play from D. Active restart evidence reduces this to 0.2 seconds; missing or disabled restart evidence preserves 0.4 seconds.
 - H to A and A to H are direct. The engine never inserts D merely to bridge two teams.
 - Known ungraded frame blocks produce X. They also terminate temporal continuity across halftime or match boundaries.
 
 ## Structural cleanup
 
-`short_flicker_absorption` replaces a segment of at most 0.24 seconds only when the segment immediately before and after has the same H/A/D value. It never bridges X.
+`short_flicker_absorption` replaces an H/A segment of at most 0.24 seconds only when the segment immediately before and after has the same value. It never bridges X and does not absorb D by default.
 
-`minimum_segment_duration` and `isolated_dead_ball_removal` are separate named steps but are disabled. They must not be enabled until external evidence shows that they do not erase real short possessions or stoppages.
+`minimum_segment_duration` and `isolated_dead_ball_removal` are separate named steps but are disabled. They must not be enabled until external evidence shows that they do not erase real short possessions or stoppages. The health report records how many H/A/D frames each cleanup run removes. A protected forced-dead mask is applied to every cleanup step in every configuration.
 
 ## Parameters and provenance
 
@@ -85,6 +86,7 @@ The machine-readable source of truth is `configs/state-engine.json`. Every param
 | Ball interpolation maximum | 0.4 s | engineering-assumption |
 | Candidate confirmation | 0.8 s | general-football-prior |
 | Restart confirmation | 0.4 s | general-football-prior |
+| Restart-evidence confirmation | 0.2 s | engineering-assumption |
 | Dead-ball confirmation | 0.8 s | engineering-assumption |
 | Minimum ball-rest duration | 1.5 s | engineering-assumption |
 | Rest speed threshold | 0.5 m/s | engineering-assumption |
@@ -107,7 +109,7 @@ Official facts in the configuration are 25 FPS, 199,319 target frames, the 105.3
 
 No parameter was selected by comparing outputs against this match's public or private possession ground truth. No public five-minute score was used to choose or reject a DP-005 design variant.
 
-After freezing this implementation, one automated public-window smoke test reported macroF1 0.4998 and spellF1 0.3897. D-class F1 was 0. The run predicted 22 possessions of mean 13.6 s against 17 reference possessions of mean 14.2 s, with fragmentation ratio 1.10 and alive/dead F1 0.8913. No parameter or design change followed the smoke result.
+After freezing the v1.2 implementation, one automated post-v1.2 public-window smoke run reported macroF1 0.4998 and spellF1 0.3897. D-class F1 was 0. The run predicted 22 possessions of mean 13.6 s against 17 reference possessions of mean 14.2 s, with fragmentation ratio 1.10 and alive/dead F1 0.8913. No parameter or design change followed the smoke result. The public window does not cover the repaired second-half pre-kickoff interval.
 
 ## Training data
 
@@ -116,15 +118,17 @@ None. No model is trained, fitted or tuned. No external labels are used.
 ## Verified tactical run
 
 - Rows and frames: 199,319 rows, frame 0 through 199318
-- Labels: H=81,311, A=74,490, D=3,056, X=40,462
-- H/A/D segment counts: H=166, A=175, D=19
-- Segment duration: mean H=19.593 s, A=17.026 s, D=6.434 s
+- Labels: H=79,250, A=73,608, D=5,999, X=40,462
+- Forced-dead block: frames 110808 through 113741, 2,934 of 2,934 frames D
+- H/A/D segment counts: H=161, A=170, D=20
+- Segment duration: mean H=19.689 s, A=17.320 s, D=11.998 s
 - Ball quality: observed=113,488, interpolated=108, missing=85,723
 - Graded ball quality: observed=94,214, interpolated=39, missing=64,604
-- Transitions: H->A=162, A->H=159, H->D=4, A->D=14, D->H=6, D->A=13
+- Cleanup removals: H=0, A=0, D=0
+- Transitions: H->A=157, A->H=154, H->D=4, A->D=14, D->H=7, D->A=13
 - Input metadata SHA-256: `327e35e32e46a647389b88f883d4f9a2ab931e3e6148aef2fcf8f22b1e93c43a`
 - Input raw-tracking SHA-256: `f130e350d2bfdf734b7e32f072931fccc6d015c1e837d082064875fe0a700431`
-- Output SHA-256: `db132162c9711f01dd5ff9bca4b9867baac8ed64ded80b700944bc2c13dc0177`
+- Output SHA-256: `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
 - Repeat generation: byte-identical
 - Project validator: pass
 - Official format validator: pass
@@ -147,11 +151,13 @@ The DP-001 through DP-004 baseline can still be rebuilt with `configs/baseline.j
 
 - Ball rest is only a proxy for a stoppage and can misclassify shielding or waiting for support.
 - The frozen public smoke test missed every D frame, confirming that the current ball-rest trigger is inadequate for general dead-ball recognition.
+- The forced second-half block is an official-boundary correction, not evidence that general D recognition is solved.
 - Nearest-player and local-vote evidence can be wrong in a crowded penalty area.
 - Interpolation can preserve context but cannot recover a genuinely changing ball trajectory.
 - Smart Tagging, restart-zone and reachability evidence are implemented but disabled.
 - Strict duration priors have not yet been validated on licensed external matches.
 - The public five-minute answer was not used to compare DP-005 design variants.
+- Possession continuity is improved, but the model does not yet solve all three graded states; dead-ball recognition remains incomplete.
 
 ## Reproduction
 
