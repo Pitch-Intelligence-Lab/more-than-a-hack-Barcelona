@@ -65,6 +65,8 @@ REQUIRED_PARAMETERS = frozenset(
         "dead_enter_penalty",
         "restart_penalty",
         "restart_boost",
+        "hysteresis_gain",
+        "hysteresis_max_boost",
         "dwell_frames",
         "dwell_penalty",
         "min_flicker_frames",
@@ -216,6 +218,8 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
     if dwell_frames > 120:
         raise CandidateConfigError("dwell_frames must not exceed 120")
     _non_negative(parameters["dwell_penalty"].value, "dwell_penalty")
+    _non_negative(parameters["hysteresis_gain"].value, "hysteresis_gain")
+    _non_negative(parameters["hysteresis_max_boost"].value, "hysteresis_max_boost")
 
     match_id = values.get("match_id")
     if not isinstance(match_id, str) or not match_id.strip():

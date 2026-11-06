@@ -131,6 +131,7 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 | + 5 m 控制区上限 | 384 | 96 | 13.5 s | 12.3 s | `db24…` |
 | + 0.6 s dwell（实验） | 384 | 96 | 13.5 s | 12.3 s | `4cd5…` |
 | + 1.2 s 强 dwell（实验） | 377 | 186 | 13.5 s | 6.8 s | `ab90…` |
+| + evidence hysteresis（实验） | 384 | 96 | 13.5 s | 12.3 s | `8a3f…` |
 | 关闭 Smart Tagging 消融 | 333 | 72 | 17.6 s | 6.7 s | `8f2a…` |
 
 夺权门控参数为 `contest_margin_m=1.5`：双方离球都近且可见投票分裂时，不强行给 H/A
@@ -139,6 +140,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 持续时间感知 Viterbi 已实现为实验路径，但 0.6 秒 dwell 不改变段数，1.2 秒强 dwell 会把
 D 段从 96 拉到 186，因此主线 `dwell_frames=0`，继续使用稳定的简单 Viterbi。
+
+Evidence-strength hysteresis 也实现了：合成测试里强证据快速切换、弱证据抖动被抑制；真实数据
+没有改变 384/96 的段结构，因此主线 `hysteresis_gain=0`，实验配置保留。
 
 ## 文献依据
 

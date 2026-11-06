@@ -27,6 +27,7 @@ from mtah_possession.features.ball import AWAY, HOME, NO_CANDIDATE
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b.json"
 NO_SMART_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-no-smart.json"
+HYSTERESIS_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-hysteresis.json"
 
 
 def small_config(tmp_path: Path, frames: int = 40, *, graded_only: bool = False):
@@ -319,6 +320,29 @@ def test_dwell_penalty_does_not_block_dead_ball_transition(tmp_path: Path) -> No
 
     assert "D" in result.labels
     assert result.labels[-1] == "H"
+
+
+def test_evidence_hysteresis_allows_strong_switch_and_suppresses_weak_flicker(
+    tmp_path: Path,
+) -> None:
+    values = json.loads(HYSTERESIS_CONFIG_PATH.read_text(encoding="utf-8"))
+    values["expected_frames"] = 60
+    values["ungraded_blocks"] = []
+    values["forced_dead_blocks"] = []
+    values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 0
+    values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 0
+    path = tmp_path / "hysteresis.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    config = load_candidate_config(path)
+    features = features_stub(60, tracking_candidate=[HOME] * 60)
+
+    strong = [[0.55, 0.45, 0.0]] * 20 + [[0.05, 0.95, 0.0]] * 40
+    strong_result = decode(emission_stub(strong), features, config)
+    assert strong_result.labels[-1] == "A"
+
+    weak = [[0.55, 0.45, 0.0]] * 20 + [[0.4, 0.6, 0.0]] * 5 + [[0.55, 0.45, 0.0]] * 35
+    weak_result = decode(emission_stub(weak), features, config)
+    assert "A" not in weak_result.labels
 
 
 def test_decoder_respects_ungraded_and_forced_blocks(tmp_path: Path) -> None:

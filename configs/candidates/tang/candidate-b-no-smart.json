@@ -137,6 +137,18 @@
       "source": "engineering-assumption",
       "rationale": "Active restart evidence reduces the D-to-team transition cost."
     },
+    "hysteresis_gain": {
+      "value": 0.0,
+      "unit": "logit_probability",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; experimental evidence-strength hysteresis is configured separately."
+    },
+    "hysteresis_max_boost": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Maximum transition-cost discount for strong H/A evidence; zero disables the experiment."
+    },
     "dwell_frames": {
       "value": 0,
       "unit": "frames",

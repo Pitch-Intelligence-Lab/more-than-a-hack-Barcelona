@@ -117,7 +117,7 @@
       "value": 3.5,
       "unit": "logit",
       "source": "general-football-prior",
-      "rationale": "Sensitivity variant: stronger team-change cost to test whether fragmentation falls without suppressing high-confidence switches."
+      "rationale": "Experimental stronger team-change cost for the 1.2-second dwell comparison."
     },
     "dead_enter_penalty": {
       "value": 1.5,
@@ -137,17 +137,29 @@
       "source": "engineering-assumption",
       "rationale": "Active restart evidence reduces the D-to-team transition cost."
     },
+    "hysteresis_gain": {
+      "value": 0.0,
+      "unit": "logit_probability",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; experimental evidence-strength hysteresis is configured separately."
+    },
+    "hysteresis_max_boost": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Maximum transition-cost discount for strong H/A evidence; zero disables the experiment."
+    },
     "dwell_frames": {
       "value": 30,
       "unit": "frames",
       "source": "general-football-prior",
-      "rationale": "Sensitivity variant: a soft 1.2-second dwell period tests stronger temporal persistence."
+      "rationale": "Experimental 1.2-second dwell for semi-Markov comparison."
     },
     "dwell_penalty": {
       "value": 2.5,
       "unit": "logit",
       "source": "engineering-assumption",
-      "rationale": "Sensitivity variant: a stronger early-switch penalty that still decays to zero at the dwell horizon."
+      "rationale": "Experimental stronger early-switch cost for the 1.2-second dwell."
     },
     "min_flicker_frames": {
       "value": 3,

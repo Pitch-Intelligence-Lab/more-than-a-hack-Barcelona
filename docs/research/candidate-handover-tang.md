@@ -51,9 +51,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 16 passed.
-- Full repository: 80 passed (64 frozen + 16 candidate).
-- `pytest -W error`: 80 passed.
+- Candidate synthetic tests: 17 passed.
+- Full repository: 81 passed (64 frozen + 17 candidate).
+- `pytest -W error`: 81 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
@@ -112,6 +112,9 @@ material contribution to D in this dataset, not accuracy or generalisation.
 - A duration-aware Viterbi path is implemented and tested but disabled in the main config:
   0.6 s dwell did not change segment counts and 1.2 s strong dwell increased D segments from 96
   to 186. The experimental configs remain for independent comparison.
+- Evidence-strength hysteresis is implemented and tested. It preserves strong quick switches and
+  suppresses weak flicker in synthetic tests, but did not change the 384/96 structure on the local
+  match; the stable config keeps it disabled.
 
 ## Interface relationship to frozen base
 

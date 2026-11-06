@@ -137,17 +137,29 @@
       "source": "engineering-assumption",
       "rationale": "Active restart evidence reduces the D-to-team transition cost."
     },
+    "hysteresis_gain": {
+      "value": 0.0,
+      "unit": "logit_probability",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; experimental evidence-strength hysteresis is configured separately."
+    },
+    "hysteresis_max_boost": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Maximum transition-cost discount for strong H/A evidence; zero disables the experiment."
+    },
     "dwell_frames": {
       "value": 15,
       "unit": "frames",
       "source": "general-football-prior",
-      "rationale": "A soft 0.6-second dwell period discourages flicker while still allowing strongly supported quick switches."
+      "rationale": "Experimental 0.6-second dwell for semi-Markov comparison."
     },
     "dwell_penalty": {
       "value": 1.5,
       "unit": "logit",
       "source": "engineering-assumption",
-      "rationale": "Extra transition cost decays to zero once the current state has reached the dwell period."
+      "rationale": "Experimental extra transition cost for the 0.6-second dwell."
     },
     "min_flicker_frames": {
       "value": 3,

@@ -1,0 +1,53 @@
+# Tang Candidate B — Experiment Decision Records
+
+## ED-01: Contest gate and validity cleanup
+
+- Hypothesis: split visible votes and close distances should not force H/A.
+- Implementation: `contest_margin_m=1.5`; contested frames are unresolved.
+- Observed: H/A possessions 436 -> 410; uncertain frames increased.
+- Decision: retain; it reduces unsupported team decisions.
+
+## ED-02: D-specific smoothing
+
+- Hypothesis: H/A noise and D boundary response need different time scales.
+- Implementation: H/A 50-frame smoothing, D 5-frame smoothing.
+- Observed: D segments became more responsive; later control-zone tuning reduced D fragmentation.
+- Decision: retain the two time scales.
+
+## ED-03: Low-confidence short-segment filter
+
+- Hypothesis: filtered/semi-Markov segment scoring can remove low-quality flicker while preserving
+  high-confidence quick switches.
+- Implementation: short H/A/D segments merge only when mean confidence is low and both neighbours
+  share the same team.
+- Observed on real data: no output change; residual short segments were high-confidence.
+- Decision: retain as a conservative guard, not as an accuracy claim.
+
+## ED-04: Five-metre control zone
+
+- Hypothesis: outside a control radius, the nearest-player signal should be treated as uncertain.
+- Literature basis: possession-zone/duel-zone work (arXiv:2202.00804), loosened for noisy tracking.
+- Observed: 406 -> 384 H/A possessions; D 101 -> 96; invalid/uncertain frames 64,443 -> 84,153.
+- Decision: retain in the stable candidate; record the abstention trade-off.
+
+## ED-05: Smart Tagging ablation
+
+- Hypothesis: Smart Tagging should contribute team/restart and long dead-ball evidence.
+- Implementation: disable Smart Tagging with the same L1/L2/L3.
+- Observed: D frames 29,630 -> 11,974; D mean 12.3 s -> 6.7 s.
+- Decision: keep Smart Tagging enabled, but only as weak/restart/dead-ball evidence.
+
+## ED-06: Fixed dwell
+
+- Hypothesis: a minimum state duration reduces flicker.
+- Implementation: 0.6 s and 1.2 s age-augmented Viterbi.
+- Observed: 0.6 s did not change segment counts; 1.2 s reduced H/A to 377 but increased D to 186.
+- Decision: reject fixed dwell; keep only as experimental configs.
+
+## ED-07: Evidence-strength hysteresis
+
+- Hypothesis: strong H/A probability margins can justify a faster transition than weak evidence.
+- Implementation: transition-cost discount proportional to the evidence margin, capped at 2 logits.
+- Observed: synthetic strong switch preserved and weak flicker suppressed; real output remained
+  384 H/A and 96 D, with only boundary-frame changes.
+- Decision: keep experimental; no stable-main change without independent evidence.

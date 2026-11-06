@@ -70,6 +70,7 @@ def _smooth_probabilities(
 
 def _decode_block_simple(
     logp: NDArray[np.float64],
+    probabilities: NDArray[np.float64],
     emission: Emission,
     features: FrameFeatures,
     forced: NDArray[np.bool_],
@@ -89,6 +90,17 @@ def _decode_block_simple(
         transition = _transitions(config, bool(features.smart_restart[frame]))
         for to_state in range(3):
             candidates = dp[index - 1] + transition[:, to_state] + logp[index, to_state]
+            if to_state in (HOME, AWAY):
+                for previous_state in (HOME, AWAY):
+                    margin = max(
+                        0.0,
+                        probabilities[index, to_state] - probabilities[index, previous_state],
+                    )
+                    boost = min(
+                        config.number("hysteresis_max_boost"),
+                        config.number("hysteresis_gain") * margin,
+                    )
+                    candidates[previous_state] += boost
             if forced[frame] and to_state != D:
                 candidates[:] = -np.inf
             back[index, to_state] = int(np.argmax(candidates))
@@ -124,6 +136,7 @@ def _decode_block(
     if max_age == 0:
         return _decode_block_simple(
             logp,
+            probabilities,
             emission,
             features,
             forced,
@@ -179,7 +192,17 @@ def _decode_block(
                     # targets H/A flicker, not dead-ball detection.
                     if previous == D or current == D:
                         extra = 0.0
-                    score = value + transition[previous, current] - extra + emission_score
+                    boost = 0.0
+                    if previous in (HOME, AWAY) and current in (HOME, AWAY):
+                        margin = max(
+                            0.0,
+                            probabilities[index, current] - probabilities[index, previous],
+                        )
+                        boost = min(
+                            config.number("hysteresis_max_boost"),
+                            config.number("hysteresis_gain") * margin,
+                        )
+                    score = value + transition[previous, current] + boost - extra + emission_score
                     if score > new_dp[current, 0]:
                         new_dp[current, 0] = score
                         back_label[index, current, 0] = previous

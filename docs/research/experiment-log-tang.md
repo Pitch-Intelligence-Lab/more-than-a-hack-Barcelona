@@ -12,8 +12,8 @@ Never paste competition rows, video frames or screenshots into this file.
 - Code version: `research/tang/independent-v1` working tree
 - Configuration: `configs/candidates/tang/candidate-b.json` with small synthetic frame counts
 - Run command: `.venv/bin/python -m pytest tests/candidates -q`
-- Result: 16 candidate tests passed
-- Coverage: tracking-vs-Smart-Tagging conflict, missing ball, out-of-bounds D, split contest, loose-ball control limit, low-confidence segment filtering, high-confidence quick-switch preservation, dwell strong-switch preservation, dwell weak-flicker suppression, dwell dead-ball transition, direct H/A switch, missing-ball persistence, dead/restart, X/forced blocks, Smart Tagging pre-restart/restart separation, adapter determinism
+- Result: 17 candidate tests passed
+- Coverage: tracking-vs-Smart-Tagging conflict, missing ball, out-of-bounds D, split contest, loose-ball control limit, low-confidence segment filtering, high-confidence quick-switch preservation, evidence-strength hysteresis, hysteresis weak-flicker suppression, dwell strong-switch preservation, dwell weak-flicker suppression, dwell dead-ball transition, direct H/A switch, missing-ball persistence, dead/restart, X/forced blocks, Smart Tagging pre-restart/restart separation, adapter determinism
 - Evaluation metric: interface and behavior assertions, not model accuracy
 - Failure types: none in this run
 - Reproducibility: deterministic synthetic inputs
@@ -26,7 +26,7 @@ Never paste competition rows, video frames or screenshots into this file.
 - Data source: frozen repository tests
 - Ground truth: not read
 - Run command: `.venv/bin/python -m pytest && .venv/bin/python -m pytest -W error`
-- Result: 80 passed, including 64 frozen tests and 16 candidate tests
+- Result: 81 passed, including 64 frozen tests and 17 candidate tests
 - Ruff: check and format check passed
 - Frozen DP-005 baseline: reproduced separately with SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
 - Decision: candidate is isolated in new modules; no frozen L0/L4 or stable config changes
@@ -108,3 +108,13 @@ Never paste competition rows, video frames or screenshots into this file.
 - Dwell15 real output: 384 H/A possessions, 96 D segments, SHA `4cd5…` (same segment counts as the main non-dwell path; only boundary frames shifted).
 - Dwell30 real output: 377 H/A possessions, 186 D segments, SHA `ab90…` (D fragmentation doubles; not acceptable).
 - Main decision: keep `dwell_frames=0` in `candidate-b.json`, use the proven simple Viterbi path, and retain dwell configs as experiments only.
+
+## E-B-009: Evidence-strength hysteresis
+
+- Date: 2026-11-07
+- Motivation: replace fixed dwell with a transition discount proportional to the H/A probability margin.
+- Implementation: when the destination team probability exceeds the source team probability, the H/A transition cost is discounted by `min(hysteresis_max_boost, hysteresis_gain * margin)`.
+- Experimental configuration: `candidate-b-hysteresis.json` with gain 2.0 and max boost 2.0.
+- Synthetic result: strong H→A evidence switches; a weak five-frame A flicker is suppressed.
+- Real output: 384 H/A possessions and 96 D segments, unchanged from the stable candidate; SHA `8a3f…`.
+- Decision: keep as an experimental config; the stable main remains `hysteresis_gain=0`.
