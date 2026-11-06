@@ -83,5 +83,7 @@ def test_synthetic_skillcorner_fixture_loads_without_external_dependencies(
     assert loaded.possession_side.tolist() == [0, -1, -1]
     assert loaded.possession_status.tolist() == [0, 1, 1]
     assert loaded.ball_detected.tolist() == [True, True, False]
+    assert loaded.ball_source_quality.tolist() == [0, 0, 2]
+    assert loaded.slot_source_quality[0, 0] == 0
     assert loaded.frame_present.tolist() == [True, True, False]
     assert len(loaded.phases) == 1

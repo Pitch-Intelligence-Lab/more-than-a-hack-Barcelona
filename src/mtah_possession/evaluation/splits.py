@@ -16,7 +16,18 @@ class SplitManifestError(ValueError):
 
 class EvaluationMode(StrEnum):
     DIAGNOSTIC = "diagnostic"
+    VALIDATION = "validation"
     PROMOTION = "promotion"
+
+
+LIFECYCLE_STATUSES = frozenset(
+    {
+        "diagnostic_only",
+        "ready_for_validation",
+        "ready_for_promotion_review",
+        "promoted",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -72,11 +83,14 @@ def load_split_manifest(path: str | os.PathLike[str]) -> SplitManifest:
         or sets["validation"] & sets["holdout"]
     ):
         raise SplitManifestError("external match splits must be disjoint")
+    status = str(values["status"])
+    if status not in LIFECYCLE_STATUSES:
+        raise SplitManifestError(f"unknown lifecycle status: {status!r}")
     return SplitManifest(
         development=sets["development"],
         validation=sets["validation"],
         holdout=sets["holdout"],
-        status=str(values["status"]),
+        status=status,
     )
 
 
@@ -88,8 +102,8 @@ def assess_promotion_gate(manifest: SplitManifest) -> PromotionGateResult:
         reasons.append("validation split is empty")
     if not manifest.holdout:
         reasons.append("holdout split is empty")
-    if manifest.status != "ready_for_validation":
-        reasons.append("status is not ready_for_validation")
+    if manifest.status != "ready_for_promotion_review":
+        reasons.append("status is not ready_for_promotion_review")
     return PromotionGateResult(allowed=not reasons, reasons=tuple(reasons))
 
 
@@ -99,6 +113,24 @@ def require_promotion_ready(manifest: SplitManifest) -> None:
         raise SplitManifestError("promotion gate failed: " + "; ".join(gate.reasons))
 
 
+def require_validation_ready(manifest: SplitManifest) -> None:
+    reasons: list[str] = []
+    if not manifest.development:
+        reasons.append("development split is empty")
+    if not manifest.validation:
+        reasons.append("validation split is empty")
+    if not manifest.holdout:
+        reasons.append("holdout split is empty")
+    if manifest.status not in {
+        "ready_for_validation",
+        "ready_for_promotion_review",
+        "promoted",
+    }:
+        reasons.append("status is not ready for validation")
+    if reasons:
+        raise SplitManifestError("validation gate failed: " + "; ".join(reasons))
+
+
 def require_split(
     manifest: SplitManifest,
     match_id: str,
@@ -106,10 +138,21 @@ def require_split(
     *,
     mode: EvaluationMode = EvaluationMode.DIAGNOSTIC,
 ) -> None:
+    expected_for_mode = {
+        EvaluationMode.DIAGNOSTIC: "development",
+        EvaluationMode.VALIDATION: "validation",
+        EvaluationMode.PROMOTION: "holdout",
+    }
+    if mode not in expected_for_mode:
+        raise SplitManifestError(f"unknown evaluation mode: {mode!r}")
+    if expected != expected_for_mode[mode]:
+        raise SplitManifestError(
+            f"mode {mode.value} requires split {expected_for_mode[mode]}, not {expected}"
+        )
     if mode == EvaluationMode.PROMOTION:
         require_promotion_ready(manifest)
-    elif mode != EvaluationMode.DIAGNOSTIC:
-        raise SplitManifestError(f"unknown evaluation mode: {mode!r}")
+    elif mode == EvaluationMode.VALIDATION:
+        require_validation_ready(manifest)
     actual = manifest.split_for(match_id)
     if actual != expected:
         raise SplitManifestError(

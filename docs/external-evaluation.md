@@ -68,6 +68,9 @@ $env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
 .\.venv\Scripts\python scripts\audit_external.py `
   --output outputs\external-data-audit.json
 .\.venv\Scripts\python scripts\evaluate_external.py `
+  --split development `
+  --mode diagnostic `
+  --code-commit <full-code-commit> `
   --output outputs\external-dp006-development.json
 ```
 

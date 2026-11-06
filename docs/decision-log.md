@@ -244,7 +244,7 @@ Record durable project decisions here. Do not record private competition data.
 
 - Date: 2026-11-05
 - Status: accepted for DP-006A local draft
-- Decision: Promotion requires non-empty development, validation and holdout splits plus status `ready_for_validation`.
+- Decision: Promotion requires non-empty development, validation and holdout splits plus status `ready_for_promotion_review`. `ready_for_validation` allows validation only.
 - Reason: A one-match diagnostic cannot establish cross-match generalisation.
 
 ## D-036: Diagnostic and promotion modes are explicit
@@ -253,3 +253,45 @@ Record durable project decisions here. Do not record private competition data.
 - Status: accepted for DP-006A local draft
 - Decision: The one-match development workflow remains available in diagnostic mode. Promotion mode checks split readiness before reading external match data.
 - Reason: Research iteration should remain possible without weakening the final selection gate.
+
+## D-037: Model input excludes raw evaluation labels
+
+- Date: 2026-11-06
+- Status: accepted for Revision 1 local draft
+- Decision: `ModelInput` contains only `TrackingData` and allowlisted event evidence. Possession group, player ID, proxy labels and proxy sources remain evaluation-only.
+- Reason: Direct and indirect target leakage must be impossible at the type boundary, not merely absent by convention.
+
+## D-038: Source and model-usable observation quality are distinct
+
+- Date: 2026-11-06
+- Status: accepted for Revision 1 local draft
+- Decision: The adapter preserves detected, extrapolated and missing as source categories. The current model may exclude extrapolated positions, but that exclusion cannot be confused with source absence.
+- Reason: Collapsing source quality loses information needed for audit and future policy changes.
+
+## D-039: Split selection is explicit
+
+- Date: 2026-11-06
+- Status: accepted for Revision 1 local draft
+- Decision: The external evaluator requires `--split development|validation|holdout`, and the mode must require the corresponding split.
+- Reason: A silent development default can label validation or holdout execution incorrectly.
+
+## D-040: Validation readiness is not promotion readiness
+
+- Date: 2026-11-06
+- Status: accepted for Revision 1 local draft
+- Decision: `ready_for_validation` permits validation comparison only. Promotion requires status `ready_for_promotion_review`, all three splits, and a holdout request.
+- Reason: Comparing frozen candidates on validation and approving holdout promotion are separate governance decisions.
+
+## D-041: Cross-match aggregation is explicitly macro and micro
+
+- Date: 2026-11-06
+- Status: accepted for Revision 1 local draft
+- Decision: Cross-match macro F1 averages per-match macro F1. Micro metrics sum confusion and transition counts before recomputation.
+- Reason: The two aggregation levels answer different questions and must not be conflated.
+
+## D-042: Evaluation reports carry versioned identity
+
+- Date: 2026-11-06
+- Status: accepted for Revision 1 local draft
+- Decision: Reports include code commit, source-adapter version, configuration version, evaluation-contract version, source hashes, prediction hashes and a canonical report hash.
+- Reason: A metric without its exact code, adapter and contract identity is not reproducible evidence.

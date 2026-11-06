@@ -13,18 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mtah_possession.algorithm_config import load_algorithm_config  # noqa: E402
-from mtah_possession.data.skillcorner import (  # noqa: E402
-    load_skillcorner_manifest,
-    load_skillcorner_match,
-)
-from mtah_possession.evaluation.external import evaluate_external_match  # noqa: E402
-from mtah_possession.evaluation.splits import (  # noqa: E402
-    EvaluationMode,
-    load_split_manifest,
-    require_split,
-    split_manifest_dict,
-)
+from mtah_possession.evaluation.runner import run_external_evaluation  # noqa: E402
+from mtah_possession.evaluation.splits import EvaluationMode  # noqa: E402
 
 
 def _write_json_atomic(path: Path, values: dict) -> None:
@@ -55,36 +45,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--splits", default=str(ROOT / "configs" / "external-splits.json"))
     parser.add_argument("--external-root", default=None)
     parser.add_argument(
+        "--split",
+        required=True,
+        choices=["development", "validation", "holdout"],
+    )
+    parser.add_argument(
         "--mode",
         choices=[mode.value for mode in EvaluationMode],
         default=EvaluationMode.DIAGNOSTIC.value,
     )
+    parser.add_argument("--code-commit", default=os.environ.get("MTAH_CODE_COMMIT"))
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
 
     try:
-        splits = load_split_manifest(args.splits)
-        manifest = load_skillcorner_manifest(args.config)
         mode = EvaluationMode(args.mode)
-        require_split(
-            splits,
-            str(manifest["match_id"]),
-            "development",
-            mode=mode,
-        )
         external_root = args.external_root or os.environ.get("MTAH_EXTERNAL_DATA_DIR")
-        if not external_root:
-            raise ValueError("MTAH_EXTERNAL_DATA_DIR is not set")
-        match = load_skillcorner_match(args.config, external_root)
-        state_config = load_algorithm_config(args.state_config)
-        evaluation = evaluate_external_match(match, state_config, split="development")
-        report = evaluation.to_dict()
-        report["split_manifest"] = split_manifest_dict(splits, match.match_id)
-        _write_json_atomic(Path(args.output), report)
+        result = run_external_evaluation(
+            config_path=args.config,
+            state_config_path=args.state_config,
+            splits_path=args.splits,
+            external_root=external_root,
+            split=args.split,
+            mode=mode,
+            code_commit=args.code_commit or "",
+        )
+        _write_json_atomic(Path(args.output), result.report)
     except (OSError, ValueError) as error:
         print(f"FAIL  {error}", file=sys.stderr)
         return 1
 
+    evaluation = result.evaluation
     print(f"match={evaluation.match_id} split={evaluation.split} mode={args.mode}")
     print(f"proxy={dict(evaluation.proxy.counts)}")
     for name, candidate in evaluation.candidates.items():

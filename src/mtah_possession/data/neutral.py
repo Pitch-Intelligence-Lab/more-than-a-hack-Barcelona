@@ -18,6 +18,12 @@ class TeamSide(IntEnum):
     UNKNOWN = -1
 
 
+class SourceQuality(IntEnum):
+    DETECTED = 0
+    EXTRAPOLATED = 1
+    MISSING = 2
+
+
 @dataclass(frozen=True)
 class PeriodSpan:
     period: int
@@ -62,6 +68,30 @@ class NeutralMatch:
     phases: tuple[PhaseSpan, ...]
     source_checksums: dict[str, str]
     source_metadata: dict[str, Any]
+    slot_source_quality: NDArray[np.int8] | None = None
+    ball_source_quality: NDArray[np.int8] | None = None
+
+    def __post_init__(self) -> None:
+        if self.slot_source_quality is None:
+            object.__setattr__(
+                self,
+                "slot_source_quality",
+                np.where(
+                    self.slot_detected,
+                    SourceQuality.DETECTED,
+                    SourceQuality.MISSING,
+                ).astype(np.int8),
+            )
+        if self.ball_source_quality is None:
+            object.__setattr__(
+                self,
+                "ball_source_quality",
+                np.where(
+                    self.ball_detected,
+                    SourceQuality.DETECTED,
+                    SourceQuality.MISSING,
+                ).astype(np.int8),
+            )
 
     @property
     def slot_count(self) -> int:
@@ -78,6 +108,14 @@ class NeutralMatch:
         for period in self.periods:
             output[period.start_frame : period.end_frame] = True
         return output
+
+    def source_quality_counts(self) -> dict[str, dict[str, int]]:
+        assert self.slot_source_quality is not None
+        assert self.ball_source_quality is not None
+        return {
+            "players": _quality_counts(self.slot_source_quality),
+            "ball": _quality_counts(self.ball_source_quality),
+        }
 
 
 @dataclass(frozen=True)
@@ -182,3 +220,11 @@ def blocks_from_mask(mask: NDArray[np.bool_]) -> tuple[tuple[int, int], ...]:
     return tuple(
         (int(start), int(end - 1)) for start, end in zip(changes[::2], changes[1::2], strict=True)
     )
+
+
+def _quality_counts(values: NDArray[np.int8]) -> dict[str, int]:
+    return {
+        "detected": int(np.sum(values == SourceQuality.DETECTED)),
+        "extrapolated": int(np.sum(values == SourceQuality.EXTRAPOLATED)),
+        "missing": int(np.sum(values == SourceQuality.MISSING)),
+    }

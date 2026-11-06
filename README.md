@@ -141,10 +141,13 @@ $env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
 .\.venv\Scripts\python scripts\audit_external.py `
   --output outputs\external-data-audit.json
 .\.venv\Scripts\python scripts\evaluate_external.py `
+  --split development `
+  --mode diagnostic `
+  --code-commit <full-code-commit> `
   --output outputs\external-dp006-development.json
 ```
 
-Only match `2017461` was audited and it is assigned to development. There is no validation or holdout match, so the external result cannot establish generalisation. The DP-006 phase candidate performs well against the development proxy partly because its phase-gap input and the proxy's D definition share the same source. DP-006 is therefore not selected as the final submission model. DP-005 v1.2 remains the provisional target candidate, with DP-001–004 retained as fallback.
+Only match `2017461` was audited and it is assigned to development. There is no validation or holdout match, so the external result cannot establish generalisation. `--split` is mandatory and has no silent default. The DP-006 phase candidate performs well against the development proxy partly because its phase-gap input and the proxy's D definition share the same source. DP-006 is therefore not selected as the final submission model. DP-005 v1.2 remains the provisional target candidate, with DP-001–004 retained as fallback.
 
 ## Documents
 

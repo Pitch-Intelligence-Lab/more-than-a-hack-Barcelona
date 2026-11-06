@@ -10,12 +10,15 @@ import numpy as np
 from numpy.typing import NDArray
 
 from mtah_possession.algorithm_config import StateEngineConfig
+from mtah_possession.data.model_input import (
+    ModelInput,
+    build_model_input,
+    with_event_evidence,
+)
 from mtah_possession.data.neutral import (
     NeutralMatch,
     ProxyTarget,
-    blocks_from_mask,
     map_proxy_target,
-    neutral_to_tracking,
 )
 from mtah_possession.data.observations import prepare_ball_observations
 from mtah_possession.features.ball import nearest_team_candidates
@@ -40,6 +43,8 @@ class ExternalMetrics:
     transition_recall: float
     transition_f1: float
     matched_transitions: int
+    target_transition_count: int
+    predicted_transition_count: int
     false_dead_frames: int
     false_dead_duration_s: float
     missed_dead_frames: int
@@ -48,6 +53,24 @@ class ExternalMetrics:
     mean_possession_duration_s: float
     prediction_sha256: str
     label_counts: dict[str, int]
+    confusion_counts: dict[str, dict[str, int]]
+
+
+@dataclass(frozen=True)
+class AggregatedExternalMetrics:
+    match_count: int
+    macro_f1_across_matches: float
+    micro_macro_f1: float
+    micro_class_f1: dict[str, float]
+    segment_f1_mean_across_matches: float
+    micro_transition_precision: float
+    micro_transition_recall: float
+    micro_transition_f1: float
+    false_dead_frames: int
+    false_dead_duration_s: float
+    missed_dead_frames: int
+    missed_dead_duration_s: float
+    mean_possession_duration_s: float
 
 
 @dataclass(frozen=True)
@@ -56,6 +79,13 @@ class ExternalCandidateResult:
     labels: NDArray[np.str_]
     sources: NDArray[np.str_]
     metrics: ExternalMetrics
+
+
+@dataclass(frozen=True)
+class ModelPrediction:
+    labels: NDArray[np.str_]
+    reasons: NDArray[np.str_]
+    prediction_sha256: str
 
 
 @dataclass(frozen=True)
@@ -87,6 +117,8 @@ class ExternalMatchEvaluation:
                         "transition_recall": result.metrics.transition_recall,
                         "transition_f1": result.metrics.transition_f1,
                         "matched_transitions": result.metrics.matched_transitions,
+                        "target_transition_count": result.metrics.target_transition_count,
+                        "predicted_transition_count": result.metrics.predicted_transition_count,
                         "false_dead_frames": result.metrics.false_dead_frames,
                         "false_dead_duration_s": result.metrics.false_dead_duration_s,
                         "missed_dead_frames": result.metrics.missed_dead_frames,
@@ -95,6 +127,10 @@ class ExternalMatchEvaluation:
                         "mean_possession_duration_s": result.metrics.mean_possession_duration_s,
                         "prediction_sha256": result.metrics.prediction_sha256,
                         "label_counts": dict(result.metrics.label_counts),
+                        "confusion_counts": {
+                            target: dict(predicted)
+                            for target, predicted in result.metrics.confusion_counts.items()
+                        },
                     },
                     "source_counts": _value_counts(result.sources),
                 }
@@ -110,22 +146,19 @@ def evaluate_external_match(
     split: str = "development",
     transition_tolerance_s: float = 0.5,
 ) -> ExternalMatchEvaluation:
-    proxy = map_proxy_target(match)
-    tracking = neutral_to_tracking(match)
-    in_period = match.in_period_mask()
-    ungraded_blocks = blocks_from_mask(~in_period)
+    model_input = build_model_input(match)
     adapted = replace(
         state_config,
         fps=match.fps,
         expected_frames=match.frame_count,
         pitch_length_m=match.pitch_length_m,
         pitch_width_m=match.pitch_width_m,
-        ungraded_blocks=ungraded_blocks,
+        ungraded_blocks=(),
         forced_dead_blocks=(),
     )
 
-    baseline = _baseline_labels(match, tracking)
-    dp005 = _state_labels(adapted, tracking)
+    baseline = _baseline_labels(model_input)
+    dp005 = _state_labels(adapted, model_input)
 
     dp006_params = dict(adapted.parameters)
     rest_parameter = dp006_params["use_ball_rest_dead_ball"]
@@ -143,10 +176,9 @@ def evaluate_external_match(
     )
     dp006 = _state_labels(
         dp006_config,
-        tracking,
-        phase_dead_mask=phase_evidence.forced_dead_mask,
-        phase_restart_mask=phase_evidence.restart_evidence,
+        with_event_evidence(model_input, phase_evidence),
     )
+    proxy = map_proxy_target(match)
 
     tolerance_frames = max(1, round(transition_tolerance_s * match.fps))
     candidates = {}
@@ -193,6 +225,8 @@ def evaluate_predictions(
         tolerance_frames=transition_tolerance_frames,
     )
     transition_f1 = _harmonic_f1(transition_precision, transition_recall)
+    actual_transition_count = len(_state_change_frames(target))
+    predicted_transition_count = len(_state_change_frames(prediction))
     labels, counts = np.unique(prediction, return_counts=True)
     possession_segments = _possession_segments(prediction)
     live_frames = int(np.sum(np.isin(prediction, ("H", "A"))))
@@ -201,6 +235,7 @@ def evaluate_predictions(
     )
     false_dead_frames = int(np.sum((prediction == "D") & np.isin(target, ("H", "A"))))
     missed_dead_frames = int(np.sum((target == "D") & np.isin(prediction, ("H", "A"))))
+    confusion = _confusion_counts(target, prediction)
     return ExternalMetrics(
         frame_count=int(target.size),
         graded_frames=int(graded.sum()),
@@ -211,6 +246,8 @@ def evaluate_predictions(
         transition_recall=transition_recall,
         transition_f1=transition_f1,
         matched_transitions=matched,
+        target_transition_count=actual_transition_count,
+        predicted_transition_count=predicted_transition_count,
         false_dead_frames=false_dead_frames,
         false_dead_duration_s=false_dead_frames / float(fps),
         missed_dead_frames=missed_dead_frames,
@@ -219,54 +256,98 @@ def evaluate_predictions(
         mean_possession_duration_s=mean_duration,
         prediction_sha256=hashlib.sha256(prediction.tobytes()).hexdigest(),
         label_counts={str(value): int(count) for value, count in zip(labels, counts, strict=True)},
+        confusion_counts=confusion,
     )
 
 
-def _baseline_labels(match: NeutralMatch, tracking) -> NDArray[np.str_]:
+def aggregate_external_metrics(
+    metrics: list[ExternalMetrics],
+) -> AggregatedExternalMetrics:
+    if not metrics:
+        raise ValueError("at least one external match metric is required")
+    confusion = {
+        target: {predicted: 0 for predicted in ("H", "A", "D")} for target in ("H", "A", "D")
+    }
+    for item in metrics:
+        for target, predicted_counts in item.confusion_counts.items():
+            for predicted, count in predicted_counts.items():
+                confusion[target][predicted] += count
+    class_f1 = {label: _f1_from_confusion(confusion, label) for label in ("H", "A", "D")}
+    matched = sum(item.matched_transitions for item in metrics)
+    predicted_count = sum(item.predicted_transition_count for item in metrics)
+    target_count = sum(item.target_transition_count for item in metrics)
+    precision = matched / predicted_count if predicted_count else 0.0
+    recall = matched / target_count if target_count else 0.0
+    return AggregatedExternalMetrics(
+        match_count=len(metrics),
+        macro_f1_across_matches=float(np.mean([item.macro_f1 for item in metrics])),
+        micro_macro_f1=float(np.mean(list(class_f1.values()))),
+        micro_class_f1=class_f1,
+        segment_f1_mean_across_matches=float(np.mean([item.segment_f1_mean for item in metrics])),
+        micro_transition_precision=precision,
+        micro_transition_recall=recall,
+        micro_transition_f1=_harmonic_f1(precision, recall),
+        false_dead_frames=sum(item.false_dead_frames for item in metrics),
+        false_dead_duration_s=sum(item.false_dead_duration_s for item in metrics),
+        missed_dead_frames=sum(item.missed_dead_frames for item in metrics),
+        missed_dead_duration_s=sum(item.missed_dead_duration_s for item in metrics),
+        mean_possession_duration_s=float(
+            np.mean([item.mean_possession_duration_s for item in metrics])
+        ),
+    )
+
+
+def _baseline_labels(model_input: ModelInput) -> NDArray[np.str_]:
     candidates = nearest_team_candidates(
-        tracking,
-        pitch_length_m=match.pitch_length_m,
-        pitch_width_m=match.pitch_width_m,
+        model_input.tracking,
+        pitch_length_m=model_input.pitch_length_m,
+        pitch_width_m=model_input.pitch_width_m,
     )
     labels = majority_vote_labels(
         candidates,
-        window_half_width_frames=round(2.0 * match.fps),
+        window_half_width_frames=round(2.0 * model_input.fps),
     )
-    labels[~match.in_period_mask()] = "X"
+    labels[model_input.event_evidence.ungraded_mask] = "X"
     return labels
 
 
 def _state_labels(
     config: StateEngineConfig,
-    tracking,
-    *,
-    phase_dead_mask: NDArray[np.bool_] | None = None,
-    phase_restart_mask: NDArray[np.bool_] | None = None,
+    model_input: ModelInput,
 ) -> NDArray[np.str_]:
+    return predict_model_input(model_input, config).labels
+
+
+def predict_model_input(
+    model_input: ModelInput,
+    config: StateEngineConfig,
+) -> ModelPrediction:
     observations = prepare_ball_observations(
-        tracking,
+        model_input.tracking,
         fps=config.fps,
         max_interpolation_gap_s=config.number("ball_interpolation_max_s"),
     )
-    evidence = build_evidence_series(tracking, observations, config)
-    if phase_dead_mask is not None:
-        phase_restart = (
-            phase_restart_mask
-            if phase_restart_mask is not None
-            else np.zeros(config.expected_frames, dtype=bool)
-        )
-        evidence = replace(
-            evidence,
-            forced_dead_mask=phase_dead_mask,
-            restart_evidence=evidence.restart_evidence | phase_restart,
-        )
+    evidence = build_evidence_series(model_input.tracking, observations, config)
+    evidence = replace(
+        evidence,
+        forced_dead_mask=model_input.event_evidence.forced_dead_mask,
+        restart_evidence=(evidence.restart_evidence | model_input.event_evidence.restart_evidence),
+        ungraded_mask=model_input.event_evidence.ungraded_mask,
+    )
     result = run_state_engine(evidence, config)
     cleanup = apply_structural_cleanup(
         result.labels,
         config,
         protected_mask=evidence.forced_dead_mask,
     )
-    return cleanup.labels
+    reasons = result.reasons.copy()
+    if cleanup.changed.any():
+        reasons[cleanup.changed] = "structural_cleanup"
+    return ModelPrediction(
+        labels=cleanup.labels,
+        reasons=reasons,
+        prediction_sha256=hashlib.sha256(cleanup.labels.tobytes()).hexdigest(),
+    )
 
 
 def _binary_f1(
@@ -402,3 +483,27 @@ def _harmonic_f1(precision: float, recall: float) -> float:
 def _value_counts(values: NDArray[np.str_]) -> dict[str, int]:
     labels, counts = np.unique(values, return_counts=True)
     return {str(label): int(count) for label, count in zip(labels, counts, strict=True)}
+
+
+def _confusion_counts(
+    target: NDArray[np.str_],
+    prediction: NDArray[np.str_],
+) -> dict[str, dict[str, int]]:
+    counts = {actual: {predicted: 0 for predicted in ("H", "A", "D")} for actual in ("H", "A", "D")}
+    for actual, predicted in zip(target, prediction, strict=True):
+        if actual in counts and predicted in counts[actual]:
+            counts[str(actual)][str(predicted)] += 1
+    return counts
+
+
+def _f1_from_confusion(
+    confusion: dict[str, dict[str, int]],
+    label: str,
+) -> float:
+    true_positive = confusion[label][label]
+    false_positive = sum(confusion[target][label] for target in confusion if target != label)
+    false_negative = sum(
+        count for predicted, count in confusion[label].items() if predicted != label
+    )
+    denominator = 2 * true_positive + false_positive + false_negative
+    return (2.0 * true_positive / denominator) if denominator else 0.0

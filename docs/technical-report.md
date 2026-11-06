@@ -111,6 +111,21 @@ DP-006's phase-gap candidate is structurally coupled to the proxy because both u
 
 Only one external match is available, assigned to development. Validation and holdout are empty. Consequently, the external work cannot establish generalisation or justify promoting DP-006. DP-005 v1.2 remains the provisional target candidate; DP-001–004 remains fallback. Full details are in `docs/external-evaluation.md`.
 
+### Revision 1 evaluation governance
+
+The Revision 1 contract separates model inference from evaluation labels:
+
+- `ModelInput` contains only `TrackingData` and approved event evidence;
+- possession group, player ID and proxy labels are consumed only after prediction;
+- phase/restart evidence is a separate allowed channel;
+- detected, extrapolated and missing source observations remain distinguishable even though the current model excludes extrapolated positions;
+- the CLI requires an explicit development, validation or holdout selection;
+- validation readiness and promotion review readiness are separate lifecycle states;
+- promotion fails before external data loading when its split gate is incomplete;
+- report identity includes code, adapter, configuration and contract versions plus all input and prediction hashes.
+
+No parameter, target candidate or external metric was changed by Revision 1. Full definitions are in `docs/evaluation-contract.md`.
+
 ## Structural cleanup
 
 `short_flicker_absorption` replaces an H/A segment of at most 0.24 seconds only when the segment immediately before and after has the same value. It never bridges X and does not absorb D by default.

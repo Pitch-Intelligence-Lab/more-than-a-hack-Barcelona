@@ -14,7 +14,7 @@ External match IDs and split:
   development: 2017461
   validation: none
   holdout: none
-  status: insufficient_for_generalisation
+  status: diagnostic_only
 Proxy mapping:
   home/away possession group -> H/A;
   no possession inside active phase -> X;

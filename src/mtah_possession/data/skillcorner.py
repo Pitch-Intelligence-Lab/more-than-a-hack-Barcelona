@@ -20,6 +20,7 @@ from mtah_possession.data.neutral import (
     NeutralMatch,
     PeriodSpan,
     PhaseSpan,
+    SourceQuality,
     TeamSide,
 )
 
@@ -144,8 +145,14 @@ def load_skillcorner_match(
 
     slot_positions = np.full((frame_count, len(player_ids), 2), np.nan, dtype=np.float32)
     slot_detected = np.zeros((frame_count, len(player_ids)), dtype=bool)
+    slot_source_quality = np.full(
+        (frame_count, len(player_ids)),
+        SourceQuality.MISSING,
+        dtype=np.int8,
+    )
     ball_positions = np.full((frame_count, 2), np.nan, dtype=np.float32)
     ball_detected = np.zeros(frame_count, dtype=bool)
+    ball_source_quality = np.full(frame_count, SourceQuality.MISSING, dtype=np.int8)
     frame_present = np.zeros(frame_count, dtype=bool)
     possession_side = np.full(frame_count, TeamSide.UNKNOWN, dtype=np.int8)
     possession_status = np.full(frame_count, 1, dtype=np.int8)
@@ -205,6 +212,11 @@ def load_skillcorner_match(
                 if point is not None:
                     ball_positions[frame] = point
                     ball_detected[frame] = bool(ball.get("is_detected"))
+                    ball_source_quality[frame] = (
+                        SourceQuality.DETECTED
+                        if ball_detected[frame]
+                        else SourceQuality.EXTRAPOLATED
+                    )
                     aggregate["ball_detected"] += int(ball_detected[frame])
                     aggregate["ball_present_but_not_detected"] += int(not ball_detected[frame])
 
@@ -221,6 +233,9 @@ def load_skillcorner_match(
                 slot_positions[frame, slot] = point
                 detected = bool(player.get("is_detected"))
                 slot_detected[frame, slot] = detected
+                slot_source_quality[frame, slot] = (
+                    SourceQuality.DETECTED if detected else SourceQuality.EXTRAPOLATED
+                )
                 aggregate["player_detected"] += int(detected)
                 aggregate["player_extrapolated"] += int(not detected)
 
@@ -258,6 +273,8 @@ def load_skillcorner_match(
         periods=periods,
         phases=phases,
         source_checksums=checksums,
+        slot_source_quality=slot_source_quality,
+        ball_source_quality=ball_source_quality,
         source_metadata={
             "repository": manifest["repository"],
             "commit": manifest["commit"],

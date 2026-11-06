@@ -187,7 +187,23 @@ The aggregate comparison report `outputs/external-dp006-development.json` has SH
 - External data accessed: no
 - External evaluation run: no
 - Target submission built: no
-- Scope: possession-label leakage regression, transition F1, diagnostic/promotion gate and evaluation contract
+- Scope: possession-label leakage regression, transition F1, diagnostic/validation/promotion gates and evaluation contract
 - Result: 86 tests passed; warning-free tests passed; Ruff check and format passed
 
 This entry records code-only local drafting under the v1.4 approval gate. Existing external results must not be recomputed during DP-006A review.
+
+## E-014: DP-006A Revision 1 governance hardening
+
+- Date: 2026-11-06
+- External data accessed: no
+- External evaluation run: no
+- Target submission built: no
+- Tests: 100 passed
+- Warning-free tests: 100 passed with `-W error`
+- Ruff check and format: passed
+- Invalid external-root test run: 100 passed with `MTAH_EXTERNAL_DATA_DIR=E:\external-data\nonexistent`
+- Source adapter version: `1.1.0`
+- Evaluation contract version: `1.1.0`
+- Changes: explicit split CLI, ModelInput boundary, three source-quality categories, end-to-end label isolation, lifecycle-separated validation/promotion gates, fail-closed loader test, metric aggregation rules and versioned report identity
+
+The existing local external reports were not reopened or regenerated. They remain historical diagnostic artifacts from before Revision 1.

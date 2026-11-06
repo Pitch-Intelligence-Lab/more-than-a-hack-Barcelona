@@ -114,7 +114,7 @@ Only one match was downloaded under Gate A:
 - Development: `2017461`
 - Validation: empty
 - Holdout: empty
-- Status: `insufficient_for_generalisation`
+- Status: `diagnostic_only`
 
 No random frame-level split was used. Because no untouched validation or holdout match exists, this audit cannot establish generalisation and cannot alone select the final competition candidate.
 

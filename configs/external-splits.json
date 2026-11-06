@@ -6,6 +6,6 @@
   ],
   "validation": [],
   "holdout": [],
-  "status": "insufficient_for_generalisation",
-  "reason": "Gate A permits one external match; no untouched validation or holdout match is available."
+  "status": "diagnostic_only",
+  "reason": "Only one external match was downloaded; validation and holdout remain unavailable."
 }
