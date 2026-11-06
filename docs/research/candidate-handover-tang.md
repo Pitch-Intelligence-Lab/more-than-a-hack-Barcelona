@@ -1,7 +1,7 @@
 # Candidate Handover Card — Tang Candidate B
 
 **Candidate name:** Tang Candidate B — Evidence → H/A/D Emission → Viterbi  
-**Git Commit:** `a2d8b55` (code, tests and handover on `research/tang/independent-v1`)  
+**Git Commit:** `bbc4d89` (optimized Candidate B; initial implementation `a2d8b55`)  
 **Work branch:** `research/tang/independent-v1`  
 **Model overview:** L1 frame evidence with a split-contest gate, L2 normalized H/A/D emission
 probabilities with 50-frame H/A smoothing and 5-frame D smoothing, L3 three-state Viterbi decoder
