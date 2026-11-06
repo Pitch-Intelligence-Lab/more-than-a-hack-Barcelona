@@ -1,0 +1,301 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+from helpers import make_data_root
+
+from mtah_possession.candidates.tang.adapter import build_candidate
+from mtah_possession.candidates.tang.config import load_candidate_config
+from mtah_possession.candidates.tang.decoder import decode
+from mtah_possession.candidates.tang.emission import Emission, build_emission
+from mtah_possession.candidates.tang.features import FrameFeatures, build_features
+from mtah_possession.candidates.tang.smart_tagging import (
+    SmartEvidence,
+    build_smart_evidence,
+    load_tags,
+)
+from mtah_possession.data.observations import prepare_ball_observations
+from mtah_possession.data.tracking import FrameAlignment, TrackingData
+from mtah_possession.features.ball import AWAY, HOME, NO_CANDIDATE
+
+ROOT = Path(__file__).resolve().parents[2]
+CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b.json"
+
+
+def small_config(tmp_path: Path, frames: int = 40, *, graded_only: bool = False):
+    values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    values["expected_frames"] = frames
+    values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 2
+    values["ungraded_blocks"] = [] if graded_only else [[0, 4], [frames - 5, frames - 1]]
+    values["forced_dead_blocks"] = []
+    path = tmp_path / "candidate-small.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    return load_candidate_config(path)
+
+
+def tracking(
+    ball: list[list[float]],
+    slots: list[list[list[float] | None]],
+    teams: list[int],
+) -> TrackingData:
+    slot_positions = np.asarray(
+        [[[np.nan, np.nan] if point is None else point for point in frame] for frame in slots],
+        dtype=np.float32,
+    )
+    return TrackingData(
+        frame_count=len(ball),
+        home_team="H",
+        away_team="A",
+        team_by_slot=np.asarray(teams, dtype=np.int8),
+        ball_positions=np.asarray(ball, dtype=np.float32),
+        slot_positions=slot_positions,
+        alignment=FrameAlignment(len(ball), 1, len(ball), True),
+    )
+
+
+def features_stub(
+    count: int,
+    *,
+    tracking_candidate: list[int] | None = None,
+    smart_restart: list[bool] | None = None,
+    smart_dead: list[bool] | None = None,
+    out_of_bounds: list[bool] | None = None,
+    ball_rest: list[float] | None = None,
+) -> FrameFeatures:
+    return FrameFeatures(
+        usable_ball=np.ones(count, dtype=bool),
+        home_distance_m=np.full(count, np.nan),
+        away_distance_m=np.full(count, np.nan),
+        home_votes=np.zeros(count, dtype=np.int16),
+        away_votes=np.zeros(count, dtype=np.int16),
+        tracking_candidate=np.asarray(
+            tracking_candidate if tracking_candidate is not None else [NO_CANDIDATE] * count,
+            dtype=np.int8,
+        ),
+        ball_speed_mps=np.full(count, np.nan),
+        ball_rest_s=np.asarray(ball_rest or [0.0] * count),
+        out_of_bounds=np.asarray(out_of_bounds or [False] * count),
+        smart_team=np.full(count, NO_CANDIDATE, dtype=np.int8),
+        smart_restart=np.asarray(smart_restart or [False] * count),
+        smart_dead=np.asarray(smart_dead or [False] * count),
+        smart_conflict=np.zeros(count, dtype=bool),
+    )
+
+
+def emission_stub(probabilities: list[list[float]], valid: list[bool] | None = None) -> Emission:
+    probs = np.asarray(probabilities, dtype=np.float64)
+    return Emission(
+        probabilities=probs,
+        valid=np.asarray(valid if valid is not None else [True] * len(probabilities)),
+        confidence=probs.max(axis=1),
+        smart_conflict=np.zeros(len(probabilities), dtype=bool),
+    )
+
+
+def test_tracking_candidate_wins_conflicting_smart_prior() -> None:
+    config = load_candidate_config(CONFIG_PATH)
+    data = tracking(
+        ball=[[0.5, 0.5]],
+        slots=[[[0.49, 0.5], [0.51, 0.5], [0.9, 0.5]]],
+        teams=[HOME, HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+    smart = SmartEvidence(
+        team_prior=np.asarray([AWAY], dtype=np.int8),
+        restart=np.zeros(1, dtype=bool),
+        dead=np.zeros(1, dtype=bool),
+    )
+
+    features = build_features(data, observations, smart, config)
+    emission = build_emission(features, config)
+
+    assert features.tracking_candidate.tolist() == [HOME]
+    assert features.smart_conflict.tolist() == [True]
+    assert emission.probabilities[0, HOME] > emission.probabilities[0, AWAY]
+
+
+def test_missing_ball_is_not_dead_by_itself() -> None:
+    config = load_candidate_config(CONFIG_PATH)
+    data = tracking(
+        ball=[[np.nan, np.nan]],
+        slots=[[None, None]],
+        teams=[HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+    smart = SmartEvidence(
+        team_prior=np.asarray([NO_CANDIDATE], dtype=np.int8),
+        restart=np.zeros(1, dtype=bool),
+        dead=np.zeros(1, dtype=bool),
+    )
+
+    features = build_features(data, observations, smart, config)
+    emission = build_emission(features, config)
+
+    assert emission.valid.tolist() == [False]
+    assert emission.probabilities[0, 2] == pytest.approx(1.0 / 3.0)
+
+
+def test_out_of_bounds_is_geometric_dead_evidence() -> None:
+    config = load_candidate_config(CONFIG_PATH)
+    data = tracking(
+        ball=[[1.2, 0.5]],
+        slots=[[[0.5, 0.5], [0.9, 0.5]]],
+        teams=[HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+    smart = SmartEvidence(
+        team_prior=np.asarray([NO_CANDIDATE], dtype=np.int8),
+        restart=np.zeros(1, dtype=bool),
+        dead=np.zeros(1, dtype=bool),
+    )
+
+    emission = build_emission(build_features(data, observations, smart, config), config)
+
+    assert emission.probabilities[0, 2] > emission.probabilities[0, HOME]
+    assert emission.probabilities[0, 2] > emission.probabilities[0, AWAY]
+
+
+def test_decoder_direct_team_switch_and_missing_ball_persistence(tmp_path: Path) -> None:
+    config = small_config(tmp_path, 40, graded_only=True)
+    tracking_candidate = [HOME] * 20 + [AWAY] * 20
+    features = features_stub(40, tracking_candidate=tracking_candidate)
+    probabilities = [[0.8, 0.1, 0.1]] * 20 + [[0.1, 0.8, 0.1]] * 20
+    result = decode(emission_stub(probabilities), features, config)
+
+    assert result.labels[0] == "H"
+    assert result.labels[-1] == "A"
+    assert "H" in result.labels and "A" in result.labels
+
+    missing = features_stub(
+        40,
+        tracking_candidate=[HOME] * 15 + [NO_CANDIDATE] * 10 + [HOME] * 15,
+    )
+    missing_probs = [[0.8, 0.1, 0.1]] * 15 + [[1 / 3, 1 / 3, 1 / 3]] * 10 + [[0.8, 0.1, 0.1]] * 15
+    missing_result = decode(
+        emission_stub(missing_probs, valid=[True] * 15 + [False] * 10 + [True] * 15),
+        missing,
+        config,
+    )
+    assert missing_result.labels[5:35].tolist() == ["H"] * 30
+
+
+def test_decoder_dead_ball_and_restart(tmp_path: Path) -> None:
+    config = small_config(tmp_path, 60, graded_only=True)
+    features = features_stub(
+        60,
+        smart_restart=[False] * 40 + [True] * 20,
+        smart_dead=[False] * 20 + [True] * 20 + [False] * 20,
+    )
+    probabilities = [[0.8, 0.1, 0.1]] * 20 + [[0.1, 0.1, 0.8]] * 20 + [[0.8, 0.1, 0.1]] * 20
+    result = decode(emission_stub(probabilities), features, config)
+
+    assert result.labels[25] == "D"
+    assert result.labels[-1] == "H"
+
+
+def test_decoder_respects_ungraded_and_forced_blocks(tmp_path: Path) -> None:
+    values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    values["expected_frames"] = 40
+    values["ungraded_blocks"] = [[0, 4], [35, 39]]
+    values["forced_dead_blocks"] = [[10, 14]]
+    values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 2
+    path = tmp_path / "forced.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    config = load_candidate_config(path)
+    features = features_stub(40, tracking_candidate=[HOME] * 40)
+    result = decode(emission_stub([[0.8, 0.1, 0.1]] * 40), features, config)
+
+    assert result.labels[:5].tolist() == ["X"] * 5
+    assert result.labels[-5:].tolist() == ["X"] * 5
+    assert result.labels[10:15].tolist() == ["D"] * 5
+
+
+def test_smart_tagging_restart_and_dead_windows_do_not_overlap(tmp_path: Path) -> None:
+    source = tmp_path / "tagging-window.xml"
+    source.write_text(
+        """
+        <file><ALL_INSTANCES>
+          <instance>
+            <start>4.0</start><end>14.0</end><code>SET PIECES</code>
+            <label><group>Team</group><text>Barcelona</text></label>
+          </instance>
+        </ALL_INSTANCES></file>
+        """,
+        encoding="utf-8",
+    )
+    frame_count = 400
+    positions = np.full((frame_count, 2), np.nan, dtype=np.float32)
+    positions[100:, 0] = 0.5
+    positions[100:, 1] = 0.5
+    observations = prepare_ball_observations(
+        tracking(
+            ball=positions.tolist(),
+            slots=[[[0.5, 0.5], [0.8, 0.5]] for _ in range(frame_count)],
+            teams=[HOME, AWAY],
+        ),
+        fps=25,
+        max_interpolation_gap_s=0.0,
+    )
+    tags = load_tags(source, fps=25, frame_count=frame_count)
+    evidence = build_smart_evidence(
+        frame_count,
+        tags,
+        observations,
+        fps=25,
+        pitch_length_m=105.3,
+        pitch_width_m=68.0,
+        restart_offset_s=4.0,
+        dead_lookback_s=30.0,
+        dead_speed_mps=1.0,
+        dead_gap_s=0.5,
+    )
+
+    restart_frame = 200
+    assert evidence.dead[:restart_frame].any()
+    assert not evidence.restart[:restart_frame].any()
+    assert evidence.restart[restart_frame:250].all()
+
+
+def test_adapter_end_to_end_and_deterministic(tmp_path: Path) -> None:
+    root = make_data_root(
+        tmp_path / "data",
+        records=[[(0.10, 0.10), (0.40, 0.40), (0.90, 0.90), (0.80, 0.80)] for _ in range(30)],
+        ball=[(0.12, 0.10)] * 30,
+    )
+    (root / "tactical" / "BAR-ATH_tactical_smart_tagging.xml").write_text(
+        """
+        <file><ALL_INSTANCES>
+          <instance>
+            <start>0.0</start><end>1.2</end><code>BUILD UP</code>
+            <label><group>Team</group><text>Barcelona</text></label>
+          </instance>
+        </ALL_INSTANCES></file>
+        """,
+        encoding="utf-8",
+    )
+    values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    values["expected_frames"] = 30
+    values["ungraded_blocks"] = [[0, 4], [25, 29]]
+    values["forced_dead_blocks"] = []
+    values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 2
+    config_path = tmp_path / "small-config.json"
+    config_path.write_text(json.dumps(values), encoding="utf-8")
+
+    first = build_candidate(
+        output_path=tmp_path / "first.csv",
+        data_root=root,
+        config_path=config_path,
+    )
+    second = build_candidate(
+        output_path=tmp_path / "second.csv",
+        data_root=root,
+        config_path=config_path,
+    )
+
+    assert first.health["rows"] == 30
+    assert first.health["validator_status"] == "pass"
+    assert first.health["output_sha256"] == second.health["output_sha256"]
+    assert first.health["generalisation"] == "GENERALISATION NOT ESTABLISHED"
