@@ -23,12 +23,14 @@ from mtah_possession.features.ball import AWAY, HOME, NO_CANDIDATE
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b.json"
+NO_SMART_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-no-smart.json"
 
 
 def small_config(tmp_path: Path, frames: int = 40, *, graded_only: bool = False):
     values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     values["expected_frames"] = frames
     values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 2
+    values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 2
     values["ungraded_blocks"] = [] if graded_only else [[0, 4], [frames - 5, frames - 1]]
     values["forced_dead_blocks"] = []
     path = tmp_path / "candidate-small.json"
@@ -78,6 +80,7 @@ def features_stub(
         ball_speed_mps=np.full(count, np.nan),
         ball_rest_s=np.asarray(ball_rest or [0.0] * count),
         out_of_bounds=np.asarray(out_of_bounds or [False] * count),
+        contested=np.zeros(count, dtype=bool),
         smart_team=np.full(count, NO_CANDIDATE, dtype=np.int8),
         smart_restart=np.asarray(smart_restart or [False] * count),
         smart_dead=np.asarray(smart_dead or [False] * count),
@@ -117,6 +120,12 @@ def test_tracking_candidate_wins_conflicting_smart_prior() -> None:
     assert emission.probabilities[0, HOME] > emission.probabilities[0, AWAY]
 
 
+def test_smart_tagging_ablation_config_is_explicit() -> None:
+    config = load_candidate_config(NO_SMART_CONFIG_PATH)
+
+    assert config.enable_smart_tagging is False
+
+
 def test_missing_ball_is_not_dead_by_itself() -> None:
     config = load_candidate_config(CONFIG_PATH)
     data = tracking(
@@ -136,6 +145,28 @@ def test_missing_ball_is_not_dead_by_itself() -> None:
 
     assert emission.valid.tolist() == [False]
     assert emission.probabilities[0, 2] == pytest.approx(1.0 / 3.0)
+
+
+def test_split_contest_has_no_forced_team_candidate() -> None:
+    config = load_candidate_config(CONFIG_PATH)
+    data = tracking(
+        ball=[[0.5, 0.5]],
+        slots=[[[0.49, 0.5], [0.51, 0.5]]],
+        teams=[HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+    smart = SmartEvidence(
+        team_prior=np.asarray([NO_CANDIDATE], dtype=np.int8),
+        restart=np.zeros(1, dtype=bool),
+        dead=np.zeros(1, dtype=bool),
+    )
+
+    features = build_features(data, observations, smart, config)
+    emission = build_emission(features, config)
+
+    assert features.contested.tolist() == [True]
+    assert features.tracking_candidate.tolist() == [NO_CANDIDATE]
+    assert emission.valid.tolist() == [False]
 
 
 def test_out_of_bounds_is_geometric_dead_evidence() -> None:
@@ -202,6 +233,7 @@ def test_decoder_respects_ungraded_and_forced_blocks(tmp_path: Path) -> None:
     values["ungraded_blocks"] = [[0, 4], [35, 39]]
     values["forced_dead_blocks"] = [[10, 14]]
     values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 2
+    values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 2
     path = tmp_path / "forced.json"
     path.write_text(json.dumps(values), encoding="utf-8")
     config = load_candidate_config(path)
@@ -281,6 +313,7 @@ def test_adapter_end_to_end_and_deterministic(tmp_path: Path) -> None:
     values["ungraded_blocks"] = [[0, 4], [25, 29]]
     values["forced_dead_blocks"] = []
     values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 2
+    values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 2
     config_path = tmp_path / "small-config.json"
     config_path.write_text(json.dumps(values), encoding="utf-8")
 

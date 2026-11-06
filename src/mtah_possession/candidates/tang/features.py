@@ -31,6 +31,7 @@ class FrameFeatures:
     ball_speed_mps: NDArray[np.float64]
     ball_rest_s: NDArray[np.float64]
     out_of_bounds: NDArray[np.bool_]
+    contested: NDArray[np.bool_]
     smart_team: NDArray[np.int8]
     smart_restart: NDArray[np.bool_]
     smart_dead: NDArray[np.bool_]
@@ -65,6 +66,16 @@ def build_features(
     conflict = (candidate != NO_CANDIDATE) & (vote.candidate != NO_CANDIDATE)
     conflict &= candidate != vote.candidate
     candidate[conflict] = NO_CANDIDATE
+    both_teams = np.isfinite(nearest.home_distance_m) & np.isfinite(nearest.away_distance_m)
+    distance_gap = np.abs(nearest.home_distance_m - nearest.away_distance_m)
+    vote_gap = np.abs(vote.home_votes.astype(np.int16) - vote.away_votes)
+    contested = (
+        both_teams
+        & (distance_gap < config.number("contest_margin_m"))
+        & (vote_gap <= 1)
+        & ((vote.home_votes + vote.away_votes) > 0)
+    )
+    candidate[contested] = NO_CANDIDATE
 
     motion = ball_motion_evidence(
         observations,
@@ -95,6 +106,7 @@ def build_features(
         ball_speed_mps=motion.speed_mps,
         ball_rest_s=motion.rest_duration_s,
         out_of_bounds=out_of_bounds,
+        contested=contested,
         smart_team=smart.team_prior,
         smart_restart=smart.restart,
         smart_dead=smart.dead,

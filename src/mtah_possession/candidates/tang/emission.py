@@ -51,6 +51,8 @@ def build_emission(features: FrameFeatures, config: CandidateConfig) -> Emission
     )
     logits[smart_fill & (features.smart_team == HOME), HOME] += smart_team_weight
     logits[smart_fill & (features.smart_team == AWAY), AWAY] += smart_team_weight
+    logits[features.contested, HOME] = 0.0
+    logits[features.contested, AWAY] = 0.0
 
     rest_min = config.number("ball_rest_min_s")
     rest_fraction = np.clip(features.ball_rest_s / rest_min, 0.0, 1.0)
@@ -60,16 +62,15 @@ def build_emission(features: FrameFeatures, config: CandidateConfig) -> Emission
     logits[:, D] += config.number("smart_dead_weight") * features.smart_dead
     logits[:, D] -= config.number("restart_suppression") * features.smart_restart
 
-    valid = (
+    team_valid = (
         home_valid
         | away_valid
         | voted
         | (features.tracking_candidate != NO_CANDIDATE)
         | (features.smart_team != NO_CANDIDATE)
-        | features.smart_dead
-        | features.out_of_bounds
-        | (features.ball_rest_s > 0)
-    )
+    ) & ~features.contested
+    dead_valid = features.smart_dead | features.out_of_bounds | (features.ball_rest_s >= rest_min)
+    valid = team_valid | dead_valid
     logits[~valid] = 0.0
     shifted = logits - logits.max(axis=1, keepdims=True)
     exp = np.exp(shifted)

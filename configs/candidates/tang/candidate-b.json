@@ -15,6 +15,7 @@
   "forced_dead_blocks": [
     [110808, 113741]
   ],
+  "enable_smart_tagging": true,
   "parameters": {
     "ball_interpolation_max_s": {
       "value": 0.4,
@@ -51,6 +52,12 @@
       "unit": "players",
       "source": "general-football-prior",
       "rationale": "Small neighbourhood vote reduces single-slot noise."
+    },
+    "contest_margin_m": {
+      "value": 1.5,
+      "unit": "m",
+      "source": "general-football-prior",
+      "rationale": "If both teams are this close to the ball and the visible vote is split, keep the team unresolved."
     },
     "ball_rest_weight": {
       "value": 1.5,
@@ -93,6 +100,12 @@
       "unit": "frames",
       "source": "general-football-prior",
       "rationale": "A two-second centred smoothing window reduces tracking noise before temporal decoding."
+    },
+    "dead_smoothing_half_width_frames": {
+      "value": 5,
+      "unit": "frames",
+      "source": "engineering-assumption",
+      "rationale": "Keep dead-ball boundaries much sharper than H/A while removing sub-second D flicker."
     },
     "switch_penalty": {
       "value": 2.5,

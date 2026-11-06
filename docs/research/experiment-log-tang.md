@@ -42,15 +42,16 @@ Never paste competition rows, video frames or screenshots into this file.
 - Code version: `research/tang/independent-v1` working tree
 - Configuration: `configs/candidates/tang/candidate-b.json`
 - Run command: `MTAH_DATA_DIR=/mnt/d/mtah2027-data .venv/bin/python scripts/build_candidate_tang.py --output outputs/candidate-b.csv --config configs/candidates/tang/candidate-b.json --health-report outputs/candidate-b.health.json --force`
-- Result: 199,319 rows; H=71,228, A=61,607, D=26,022, X=40,462
-- Segments: H=220 mean 12.951 s; A=216 mean 11.409 s; D=69 mean 15.085 s
-- Emission: valid=170,485, invalid=28,834; Smart Tagging conflicts=8,964
-- D provenance: Smart Tagging-only=19,203; forced-only=2,643; out-of-bounds-only=784; ball-rest-only=358; no current source=2,014
+- Result: 199,319 rows; H=70,469, A=60,093, D=28,295, X=40,462
+- Segments: H=207 mean 13.617 s; A=199 mean 12.079 s; D=101 mean 11.206 s
+- Emission: valid=134,876, invalid=64,443; contested=24,989; Smart Tagging conflicts=7,120
+- D provenance: Smart Tagging-only=19,984; forced-only=2,643; out-of-bounds-only=1,144; ball-rest-only=436; no current source=3,009
 - Smart Tagging dead evidence: 24,091 frames; overlap with tracking H/A=1,887
-- Output SHA-256: `866f02601da425e9545e073cf1c37de1146bd2b4b19d604173cbc14c834490a7`
+- Output SHA-256: `42e0469e45b4bb825d20c3c1a79930601ef4be651e9e08594203d5224fee7531`
 - Validator: project validator pass; official-format validator pass at commit
   `f8f2629ff1e0985f81d7e59d8413678514ee1530` (CRLF script SHA-256 matches
   `d716bf6fce9c8a8d334a9258a3bfca63b8153ae9cd98a4bf80fe0d04693af914`)
+  The official validator reports 406 possessions of mean 12.9 s; this is a format check only.
 - Generalisation: `GENERALISATION NOT ESTABLISHED`
 - Decision: engineering candidate is runnable; no model-performance or generalisation claim
 
@@ -59,5 +60,28 @@ Never paste competition rows, video frames or screenshots into this file.
 - Date: 2026-11-07
 - Run command: repeat E-B-003 to `outputs/candidate-b-repeat.csv`
 - Result: byte-identical output
-- SHA-256: `866f02601da425e9545e073cf1c37de1146bd2b4b19d604173cbc14c834490a7`
+- SHA-256: `42e0469e45b4bb825d20c3c1a79930601ef4be651e9e08594203d5224fee7531`
 - Decision: deterministic for the frozen input and configuration
+
+## E-B-005: Structural optimization iterations
+
+- Date: 2026-11-07
+- Ground truth: not read; public scoring not run
+- Optimization 1: split-contest gate (`contest_margin_m=1.5`) and stricter emission validity. If both teams are within the margin and the visible vote is split, the frame has no forced team candidate.
+- Optimization 2: H/A smoothing remains 50 frames, but D is kept sharper; sub-second D flicker is handled by a separate 5-frame dead-ball smoothing window.
+- Iteration results:
+  - Initial emission/Viterbi: 436 H/A possessions, 69 D segments, H/A mean 12.2 s, D mean 15.1 s, SHA `866f…`
+  - + contest gate + validity cleanup + D sharpening: 410 H/A, 107 D, H/A mean 12.7 s, D mean 10.6 s, SHA `3ec2…`
+  - + D short smoothing: 406 H/A, 101 D, H/A mean 12.9 s, D mean 11.2 s, SHA `42e0…`
+- Interpretation: the contest gate reduces forced team decisions; separate D smoothing reduces sub-second dead-ball flicker without blurring H/A. These are structural observations, not accuracy evidence.
+
+## E-B-006: Smart Tagging ablation
+
+- Date: 2026-11-07
+- Configuration: `configs/candidates/tang/candidate-b-no-smart.json`
+- Data: local tactical ATD only; Smart Tagging disabled
+- Ground truth: not read; public scoring not run
+- Result: H=76,213, A=73,054, D=9,590, X=40,462
+- Segments: H=175, A=177, D=81; H/A mean 16.9 s; D mean 4.7 s
+- Output SHA-256: `a11aece78192b27486e7de1298bc9722c69bc499c77a9b46af7e7431ac11ec6b`
+- Interpretation: without Smart Tagging, dead-ball frames collapse from 28,295 to 9,590 and D mean duration falls from 11.2 s to 4.7 s. Smart Tagging is materially contributing to D in this dataset, but the ablation cannot establish accuracy or generalisation.

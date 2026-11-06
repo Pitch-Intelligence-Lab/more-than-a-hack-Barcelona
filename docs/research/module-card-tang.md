@@ -107,6 +107,31 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
   --force
 ```
 
+消融配置：
+
+```bash
+MTAH_DATA_DIR=/mnt/d/mtah2027-data \
+  .venv/bin/python scripts/build_candidate_tang.py \
+  --output outputs/candidate-b-no-smart.csv \
+  --config configs/candidates/tang/candidate-b-no-smart.json \
+  --health-report outputs/candidate-b-no-smart.health.json \
+  --force
+```
+
+## 当前优化迭代
+
+以下数字是结构对照，不是准确率或泛化结论：
+
+| 迭代 | H/A possession | D 段 | H/A 平均时长 | D 平均时长 | SHA-256 |
+|---|---:|---:|---:|---:|---|
+| 初版 emission + Viterbi | 436 | 69 | 12.2 s | 15.1 s | `866f…` |
+| + 争夺球权门控 + 有效性清理 + D 锐化 | 410 | 107 | 12.7 s | 10.6 s | `3ec2…` |
+| + D 独立短时平滑 | 406 | 101 | 12.9 s | 11.2 s | `42e0…` |
+| 关闭 Smart Tagging 消融 | 352 | 81 | 16.9 s | 4.7 s | `a11a…` |
+
+夺权门控参数为 `contest_margin_m=1.5`：双方离球都近且可见投票分裂时，不强行给 H/A
+候选，由解码器保持上一状态。H/A 使用 50 帧平滑，D 使用 5 帧短平滑。
+
 ## 单元测试
 
 - 直接 H→A / A→H 切换

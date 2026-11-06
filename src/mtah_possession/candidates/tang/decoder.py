@@ -38,7 +38,7 @@ def _transitions(config: CandidateConfig, restart: bool) -> NDArray[np.float64]:
     return transition
 
 
-def _smooth_probabilities(
+def _rolling_mean(
     probabilities: NDArray[np.float64],
     half_width: int,
 ) -> NDArray[np.float64]:
@@ -49,6 +49,21 @@ def _smooth_probabilities(
     indices = np.arange(probabilities.shape[0])
     window = 2 * half_width + 1
     smoothed = (cumulative[indices + window] - cumulative[indices]) / window
+    return smoothed
+
+
+def _smooth_probabilities(
+    probabilities: NDArray[np.float64],
+    half_width: int,
+    dead_half_width: int,
+) -> NDArray[np.float64]:
+    if half_width <= 0 and dead_half_width <= 0:
+        return probabilities
+    smoothed = _rolling_mean(probabilities, half_width)
+    dead_smoothed = _rolling_mean(probabilities, dead_half_width)
+    # D has its own, much shorter time scale: sub-second flicker is removed,
+    # while an out-of-bounds or restart boundary stays sharp.
+    smoothed[:, D] = dead_smoothed[:, D]
     smoothed /= smoothed.sum(axis=1, keepdims=True)
     return smoothed
 
@@ -67,6 +82,7 @@ def _decode_block(
     probabilities = _smooth_probabilities(
         probabilities,
         config.integer("emission_smoothing_half_width_frames"),
+        config.integer("dead_smoothing_half_width_frames"),
     )
     logp = np.log(np.clip(probabilities, 1e-12, 1.0))
     dp = np.full((length, 3), -np.inf, dtype=np.float64)

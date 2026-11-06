@@ -3,9 +3,10 @@
 **Candidate name:** Tang Candidate B — Evidence → H/A/D Emission → Viterbi  
 **Git Commit:** `a2d8b55` (code, tests and handover on `research/tang/independent-v1`)  
 **Work branch:** `research/tang/independent-v1`  
-**Model overview:** L1 frame evidence, L2 normalized H/A/D emission probabilities with a centred
-temporal smoothing window, L3 three-state Viterbi decoder with explicit H/A/D transition costs,
-X/forced-block handling and conservative H/A flicker absorption.
+**Model overview:** L1 frame evidence with a split-contest gate, L2 normalized H/A/D emission
+probabilities with 50-frame H/A smoothing and 5-frame D smoothing, L3 three-state Viterbi decoder
+with explicit H/A/D transition costs, X/forced-block handling and conservative H/A flicker
+absorption.
 
 ## Module structure
 
@@ -64,7 +65,7 @@ Official-format validator: pass using official commit
 `f8f2629ff1e0985f81d7e59d8413678514ee1530`. The validator script's CRLF SHA-256 matches the
 Action Pack value `d716bf6fce9c8a8d334a9258a3bfca63b8153ae9cd98a4bf80fe0d04693af914`;
 the WSL/LF checkout hashes to `07ac29499acbd337e1dc1de1832d63f6e1fa1d981e22f6ad08212529e2bbee14`.
-The official validator reports 199,319 rows and 436 possessions of mean 12.2 s. This is a format
+The official validator reports 199,319 rows and 406 possessions of mean 12.9 s. This is a format
 check only, not an accuracy result.
 
 ## Legal evaluation evidence
@@ -76,28 +77,36 @@ five-minute ground truth was not used for training, tuning or model selection.
 
 ## Aggregate local result
 
-- Labels: H=71,228, A=61,607, D=26,022, X=40,462.
-- Segments: H=220, A=216, D=69.
-- Mean durations: H=12.951 s, A=11.409 s, D=15.085 s.
-- Output SHA-256: `866f02601da425e9545e073cf1c37de1146bd2b4b19d604173cbc14c834490a7`.
+- Labels: H=70,469, A=60,093, D=28,295, X=40,462.
+- Segments: H=207, A=199, D=101.
+- Mean durations: H=13.617 s, A=12.079 s, D=11.206 s.
+- Contested frames: 24,989; emission valid/invalid: 134,876 / 64,443.
+- Output SHA-256: `42e0469e45b4bb825d20c3c1a79930601ef4be651e9e08594203d5224fee7531`.
 - Repeat run: byte-identical.
 
 ## Main failure modes
 
 - Tracking candidates are still noisy; H/A segmentation remains higher than the conservative
   DP-005 state machine.
-- Smart Tagging team labels are phases, not possessions; 8,964 tracking/Smart-Tagging conflicts
+- Smart Tagging team labels are phases, not possessions; 7,120 tracking/Smart-Tagging conflicts
   remain explicit diagnostics.
-- Missing ball makes the emission invalid on 28,834 frames; Viterbi persistence handles them but
-  cannot recover evidence that is not present.
+- Missing/contested evidence makes the emission invalid on 64,443 frames; Viterbi persistence
+  handles them but cannot recover evidence that is not present.
 - No cross-match evidence; aggregate plausibility is not accuracy.
+
+## Ablation
+
+Disabling Smart Tagging in `configs/candidates/tang/candidate-b-no-smart.json` produces
+H=76,213, A=73,054, D=9,590, 352 H/A possessions and 81 D segments. It removes the long
+Smart-Tagging-assisted dead-ball stretches (D mean falls from 11.2 s to 4.7 s). This shows a
+material contribution to D in this dataset, not accuracy or generalisation.
 
 ## Known limitations
 
 - No calibrated probabilities; `normalized_probability` is a score interface, not a statistical
   calibration claim.
 - No external training, tuning, bootstrap or cross-match generalisation.
-- D source decomposition includes 2,014 final D frames with no current declared source, which are
+- D source decomposition includes 3,009 final D frames with no current declared source, which are
   decoder persistence/context rather than an independent evidence signal.
 
 ## Interface relationship to frozen base

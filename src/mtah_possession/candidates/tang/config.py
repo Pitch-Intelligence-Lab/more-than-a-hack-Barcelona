@@ -29,6 +29,7 @@ class CandidateConfig:
     pitch_width_m: float
     ungraded_blocks: tuple[tuple[int, int], ...]
     forced_dead_blocks: tuple[tuple[int, int], ...]
+    enable_smart_tagging: bool
     parameters: dict[str, CandidateParameter]
 
     def number(self, name: str) -> float:
@@ -52,6 +53,7 @@ REQUIRED_PARAMETERS = frozenset(
         "tracking_bonus",
         "smart_team_weight",
         "near_player_vote_k",
+        "contest_margin_m",
         "ball_rest_weight",
         "ball_rest_speed_mps",
         "ball_rest_min_s",
@@ -68,6 +70,7 @@ REQUIRED_PARAMETERS = frozenset(
         "smart_dead_speed_mps",
         "smart_dead_gap_s",
         "emission_smoothing_half_width_frames",
+        "dead_smoothing_half_width_frames",
     }
 )
 
@@ -176,15 +179,28 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
     vote_k = parameters["near_player_vote_k"].value
     if isinstance(vote_k, bool) or not isinstance(vote_k, int) or vote_k <= 0:
         raise CandidateConfigError("near_player_vote_k must be a positive integer")
+    _positive(parameters["contest_margin_m"].value, "contest_margin_m")
     smoothing = parameters["emission_smoothing_half_width_frames"].value
     if isinstance(smoothing, bool) or not isinstance(smoothing, int) or smoothing < 0:
         raise CandidateConfigError(
             "emission_smoothing_half_width_frames must be a non-negative integer"
         )
+    dead_smoothing = parameters["dead_smoothing_half_width_frames"].value
+    if (
+        isinstance(dead_smoothing, bool)
+        or not isinstance(dead_smoothing, int)
+        or dead_smoothing < 0
+    ):
+        raise CandidateConfigError(
+            "dead_smoothing_half_width_frames must be a non-negative integer"
+        )
 
     match_id = values.get("match_id")
     if not isinstance(match_id, str) or not match_id.strip():
         raise CandidateConfigError("match_id must be a non-empty string")
+    enable_smart_tagging = values.get("enable_smart_tagging", True)
+    if not isinstance(enable_smart_tagging, bool):
+        raise CandidateConfigError("enable_smart_tagging must be boolean")
 
     ungraded = _blocks(values.get("ungraded_blocks"), expected_frames, "ungraded_blocks")
     forced = _blocks(values.get("forced_dead_blocks"), expected_frames, "forced_dead_blocks")
@@ -201,5 +217,6 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
         pitch_width_m=pitch_width,
         ungraded_blocks=ungraded,
         forced_dead_blocks=forced,
+        enable_smart_tagging=enable_smart_tagging,
         parameters=parameters,
     )

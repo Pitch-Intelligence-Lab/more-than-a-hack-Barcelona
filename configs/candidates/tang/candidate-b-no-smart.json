@@ -1,0 +1,165 @@
+{
+  "schema_version": "candidate-b-1",
+  "match_id": "BAR-ATH",
+  "fps": 25,
+  "expected_frames": 199319,
+  "pitch": {
+    "length_m": 105.3,
+    "width_m": 68.0
+  },
+  "ungraded_blocks": [
+    [0, 11184],
+    [90652, 110807],
+    [190198, 199318]
+  ],
+  "forced_dead_blocks": [
+    [110808, 113741]
+  ],
+  "enable_smart_tagging": false,
+  "parameters": {
+    "ball_interpolation_max_s": {
+      "value": 0.4,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Retain only short internally bracketed ball gaps."
+    },
+    "distance_scale_m": {
+      "value": 8.0,
+      "unit": "m",
+      "source": "engineering-assumption",
+      "rationale": "Scale nearest-player distance into an H/A emission logit."
+    },
+    "vote_weight": {
+      "value": 0.8,
+      "unit": "weight",
+      "source": "general-football-prior",
+      "rationale": "Use visible-player neighbourhood vote as a second team signal."
+    },
+    "tracking_bonus": {
+      "value": 2.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Give a finite tracking candidate priority over weak phase priors."
+    },
+    "smart_team_weight": {
+      "value": 0.7,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Use Smart Tagging team only when tracking has no candidate."
+    },
+    "near_player_vote_k": {
+      "value": 3,
+      "unit": "players",
+      "source": "general-football-prior",
+      "rationale": "Small neighbourhood vote reduces single-slot noise."
+    },
+    "contest_margin_m": {
+      "value": 1.5,
+      "unit": "m",
+      "source": "general-football-prior",
+      "rationale": "If both teams are this close to the ball and the visible vote is split, keep the team unresolved."
+    },
+    "ball_rest_weight": {
+      "value": 1.5,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Sustained visible ball rest contributes to D."
+    },
+    "ball_rest_speed_mps": {
+      "value": 0.5,
+      "unit": "m/s",
+      "source": "engineering-assumption",
+      "rationale": "Tolerance around a stationary ball."
+    },
+    "ball_rest_min_s": {
+      "value": 1.5,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Minimum sustained rest before it contributes to D."
+    },
+    "out_of_bounds_weight": {
+      "value": 1.2,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "A visible ball outside the normalized pitch is geometric D evidence."
+    },
+    "smart_dead_weight": {
+      "value": 1.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "A restart-anchored Smart Tagging dead-ball prior contributes to D."
+    },
+    "restart_suppression": {
+      "value": 0.8,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Restart evidence lowers the D score once the restart window begins."
+    },
+    "emission_smoothing_half_width_frames": {
+      "value": 50,
+      "unit": "frames",
+      "source": "general-football-prior",
+      "rationale": "A two-second centred smoothing window reduces tracking noise before temporal decoding."
+    },
+    "dead_smoothing_half_width_frames": {
+      "value": 5,
+      "unit": "frames",
+      "source": "engineering-assumption",
+      "rationale": "Keep dead-ball boundaries much sharper than H/A while removing sub-second D flicker."
+    },
+    "switch_penalty": {
+      "value": 2.5,
+      "unit": "logit",
+      "source": "general-football-prior",
+      "rationale": "Team changes have a cost but remain possible without a D bridge."
+    },
+    "dead_enter_penalty": {
+      "value": 1.5,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Entering D requires more than a single weak frame."
+    },
+    "restart_penalty": {
+      "value": 2.0,
+      "unit": "logit",
+      "source": "general-football-prior",
+      "rationale": "Leaving D requires a restart/team transition."
+    },
+    "restart_boost": {
+      "value": 1.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Active restart evidence reduces the D-to-team transition cost."
+    },
+    "min_flicker_frames": {
+      "value": 3,
+      "unit": "frames",
+      "source": "general-football-prior",
+      "rationale": "Absorb only very short H/A flicker bracketed by the same state."
+    },
+    "smart_restart_offset_s": {
+      "value": 4.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Set-piece tag windows open a few seconds before the restart."
+    },
+    "smart_dead_lookback_s": {
+      "value": 30.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Bound backward dead-ball search before a tagged restart."
+    },
+    "smart_dead_speed_mps": {
+      "value": 1.0,
+      "unit": "m/s",
+      "source": "engineering-assumption",
+      "rationale": "Missing or slow ball can belong to a pre-restart dead-ball run."
+    },
+    "smart_dead_gap_s": {
+      "value": 0.5,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Allow brief tracking blips inside a dead-ball run."
+    }
+  }
+}

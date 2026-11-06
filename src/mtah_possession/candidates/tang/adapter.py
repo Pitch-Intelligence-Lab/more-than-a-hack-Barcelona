@@ -24,7 +24,7 @@ from .config import CandidateConfig, load_candidate_config
 from .decoder import decode
 from .emission import Emission, build_emission
 from .features import FrameFeatures, build_features
-from .smart_tagging import build_smart_evidence, load_tags
+from .smart_tagging import SmartEvidence, build_smart_evidence, load_tags
 
 
 @dataclass(frozen=True)
@@ -114,6 +114,7 @@ def _health(
         "emission_invalid_frames": int((~emission.valid).sum()),
         "emission_mean_confidence": float(emission.confidence.mean()),
         "smart_conflict_frames": int(features.smart_conflict.sum()),
+        "contested_frames": int(features.contested.sum()),
         "smart_dead_frames": int(features.smart_dead.sum()),
         "smart_restart_frames": int(features.smart_restart.sum()),
         "smart_dead_tracking_overlap": int(
@@ -136,10 +137,10 @@ def build_candidate(
 ) -> CandidateBuildResult:
     config = load_candidate_config(config_path)
     settings = load_settings(data_root, match_id=config.match_id)
-    paths = require_tactical_assets(
-        settings,
-        ("atd_meta", "atd_raw", "smart_tagging"),
-    )
+    asset_names = ["atd_meta", "atd_raw"]
+    if config.enable_smart_tagging:
+        asset_names.append("smart_tagging")
+    paths = require_tactical_assets(settings, tuple(asset_names))
     tracking = load_tactical_tracking(
         settings.root,
         expected_frames=config.expected_frames,
@@ -150,23 +151,30 @@ def build_candidate(
         fps=config.fps,
         max_interpolation_gap_s=config.number("ball_interpolation_max_s"),
     )
-    tags = load_tags(
-        paths["smart_tagging"],
-        fps=config.fps,
-        frame_count=tracking.frame_count,
-    )
-    smart = build_smart_evidence(
-        tracking.frame_count,
-        tags,
-        observations,
-        fps=config.fps,
-        pitch_length_m=config.pitch_length_m,
-        pitch_width_m=config.pitch_width_m,
-        restart_offset_s=config.number("smart_restart_offset_s"),
-        dead_lookback_s=config.number("smart_dead_lookback_s"),
-        dead_speed_mps=config.number("smart_dead_speed_mps"),
-        dead_gap_s=config.number("smart_dead_gap_s"),
-    )
+    if config.enable_smart_tagging:
+        tags = load_tags(
+            paths["smart_tagging"],
+            fps=config.fps,
+            frame_count=tracking.frame_count,
+        )
+        smart = build_smart_evidence(
+            tracking.frame_count,
+            tags,
+            observations,
+            fps=config.fps,
+            pitch_length_m=config.pitch_length_m,
+            pitch_width_m=config.pitch_width_m,
+            restart_offset_s=config.number("smart_restart_offset_s"),
+            dead_lookback_s=config.number("smart_dead_lookback_s"),
+            dead_speed_mps=config.number("smart_dead_speed_mps"),
+            dead_gap_s=config.number("smart_dead_gap_s"),
+        )
+    else:
+        smart = SmartEvidence(
+            team_prior=np.full(tracking.frame_count, -1, dtype=np.int8),
+            restart=np.zeros(tracking.frame_count, dtype=bool),
+            dead=np.zeros(tracking.frame_count, dtype=bool),
+        )
     features = build_features(tracking, observations, smart, config)
     emission = build_emission(features, config)
     decoded = decode(emission, features, config)
@@ -177,9 +185,7 @@ def build_candidate(
         expected_frames=config.expected_frames,
     )
     validation = validate_submission(destination, expected_rows=config.expected_frames)
-    input_sha256 = {
-        name: sha256_file(paths[name]) for name in ("atd_meta", "atd_raw", "smart_tagging")
-    }
+    input_sha256 = {name: sha256_file(paths[name]) for name in asset_names}
     health = _health(
         decoded.labels,
         emission,
