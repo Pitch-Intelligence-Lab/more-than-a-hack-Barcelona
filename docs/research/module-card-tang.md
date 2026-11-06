@@ -127,10 +127,23 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 | 初版 emission + Viterbi | 436 | 69 | 12.2 s | 15.1 s | `866f…` |
 | + 争夺球权门控 + 有效性清理 + D 锐化 | 410 | 107 | 12.7 s | 10.6 s | `3ec2…` |
 | + D 独立短时平滑 | 406 | 101 | 12.9 s | 11.2 s | `42e0…` |
-| 关闭 Smart Tagging 消融 | 352 | 81 | 16.9 s | 4.7 s | `a11a…` |
+| + 低置信短片段过滤 | 406 | 101 | 12.9 s | 11.2 s | `42e0…` |
+| + 5 m 控制区上限 | 384 | 96 | 13.5 s | 12.3 s | `db24…` |
+| 关闭 Smart Tagging 消融 | 333 | 72 | 17.6 s | 6.7 s | `8f2a…` |
 
 夺权门控参数为 `contest_margin_m=1.5`：双方离球都近且可见投票分裂时，不强行给 H/A
-候选，由解码器保持上一状态。H/A 使用 50 帧平滑，D 使用 5 帧短平滑。
+候选，由解码器保持上一状态。H/A 使用 50 帧平滑，D 使用 5 帧短平滑。最近球员超过
+`max_control_distance_m=5` 时，球被视为不在明确控制区内，同样不强行给 H/A。
+
+## 文献依据
+
+- R-01 `arXiv:2202.00804`：possession zone / duel zone，支持控制区和争抢门控。
+- R-02 `arXiv:2005.04020`：possession interval 和 duel 作为控球变化事件。
+- R-03 `arXiv:2311.18028`：segment-level duration/confidence filtering。
+- R-04 `arXiv:2206.10926`：change-point segmentation，作为后续 L3 比较方向。
+
+详见 `docs/research/reference-register-tang.md`。这些只用于方法启发，没有复制代码、外部标签或
+比赛数据。
 
 ## 单元测试
 

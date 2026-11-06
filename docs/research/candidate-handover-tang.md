@@ -3,10 +3,10 @@
 **Candidate name:** Tang Candidate B — Evidence → H/A/D Emission → Viterbi  
 **Git Commit:** `bbc4d89` (optimized Candidate B; initial implementation `a2d8b55`)  
 **Work branch:** `research/tang/independent-v1`  
-**Model overview:** L1 frame evidence with a split-contest gate, L2 normalized H/A/D emission
-probabilities with 50-frame H/A smoothing and 5-frame D smoothing, L3 three-state Viterbi decoder
-with explicit H/A/D transition costs, X/forced-block handling and conservative H/A flicker
-absorption.
+**Model overview:** L1 frame evidence with a split-contest gate and 5 m control-zone limit, L2
+normalized H/A/D emission probabilities with 50-frame H/A smoothing and 5-frame D smoothing, L3
+three-state Viterbi decoder with explicit transition costs, low-confidence segment filtering,
+X/forced-block handling and conservative H/A flicker absorption.
 
 ## Module structure
 
@@ -51,9 +51,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 8 passed.
-- Full repository: 72 passed (64 frozen + 8 candidate).
-- `pytest -W error`: 72 passed.
+- Candidate synthetic tests: 13 passed.
+- Full repository: 77 passed (64 frozen + 13 candidate).
+- `pytest -W error`: 77 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
@@ -65,7 +65,7 @@ Official-format validator: pass using official commit
 `f8f2629ff1e0985f81d7e59d8413678514ee1530`. The validator script's CRLF SHA-256 matches the
 Action Pack value `d716bf6fce9c8a8d334a9258a3bfca63b8153ae9cd98a4bf80fe0d04693af914`;
 the WSL/LF checkout hashes to `07ac29499acbd337e1dc1de1832d63f6e1fa1d981e22f6ad08212529e2bbee14`.
-The official validator reports 199,319 rows and 406 possessions of mean 12.9 s. This is a format
+The official validator reports 199,319 rows and 384 possessions of mean 13.5 s. This is a format
 check only, not an accuracy result.
 
 ## Legal evaluation evidence
@@ -77,28 +77,29 @@ five-minute ground truth was not used for training, tuning or model selection.
 
 ## Aggregate local result
 
-- Labels: H=70,469, A=60,093, D=28,295, X=40,462.
-- Segments: H=207, A=199, D=101.
-- Mean durations: H=13.617 s, A=12.079 s, D=11.206 s.
-- Contested frames: 24,989; emission valid/invalid: 134,876 / 64,443.
-- Output SHA-256: `42e0469e45b4bb825d20c3c1a79930601ef4be651e9e08594203d5224fee7531`.
+- Labels: H=70,172, A=59,055, D=29,630, X=40,462.
+- Segments: H=195, A=189, D=96.
+- Mean durations: H=14.394 s, A=12.498 s, D=12.346 s.
+- Contested frames: 24,989; loose-ball frames: 29,815; emission valid/invalid: 115,166 / 84,153.
+- Output SHA-256: `db2400dc0de196e814438401797326c358c1d8c2486e0cd22c24aab182127b69`.
 - Repeat run: byte-identical.
 
 ## Main failure modes
 
 - Tracking candidates are still noisy; H/A segmentation remains higher than the conservative
   DP-005 state machine.
-- Smart Tagging team labels are phases, not possessions; 7,120 tracking/Smart-Tagging conflicts
+- Smart Tagging team labels are phases, not possessions; 4,400 tracking/Smart-Tagging conflicts
   remain explicit diagnostics.
-- Missing/contested evidence makes the emission invalid on 64,443 frames; Viterbi persistence
-  handles them but cannot recover evidence that is not present.
+- Missing/contested/loose-ball evidence makes the emission invalid on 84,153 frames; Viterbi
+  persistence handles them but cannot recover evidence that is not present. The 5 m control limit
+  improves continuity at the cost of more abstention.
 - No cross-match evidence; aggregate plausibility is not accuracy.
 
 ## Ablation
 
 Disabling Smart Tagging in `configs/candidates/tang/candidate-b-no-smart.json` produces
-H=76,213, A=73,054, D=9,590, 352 H/A possessions and 81 D segments. It removes the long
-Smart-Tagging-assisted dead-ball stretches (D mean falls from 11.2 s to 4.7 s). This shows a
+H=74,122, A=72,761, D=11,974, 333 H/A possessions and 72 D segments. It removes the long
+Smart-Tagging-assisted dead-ball stretches (D mean falls from 12.3 s to 6.7 s). This shows a
 material contribution to D in this dataset, not accuracy or generalisation.
 
 ## Known limitations
@@ -106,7 +107,7 @@ material contribution to D in this dataset, not accuracy or generalisation.
 - No calibrated probabilities; `normalized_probability` is a score interface, not a statistical
   calibration claim.
 - No external training, tuning, bootstrap or cross-match generalisation.
-- D source decomposition includes 3,009 final D frames with no current declared source, which are
+- D source decomposition includes 3,270 final D frames with no current declared source, which are
   decoder persistence/context rather than an independent evidence signal.
 
 ## Interface relationship to frozen base

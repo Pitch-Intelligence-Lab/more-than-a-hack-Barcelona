@@ -115,6 +115,7 @@ def _health(
         "emission_mean_confidence": float(emission.confidence.mean()),
         "smart_conflict_frames": int(features.smart_conflict.sum()),
         "contested_frames": int(features.contested.sum()),
+        "loose_ball_frames": int(features.loose_ball.sum()),
         "smart_dead_frames": int(features.smart_dead.sum()),
         "smart_restart_frames": int(features.smart_restart.sum()),
         "smart_dead_tracking_overlap": int(

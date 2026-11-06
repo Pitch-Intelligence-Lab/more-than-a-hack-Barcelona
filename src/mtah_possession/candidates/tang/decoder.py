@@ -137,6 +137,51 @@ def _absorb_short_flicker(labels: NDArray[np.str_], min_frames: int) -> None:
         index = stop
 
 
+def _filter_low_confidence_short_segments(
+    labels: NDArray[np.str_],
+    confidence: NDArray[np.float64],
+    forced: NDArray[np.bool_],
+    config: CandidateConfig,
+) -> None:
+    """Filter short low-confidence segments using segment-level evidence."""
+
+    for _ in range(3):
+        changed = False
+        index = 0
+        while index < labels.size:
+            if labels[index] == "X":
+                index += 1
+                continue
+            label = labels[index]
+            stop = index + 1
+            while stop < labels.size and labels[stop] == label:
+                stop += 1
+            if label in {"H", "A"}:
+                limit = config.integer("short_segment_frames")
+                threshold = config.number("short_segment_confidence")
+            elif label == "D":
+                limit = config.integer("short_dead_frames")
+                threshold = config.number("short_dead_confidence")
+            else:
+                index = stop
+                continue
+            if (
+                limit > 0
+                and stop - index < limit
+                and not forced[index:stop].any()
+                and float(confidence[index:stop].mean()) < threshold
+                and index > 0
+                and stop < labels.size
+                and labels[index - 1] == labels[stop]
+                and labels[index - 1] in {"H", "A"}
+            ):
+                labels[index:stop] = labels[index - 1]
+                changed = True
+            index = stop
+        if not changed:
+            break
+
+
 def decode(emission: Emission, features: FrameFeatures, config: CandidateConfig) -> Decoded:
     count = emission.probabilities.shape[0]
     labels = np.full(count, "X", dtype="<U1")
@@ -165,5 +210,12 @@ def decode(emission: Emission, features: FrameFeatures, config: CandidateConfig)
         confidence[index:stop] = block_confidence
         index = stop
 
+    _absorb_short_flicker(labels, config.integer("min_flicker_frames"))
+    _filter_low_confidence_short_segments(
+        labels,
+        confidence,
+        forced,
+        config,
+    )
     _absorb_short_flicker(labels, config.integer("min_flicker_frames"))
     return Decoded(labels=labels, confidence=confidence)

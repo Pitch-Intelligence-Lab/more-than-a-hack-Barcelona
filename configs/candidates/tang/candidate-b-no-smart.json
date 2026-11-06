@@ -59,6 +59,12 @@
       "source": "general-football-prior",
       "rationale": "If both teams are this close to the ball and the visible vote is split, keep the team unresolved."
     },
+    "max_control_distance_m": {
+      "value": 5.0,
+      "unit": "m",
+      "source": "literature-based",
+      "rationale": "The FIFA/MIT possession-zone study uses 0.5-1 m control zones with accurate tracking; 5 m is a noise-tolerant upper bound for automatic tactical tracking. Outside it, leave the team unresolved."
+    },
     "ball_rest_weight": {
       "value": 1.5,
       "unit": "logit",
@@ -136,6 +142,30 @@
       "unit": "frames",
       "source": "general-football-prior",
       "rationale": "Absorb only very short H/A flicker bracketed by the same state."
+    },
+    "short_segment_frames": {
+      "value": 10,
+      "unit": "frames",
+      "source": "engineering-assumption",
+      "rationale": "Candidate H/A segments shorter than 0.4 seconds are filtered only when confidence is low."
+    },
+    "short_segment_confidence": {
+      "value": 0.55,
+      "unit": "probability",
+      "source": "engineering-assumption",
+      "rationale": "Low-confidence short segments may be merged; high-confidence quick switches are preserved."
+    },
+    "short_dead_frames": {
+      "value": 10,
+      "unit": "frames",
+      "source": "engineering-assumption",
+      "rationale": "A sub-second D segment between the same team is treated as flicker only when confidence is low."
+    },
+    "short_dead_confidence": {
+      "value": 0.55,
+      "unit": "probability",
+      "source": "engineering-assumption",
+      "rationale": "High-confidence short dead-ball evidence is preserved."
     },
     "smart_restart_offset_s": {
       "value": 4.0,

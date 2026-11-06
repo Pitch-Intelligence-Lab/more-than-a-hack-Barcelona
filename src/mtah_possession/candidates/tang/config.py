@@ -54,6 +54,7 @@ REQUIRED_PARAMETERS = frozenset(
         "smart_team_weight",
         "near_player_vote_k",
         "contest_margin_m",
+        "max_control_distance_m",
         "ball_rest_weight",
         "ball_rest_speed_mps",
         "ball_rest_min_s",
@@ -65,6 +66,10 @@ REQUIRED_PARAMETERS = frozenset(
         "restart_penalty",
         "restart_boost",
         "min_flicker_frames",
+        "short_segment_frames",
+        "short_segment_confidence",
+        "short_dead_frames",
+        "short_dead_confidence",
         "smart_restart_offset_s",
         "smart_dead_lookback_s",
         "smart_dead_speed_mps",
@@ -180,6 +185,7 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
     if isinstance(vote_k, bool) or not isinstance(vote_k, int) or vote_k <= 0:
         raise CandidateConfigError("near_player_vote_k must be a positive integer")
     _positive(parameters["contest_margin_m"].value, "contest_margin_m")
+    _positive(parameters["max_control_distance_m"].value, "max_control_distance_m")
     smoothing = parameters["emission_smoothing_half_width_frames"].value
     if isinstance(smoothing, bool) or not isinstance(smoothing, int) or smoothing < 0:
         raise CandidateConfigError(
@@ -194,6 +200,14 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
         raise CandidateConfigError(
             "dead_smoothing_half_width_frames must be a non-negative integer"
         )
+    for name in ("short_segment_frames", "short_dead_frames"):
+        value = parameters[name].value
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise CandidateConfigError(f"{name} must be a non-negative integer")
+    for name in ("short_segment_confidence", "short_dead_confidence"):
+        value = _non_negative(parameters[name].value, name)
+        if value > 1:
+            raise CandidateConfigError(f"{name} must be between 0 and 1")
 
     match_id = values.get("match_id")
     if not isinstance(match_id, str) or not match_id.strip():

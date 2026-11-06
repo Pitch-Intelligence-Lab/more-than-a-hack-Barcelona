@@ -9,7 +9,10 @@ from helpers import make_data_root
 
 from mtah_possession.candidates.tang.adapter import build_candidate
 from mtah_possession.candidates.tang.config import load_candidate_config
-from mtah_possession.candidates.tang.decoder import decode
+from mtah_possession.candidates.tang.decoder import (
+    _filter_low_confidence_short_segments,
+    decode,
+)
 from mtah_possession.candidates.tang.emission import Emission, build_emission
 from mtah_possession.candidates.tang.features import FrameFeatures, build_features
 from mtah_possession.candidates.tang.smart_tagging import (
@@ -81,6 +84,7 @@ def features_stub(
         ball_rest_s=np.asarray(ball_rest or [0.0] * count),
         out_of_bounds=np.asarray(out_of_bounds or [False] * count),
         contested=np.zeros(count, dtype=bool),
+        loose_ball=np.zeros(count, dtype=bool),
         smart_team=np.full(count, NO_CANDIDATE, dtype=np.int8),
         smart_restart=np.asarray(smart_restart or [False] * count),
         smart_dead=np.asarray(smart_dead or [False] * count),
@@ -189,6 +193,28 @@ def test_out_of_bounds_is_geometric_dead_evidence() -> None:
     assert emission.probabilities[0, 2] > emission.probabilities[0, AWAY]
 
 
+def test_ball_outside_control_radius_has_no_forced_team_candidate() -> None:
+    config = load_candidate_config(CONFIG_PATH)
+    data = tracking(
+        ball=[[0.5, 0.5]],
+        slots=[[[0.9, 0.5], [0.8, 0.5]]],
+        teams=[HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+    smart = SmartEvidence(
+        team_prior=np.asarray([NO_CANDIDATE], dtype=np.int8),
+        restart=np.zeros(1, dtype=bool),
+        dead=np.zeros(1, dtype=bool),
+    )
+
+    features = build_features(data, observations, smart, config)
+    emission = build_emission(features, config)
+
+    assert features.loose_ball.tolist() == [True]
+    assert features.tracking_candidate.tolist() == [NO_CANDIDATE]
+    assert emission.valid.tolist() == [False]
+
+
 def test_decoder_direct_team_switch_and_missing_ball_persistence(tmp_path: Path) -> None:
     config = small_config(tmp_path, 40, graded_only=True)
     tracking_candidate = [HOME] * 20 + [AWAY] * 20
@@ -243,6 +269,44 @@ def test_decoder_respects_ungraded_and_forced_blocks(tmp_path: Path) -> None:
     assert result.labels[:5].tolist() == ["X"] * 5
     assert result.labels[-5:].tolist() == ["X"] * 5
     assert result.labels[10:15].tolist() == ["D"] * 5
+
+
+def test_low_confidence_short_segments_are_filtered(tmp_path: Path) -> None:
+    config = small_config(tmp_path, 25, graded_only=True)
+    labels = np.asarray(["H"] * 10 + ["D"] * 5 + ["H"] * 10, dtype="<U1")
+    confidence = np.full(25, 0.8, dtype=np.float64)
+    confidence[10:15] = 0.4
+    _filter_low_confidence_short_segments(
+        labels,
+        confidence,
+        np.zeros(25, dtype=bool),
+        config,
+    )
+    assert "D" not in labels
+
+    labels = np.asarray(["H"] * 10 + ["A"] * 5 + ["H"] * 10, dtype="<U1")
+    confidence = np.full(25, 0.8, dtype=np.float64)
+    confidence[10:15] = 0.4
+    _filter_low_confidence_short_segments(
+        labels,
+        confidence,
+        np.zeros(25, dtype=bool),
+        config,
+    )
+    assert "A" not in labels
+
+
+def test_high_confidence_short_segment_is_preserved(tmp_path: Path) -> None:
+    config = small_config(tmp_path, 25, graded_only=True)
+    labels = np.asarray(["H"] * 10 + ["A"] * 5 + ["H"] * 10, dtype="<U1")
+    confidence = np.full(25, 0.9, dtype=np.float64)
+    _filter_low_confidence_short_segments(
+        labels,
+        confidence,
+        np.zeros(25, dtype=bool),
+        config,
+    )
+    assert labels[10:15].tolist() == ["A"] * 5
 
 
 def test_smart_tagging_restart_and_dead_windows_do_not_overlap(tmp_path: Path) -> None:
