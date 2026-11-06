@@ -1,7 +1,7 @@
 # Candidate Handover Card — Tang Candidate B
 
 **Candidate name:** Tang Candidate B — Evidence → H/A/D Emission → Viterbi  
-**Git Commit:** `bbc4d89` (optimized Candidate B; initial implementation `a2d8b55`)  
+**Git Commit:** `cbab63a` (literature-informed control-zone and segment filtering; initial implementation `a2d8b55`)  
 **Work branch:** `research/tang/independent-v1`  
 **Model overview:** L1 frame evidence with a split-contest gate and 5 m control-zone limit, L2
 normalized H/A/D emission probabilities with 50-frame H/A smoothing and 5-frame D smoothing, L3
