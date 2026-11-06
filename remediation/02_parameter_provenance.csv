@@ -1,0 +1,19 @@
+parameter,current_value,code_location,purpose,source_tag,evidence,public_gt_influence,status,proposed_action
+candidate_confirmation_s,0.8,configs/candidate-a.json,直接 H/A 转换所需的持续证据,general-football-prior,0.8 s 持续证据,none,RETAIN,外部队列验证
+restart_confirmation_s,0.4,configs/candidate-a.json,D 退出到球队状态的重启确认,general-football-prior,重启上下文比开放进攻更清晰,none,RETAIN,外部队列验证
+restart_evidence_confirmation_s,0.2,configs/candidate-a.json,有独立重启证据时的 D 退出,engineering-assumption,仅缩短 D 到球队的确认,none,REVIEW,合成测试 S10/S11
+dead_ball_confirmation_s,0.8,configs/candidate-a.json,进入 D 所需的持续证据,engineering-assumption,避免单帧噪声,none,RETAIN,外部队列验证
+ball_rest_min_s,1.5,configs/candidate-a.json,球静止时长门槛,engineering-assumption,快速界外球也需超过 1 s,none,REVIEW,合成测试 S08/S18
+ball_rest_speed_mps,0.5,configs/candidate-a.json,静止速度阈值,engineering-assumption,追踪噪声容差,none,REVIEW,合成测试 S08
+near_player_vote_k,3,configs/candidate-a.json,局部球员投票邻域,general-football-prior,单帧单人不稳,none,RETAIN,无
+ball_interpolation_max_s,0.4,configs/candidate-a.json,球轨迹插值上限,engineering-assumption,短缺口保留局部上下文,none,RETAIN,合成测试 S12
+cleanup_short_flicker_max_s,0.24,configs/candidate-a.json,短 flicker 吸收,general-football-prior,只吸收两侧同状态的短段,none,RETAIN,无
+enable_out_of_play_dead_ball,true,src/mtah_possession/features/evidence.py,启用出界死球证据,engineering-assumption,球心越线是规则先验,none,REVIEW,合成测试 S09/S10/S11
+out_of_play_margin_m,0.3,src/mtah_possession/features/dead_ball.py,出界余量,engineering-assumption,球半径加追踪误差,none,REVIEW,边线噪声验证
+use_restart_zone_dead_ball,true,src/mtah_possession/features/evidence.py,重启区+静止组合,engineering-assumption,重启区静止球更可能是死球,none,REVIEW,合成测试 S18
+restart_zone_radius_m,8.0,configs/candidate-a.json,重启区半径,engineering-assumption,通用重启锚点附近,none,REVIEW,外部数据验证
+use_team_motion_dead_ball,true,src/mtah_possession/features/evidence.py,全队低速+静止组合,engineering-assumption,停摆时全队接近步行速度,none,REVIEW,合成测试 S08
+team_motion_dead_mps,1.0,src/mtah_possession/features/dead_ball.py,全队低速阈值,engineering-assumption,慢跑约 2 m/s,none,REVIEW,外部数据验证
+team_motion_scale_mps,0.5,src/mtah_possession/features/dead_ball.py,低速门控尺度,engineering-assumption,软阈值过渡,none,REVIEW,外部数据验证
+ungraded_blocks,official,configs/candidate-a.json,未评分帧块,official-fact,官方发布边界,none,RETAIN,无
+forced_dead_blocks,official,configs/candidate-a.json,强制死球块,official-fact,下半场开球边界,none,RETAIN,无

@@ -12,6 +12,7 @@ from mtah_possession.algorithm_config import StateEngineConfig
 from mtah_possession.data.observations import BallObservations, BallQuality
 from mtah_possession.data.tracking import TrackingData
 from mtah_possession.features.ball import AWAY, HOME, NO_CANDIDATE
+from mtah_possession.features.dead_ball import out_of_play_evidence, team_motion_evidence
 
 _DISTANCE_TOLERANCE_M2 = 1e-6
 
@@ -368,6 +369,34 @@ def build_evidence_series(
     dead = np.zeros(tracking.frame_count, dtype=bool)
     if config.flag("use_ball_rest_dead_ball"):
         dead |= motion.resting_now & (motion.rest_duration_s >= config.number("ball_rest_min_s"))
+    if config.flag("enable_out_of_play_dead_ball"):
+        dead |= out_of_play_evidence(
+            observations.positions,
+            usable,
+            pitch_length_m=config.pitch_length_m,
+            pitch_width_m=config.pitch_width_m,
+            margin_m=config.number("out_of_play_margin_m"),
+        )
+    if config.flag("use_restart_zone_dead_ball"):
+        dead |= (
+            np.isfinite(restart_distance)
+            & (restart_distance <= config.number("restart_zone_radius_m"))
+            & (motion.rest_duration_s >= config.number("ball_rest_min_s"))
+        )
+    if config.flag("use_team_motion_dead_ball"):
+        team_motion = team_motion_evidence(
+            tracking.slot_speeds,
+            frame_count=tracking.frame_count,
+        )
+        with np.errstate(over="ignore", under="ignore"):
+            motion_gate = 1.0 / (
+                1.0
+                + np.exp(
+                    (team_motion - config.number("team_motion_dead_mps"))
+                    / config.number("team_motion_scale_mps")
+                )
+            )
+        dead |= (motion_gate >= 0.5) & (motion.rest_duration_s >= config.number("ball_rest_min_s"))
     restart_evidence = np.zeros(tracking.frame_count, dtype=bool)
     if config.flag("enable_restart_zone"):
         restart_evidence |= np.isfinite(restart_distance) & (
