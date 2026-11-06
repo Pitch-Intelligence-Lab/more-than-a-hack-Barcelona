@@ -1,7 +1,7 @@
 # 06 — Candidate Handover Card（候选 A）
 
 - 候选名称：Candidate A — dead-ball evidence expansion
-- Git Commit：`9b98121`
+- Git Commit：`a4cec76`
 - 工作分支：`research/mo/independent-v1`
 - 工作区：`E:\mtah2027-research\mo`
 - 功能层：L2 Observation
@@ -26,6 +26,7 @@
 | `src/mtah_possession/algorithm_config.py` | 可选参数注入与校验（旧配置自动使用默认值） |
 | `configs/candidate-a.json` | 候选 A 配置 |
 | `tests/test_dead_ball_evidence.py` | 合成单元与集成测试 |
+| `tests/test_candidate_scenarios.py` | 出界回场、直接转换、crowded box、缺失球、重启区隔离等 11 个场景 |
 
 ## 运行环境与依赖
 
@@ -43,7 +44,7 @@ ruff 0.17.3
 - 输入：tactical ATD，经 `MTAH_DATA_DIR=E:\mtah2027-data`
 - 输出：`frame,label`，199,319 行，标签 `H/A/D/X`
 - 候选输出：`outputs/submission-candidate-a.csv`
-- SHA-256：`acdb3e86fcdf8d1304f45e87b708232e0318616b60164c8354f77a7969fcb398`
+- SHA-256：`23089351f6279c887465eb66c32b94a143acdeaf339a240babe659833ad4e23e`
 
 ## 复现命令
 
@@ -60,10 +61,10 @@ MTAH_DATA_DIR=E:/mtah2027-data \
 ## 测试与校验
 
 ```text
-pytest -q                 71 passed
-pytest -W error -q        71 passed
+pytest -q                 82 passed
+pytest -W error -q        82 passed
 ruff check .              All checks passed
-ruff format --check .     53 files already formatted
+ruff format --check .     56 files already formatted
 project validator         OK
 official validator        Valid
 ```
@@ -72,11 +73,17 @@ official validator        Valid
 
 | 指标 | DP-005 | Candidate A |
 |---|---:|---:|
-| H | 79,250 | 75,900 |
-| A | 73,608 | 70,622 |
-| D | 5,999 | **12,335** |
+| H | 79,250 | 75,453 |
+| A | 73,608 | 70,626 |
+| D | 5,999 | **12,778** |
 | X | 40,462 | 40,462 |
 | D segments | 20 | 52 |
+
+## 修正记录
+
+- 首轮候选输出 D=12,335；团队运动门控符号写反（高速被判死、低速反而没死），已修正为低运动才提高死球门控。
+- 修正后重建：D=12,778，哈希 `23089351…`。
+- 新增 11 个合成场景；全量测试从 71 增至 82 passed。
 
 ## 合法评价证据
 
@@ -94,7 +101,7 @@ GENERALISATION NOT ESTABLISHED
 - 全队低速可能把“回撤/等待”误判为死球；当前只在球静止时组合。
 - 重启区使用通用锚点，不等于真实重启发生。
 - 新增 D 段是否对应真实死球，没有外部标签无法确认。
-- 未验证快速攻守转换、crowded box 和不同数据供应商。
+- 未验证不同数据供应商、不同 fps 和真实拥挤禁区。
 
 ## 与冻结底座的接口关系
 
