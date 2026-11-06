@@ -26,47 +26,54 @@ MTAH_DATA_DIR=E:/mtah2027-data \
 
 ```text
 Rows: 199319
-H: 75900
-A: 70622
-D: 12335
+H: 75453
+A: 70626
+D: 12778
 X: 40462
 Segments: H=171, A=176, D=52
 Transitions: D->A=27, A->H=147, H->A=149, H->D=22, D->H=24, A->D=28
 Forced D block: 2934/2934 D
 Cleanup removed: H=1, A=0, D=0
-SHA-256: acdb3e86fcdf8d1304f45e87b708232e0318616b60164c8354f77a7969fcb398
+SHA-256: 23089351f6279c887465eb66c32b94a143acdeaf339a240babe659833ad4e23e
 ```
 
 ## 与冻结 DP-005 对照
 
 | 指标 | DP-005 | Candidate A | 变化 |
 |---|---:|---:|---|
-| H | 79,250 | 75,900 | −3,350 |
-| A | 73,608 | 70,622 | −2,986 |
-| D | 5,999 | 12,335 | **+6,336** |
+| H | 79,250 | 75,453 | −3,797 |
+| A | 73,608 | 70,626 | −2,982 |
+| D | 5,999 | 12,778 | **+6,779** |
 | X | 40,462 | 40,462 | 0 |
 | D segments | 20 | 52 | +32 |
 | Rows | 199,319 | 199,319 | 0 |
 
 默认配置重建哈希仍为 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`，说明新证据在冻结配置中完全关闭。
 
+## 修正记录
+
+- 首轮候选输出为 D=12,335；随后发现团队运动门控符号写反（高速被判死、低速反而没死），已修正为低运动才提高死球门控。
+- 修正后重建：D=12,778，哈希 `23089351…`。
+- 新增 11 个合成场景，覆盖出界回场、直接攻守转换、crowded box、静止球、短/长缺失、重启区隔离。
+
 ## 验证
 
 ```text
-pytest -q                 71 passed
-pytest -W error -q        71 passed
+pytest -q                 82 passed
+pytest -W error -q        82 passed
 ruff check .              All checks passed
-ruff format --check .     53 files already formatted
+ruff format --check .     56 files already formatted
 project validator         OK
 official validator        Valid
 ```
 
 ## 主要发现
 
-1. 组合证据把 D 从 5,999 提升到 12,335 帧，且 X 未泄漏到评分块。
+1. 组合证据把 D 从 5,999 提升到 12,778 帧，且 X 未泄漏到评分块。
 2. H/A 相应下降，说明新增 D 主要来自原先被判为 H/A 的帧。
 3. 默认 DP-005 输出不变，说明可选参数的注入没有改变冻结行为。
-4. 合成的出界、静止、低速场景均通过；候选配置下出界帧被判为死球，冻结配置下不会。
+4. 修正后的团队运动门控只在“球静止且全队低速”时触发；高速比赛不会被误判为死球。
+5. 出界回场后可以从 D 恢复到球队状态；直接 H↔A 转换不会被新增证据阻断。
 
 ## 失败类型与限制
 

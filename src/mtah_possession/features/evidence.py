@@ -392,7 +392,7 @@ def build_evidence_series(
             motion_gate = 1.0 / (
                 1.0
                 + np.exp(
-                    -(team_motion - config.number("team_motion_dead_mps"))
+                    (team_motion - config.number("team_motion_dead_mps"))
                     / config.number("team_motion_scale_mps")
                 )
             )
