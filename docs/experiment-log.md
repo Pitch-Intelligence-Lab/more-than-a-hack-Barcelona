@@ -123,3 +123,87 @@ The weak D result confirms that sustained ball rest is not sufficient to recogni
 - Decision: no parameter or design change after the score
 
 The public window does not cover the repaired 110808..113741 block, so it cannot measure that defect. The unchanged public score means only that the remediation did not alter the smoke window. The D-class result remains a major unresolved limitation.
+
+## E-009: SkillCorner Gate A audit
+
+- Date: 2026-11-05
+- Repository commit: `4340d274572876239c154c90bc507a9b3250a656`
+- Match: `2017461`
+- Licence: MIT
+- Scope: one match, tracking plus phases plus match metadata; no body pose or video
+- Frames: 71,451 at 10 FPS
+- Declared-period tracking frames: 58,450
+- Outside-period frames: 13,001
+- Phase rows: 433; in-play coverage 28,610 frames
+- Missing possession: 42,563; missing possession inside a phase: 956
+- Proxy labels: H=17,796, A=11,092, D=28,606, X=13,957
+- Tracking checksum: `59cfa5588efee041da439f44df5b5b92f2b7305571dc831164e3d05f7415787a`
+- Aggregate report: `outputs/external-data-audit.json`
+- Aggregate report SHA-256: `38c8d6727b031f7d3eeae9f9c319986498eece505d228c38e0f55c7a2d60bacc`
+- Result: Gate A passed for one-match local development research only
+
+## E-010: External development candidate comparison
+
+- Date: 2026-11-05
+- Split: development match `2017461` only
+- Validation and holdout: unavailable
+- Protocol: same detected observations and declared periods for all candidates
+
+| Candidate | macro F1 | segment F1 proxy | false D | missed D | switches |
+|---|---:|---:|---:|---:|---:|
+| DP-001–004 baseline | 0.6703 | 0.2038 | 925 | 9,153 | 445 |
+| DP-005 | 0.3265 | 0.2575 | 21 | 28,421 | 353 |
+| DP-006 phase proxy | 0.7910 | 0.3258 | 2,515 | 0 | 311 |
+
+DP-006's phase-gap candidate uses the same phase source that helps define the proxy D target. The apparent advantage is therefore structurally coupled and not independent generalisation evidence.
+
+False-D durations are 92.5 s, 2.1 s and 251.5 s; missed-D durations are 915.3 s, 2,842.1 s and 0 s.
+
+The aggregate comparison report `outputs/external-dp006-development.json` has SHA-256 `8a9f8d2af046f5271afe7ee6067236c695277e9e52fbbf0b63434abb20e2e699`.
+
+## E-011: DP-006 selection decision
+
+- Date: 2026-11-05
+- Decision: do not promote DP-006 automatically
+- Provisional target candidate: DP-005 v1.2
+- Fallback: DP-001 through DP-004
+- Reason: only one external development match is available, no target-equivalent phase source is validated, and no validation or holdout match exists
+- Target smoke: unchanged from E-008 because no target-model change was selected
+
+## E-012: DP-006 engineering verification
+
+- Date: 2026-11-05
+- Tests: 79 passed
+- Warning-free tests: 79 passed with `-W error`
+- Ruff check and format check: passed
+- Target project validator: passed
+- Official target format validator: passed
+- Target output unchanged: 199,319 rows, SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
+- Repository scan: no competition or external JSONL/archive data tracked
+
+## E-013: DP-006A synthetic gate hardening
+
+- Date: 2026-11-05
+- External data accessed: no
+- External evaluation run: no
+- Target submission built: no
+- Scope: possession-label leakage regression, transition F1, diagnostic/validation/promotion gates and evaluation contract
+- Result: 86 tests passed; warning-free tests passed; Ruff check and format passed
+
+This entry records code-only local drafting under the v1.4 approval gate. Existing external results must not be recomputed during DP-006A review.
+
+## E-014: DP-006A Revision 1 governance hardening
+
+- Date: 2026-11-06
+- External data accessed: no
+- External evaluation run: no
+- Target submission built: no
+- Tests: 100 passed
+- Warning-free tests: 100 passed with `-W error`
+- Ruff check and format: passed
+- Invalid external-root test run: 100 passed with `MTAH_EXTERNAL_DATA_DIR=E:\external-data\nonexistent`
+- Source adapter version: `1.1.0`
+- Evaluation contract version: `1.1.0`
+- Changes: explicit split CLI, ModelInput boundary, three source-quality categories, end-to-end label isolation, lifecycle-separated validation/promotion gates, fail-closed loader test, metric aggregation rules and versioned report identity
+
+The existing local external reports were not reopened or regenerated. They remain historical diagnostic artifacts from before Revision 1.

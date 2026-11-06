@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "split_unit": "match",
+  "development": [
+    "2017461"
+  ],
+  "validation": [],
+  "holdout": [],
+  "status": "diagnostic_only",
+  "reason": "Only one external match was downloaded; validation and holdout remain unavailable."
+}

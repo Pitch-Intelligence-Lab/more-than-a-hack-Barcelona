@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "provider": "skillcorner",
+  "repository": "https://github.com/SkillCorner/opendata",
+  "commit": "4340d274572876239c154c90bc507a9b3250a656",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "license_sha256": "3384cc66ffd008209759af5e6328677eabded72756fb1f56f4f82e68e9b3c6eb",
+  "readme_sha256": "c09886c6359e5f7ff3bfd71a653510caf2f674d238ca79219aa1ec9ebe6f4428",
+  "retrieval_date": "2026-11-05",
+  "match_id": "2017461",
+  "fps": 10,
+  "home_team_id": 868,
+  "away_team_id": 4177,
+  "pitch_length_m": 105.0,
+  "pitch_width_m": 68.0,
+  "coordinate_convention": "metres-center-origin",
+  "files": {
+    "tracking": {
+      "path": "2017461_tracking_extrapolated.jsonl",
+      "sha256": "59cfa5588efee041da439f44df5b5b92f2b7305571dc831164e3d05f7415787a"
+    },
+    "phases": {
+      "path": "2017461_phases_of_play.csv",
+      "sha256": "5331495ecea48056df56dc843864bf36f366f7bca3898d82273eba7a3a54eba5"
+    },
+    "match": {
+      "path": "2017461_match.json",
+      "sha256": "db27759bf734dc8e3d9e56f047965cc7c74833bc3d0345ee3821ab97681ce4b9"
+    }
+  }
+}
