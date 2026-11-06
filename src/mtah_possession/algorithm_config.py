@@ -172,8 +172,12 @@ class StateEngineConfig:
         if not isinstance(raw_parameters, dict):
             raise AlgorithmConfigError("parameters must be an object")
         parameters = {name: _parse_parameter(name, raw) for name, raw in raw_parameters.items()}
+        for name, default in OPTIONAL_PARAMETERS.items():
+            parameters.setdefault(name, default)
         missing_parameters = REQUIRED_PARAMETERS.difference(parameters)
-        unknown_parameters = set(parameters).difference(REQUIRED_PARAMETERS)
+        unknown_parameters = set(parameters).difference(
+            REQUIRED_PARAMETERS | set(OPTIONAL_PARAMETERS)
+        )
         if missing_parameters:
             raise AlgorithmConfigError(
                 f"missing state-engine parameters: {sorted(missing_parameters)}"
@@ -337,6 +341,13 @@ def _validate_parameter_types(parameters: Mapping[str, Parameter]) -> None:
         value = parameters[name].value
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise AlgorithmConfigError(f"parameter {name!r} must be positive")
+    for name in OPTIONAL_BOOLEAN_PARAMETERS:
+        if not isinstance(parameters[name].value, bool):
+            raise AlgorithmConfigError(f"parameter {name!r} must be boolean")
+    for name in OPTIONAL_POSITIVE_NUMBER_PARAMETERS:
+        value = parameters[name].value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            raise AlgorithmConfigError(f"parameter {name!r} must be positive")
 
 
 BOOLEAN_PARAMETERS = frozenset(
@@ -377,4 +388,57 @@ REQUIRED_PARAMETERS = (
     | INTEGER_PARAMETERS
     | NON_NEGATIVE_SECONDS_PARAMETERS
     | POSITIVE_NUMBER_PARAMETERS
+)
+
+OPTIONAL_PARAMETERS: dict[str, Parameter] = {
+    "enable_out_of_play_dead_ball": Parameter(
+        False,
+        "boolean",
+        "engineering-assumption",
+        "Opt-in out-of-play dead-ball evidence; frozen DP-005 keeps it off.",
+    ),
+    "out_of_play_margin_m": Parameter(
+        0.3,
+        "m",
+        "engineering-assumption",
+        "Ball radius plus tracking error beyond the touchline or goal line.",
+    ),
+    "use_team_motion_dead_ball": Parameter(
+        False,
+        "boolean",
+        "engineering-assumption",
+        "Combine low team motion with sustained ball rest; never used alone.",
+    ),
+    "team_motion_dead_mps": Parameter(
+        1.0,
+        "m/s",
+        "engineering-assumption",
+        "A stoppage sits near walking pace; jogging is about 2 m/s.",
+    ),
+    "team_motion_scale_mps": Parameter(
+        0.5,
+        "m/s",
+        "engineering-assumption",
+        "Soft threshold scale for the team-motion gate.",
+    ),
+    "use_restart_zone_dead_ball": Parameter(
+        False,
+        "boolean",
+        "engineering-assumption",
+        "Combine restart-zone proximity with sustained ball rest.",
+    ),
+}
+OPTIONAL_BOOLEAN_PARAMETERS = frozenset(
+    {
+        "enable_out_of_play_dead_ball",
+        "use_team_motion_dead_ball",
+        "use_restart_zone_dead_ball",
+    }
+)
+OPTIONAL_POSITIVE_NUMBER_PARAMETERS = frozenset(
+    {
+        "out_of_play_margin_m",
+        "team_motion_dead_mps",
+        "team_motion_scale_mps",
+    }
 )
