@@ -34,6 +34,8 @@ def small_config(tmp_path: Path, frames: int = 40, *, graded_only: bool = False)
     values["expected_frames"] = frames
     values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 2
     values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 2
+    values["parameters"]["dwell_frames"]["value"] = 0
+    values["parameters"]["dwell_penalty"]["value"] = 0.0
     values["ungraded_blocks"] = [] if graded_only else [[0, 4], [frames - 5, frames - 1]]
     values["forced_dead_blocks"] = []
     path = tmp_path / "candidate-small.json"
@@ -250,6 +252,72 @@ def test_decoder_dead_ball_and_restart(tmp_path: Path) -> None:
     result = decode(emission_stub(probabilities), features, config)
 
     assert result.labels[25] == "D"
+    assert result.labels[-1] == "H"
+
+
+def test_dwell_model_preserves_strong_quick_switch(tmp_path: Path) -> None:
+    values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    values["expected_frames"] = 60
+    values["ungraded_blocks"] = []
+    values["forced_dead_blocks"] = []
+    values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 0
+    values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 0
+    values["parameters"]["dwell_frames"]["value"] = 15
+    values["parameters"]["dwell_penalty"]["value"] = 1.5
+    path = tmp_path / "dwell.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    config = load_candidate_config(path)
+    features = features_stub(60, tracking_candidate=[HOME] * 20 + [AWAY] * 40)
+    probabilities = [[0.7, 0.3, 0.0]] * 20 + [[0.01, 0.99, 0.0]] * 40
+
+    result = decode(emission_stub(probabilities), features, config)
+
+    assert result.labels[0] == "H"
+    assert result.labels[-1] == "A"
+
+
+def test_dwell_model_suppresses_weak_state_flicker(tmp_path: Path) -> None:
+    values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    values["expected_frames"] = 60
+    values["ungraded_blocks"] = []
+    values["forced_dead_blocks"] = []
+    values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 0
+    values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 0
+    values["parameters"]["dwell_frames"]["value"] = 15
+    values["parameters"]["dwell_penalty"]["value"] = 1.5
+    path = tmp_path / "dwell-weak.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    config = load_candidate_config(path)
+    features = features_stub(60, tracking_candidate=[HOME] * 60)
+    probabilities = [[0.6, 0.4, 0.0]] * 40 + [[0.35, 0.65, 0.0]] * 5 + [[0.6, 0.4, 0.0]] * 15
+
+    result = decode(emission_stub(probabilities), features, config)
+
+    assert "A" not in result.labels
+
+
+def test_dwell_penalty_does_not_block_dead_ball_transition(tmp_path: Path) -> None:
+    values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    values["expected_frames"] = 60
+    values["ungraded_blocks"] = []
+    values["forced_dead_blocks"] = []
+    values["parameters"]["emission_smoothing_half_width_frames"]["value"] = 0
+    values["parameters"]["dead_smoothing_half_width_frames"]["value"] = 0
+    values["parameters"]["dwell_frames"]["value"] = 15
+    values["parameters"]["dwell_penalty"]["value"] = 2.5
+    path = tmp_path / "dwell-dead.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    config = load_candidate_config(path)
+    features = features_stub(
+        60,
+        smart_dead=[False] * 20 + [True] * 20 + [False] * 20,
+        smart_restart=[False] * 40 + [True] * 20,
+    )
+    probabilities = [[0.8, 0.1, 0.1]] * 20 + [[0.05, 0.05, 0.9]] * 20 + [[0.8, 0.1, 0.1]] * 20
+
+    result = decode(emission_stub(probabilities), features, config)
+
+    assert "D" in result.labels
     assert result.labels[-1] == "H"
 
 

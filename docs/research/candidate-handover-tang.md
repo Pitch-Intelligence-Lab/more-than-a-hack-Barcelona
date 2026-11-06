@@ -51,9 +51,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 13 passed.
-- Full repository: 77 passed (64 frozen + 13 candidate).
-- `pytest -W error`: 77 passed.
+- Candidate synthetic tests: 16 passed.
+- Full repository: 80 passed (64 frozen + 16 candidate).
+- `pytest -W error`: 80 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
@@ -109,6 +109,9 @@ material contribution to D in this dataset, not accuracy or generalisation.
 - No external training, tuning, bootstrap or cross-match generalisation.
 - D source decomposition includes 3,270 final D frames with no current declared source, which are
   decoder persistence/context rather than an independent evidence signal.
+- A duration-aware Viterbi path is implemented and tested but disabled in the main config:
+  0.6 s dwell did not change segment counts and 1.2 s strong dwell increased D segments from 96
+  to 186. The experimental configs remain for independent comparison.
 
 ## Interface relationship to frozen base
 

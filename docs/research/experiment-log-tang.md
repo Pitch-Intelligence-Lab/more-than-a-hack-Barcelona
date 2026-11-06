@@ -12,8 +12,8 @@ Never paste competition rows, video frames or screenshots into this file.
 - Code version: `research/tang/independent-v1` working tree
 - Configuration: `configs/candidates/tang/candidate-b.json` with small synthetic frame counts
 - Run command: `.venv/bin/python -m pytest tests/candidates -q`
-- Result: 13 candidate tests passed
-- Coverage: tracking-vs-Smart-Tagging conflict, missing ball, out-of-bounds D, split contest, loose-ball control limit, low-confidence segment filtering, high-confidence quick-switch preservation, direct H/A switch, missing-ball persistence, dead/restart, X/forced blocks, Smart Tagging pre-restart/restart separation, adapter determinism
+- Result: 16 candidate tests passed
+- Coverage: tracking-vs-Smart-Tagging conflict, missing ball, out-of-bounds D, split contest, loose-ball control limit, low-confidence segment filtering, high-confidence quick-switch preservation, dwell strong-switch preservation, dwell weak-flicker suppression, dwell dead-ball transition, direct H/A switch, missing-ball persistence, dead/restart, X/forced blocks, Smart Tagging pre-restart/restart separation, adapter determinism
 - Evaluation metric: interface and behavior assertions, not model accuracy
 - Failure types: none in this run
 - Reproducibility: deterministic synthetic inputs
@@ -26,7 +26,7 @@ Never paste competition rows, video frames or screenshots into this file.
 - Data source: frozen repository tests
 - Ground truth: not read
 - Run command: `.venv/bin/python -m pytest && .venv/bin/python -m pytest -W error`
-- Result: 77 passed, including 64 frozen tests and 13 candidate tests
+- Result: 80 passed, including 64 frozen tests and 16 candidate tests
 - Ruff: check and format check passed
 - Frozen DP-005 baseline: reproduced separately with SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
 - Decision: candidate is isolated in new modules; no frozen L0/L4 or stable config changes
@@ -97,3 +97,14 @@ Never paste competition rows, video frames or screenshots into this file.
 - Segment-filter experiment: short low-confidence H/A or D segments between the same team may be merged; high-confidence quick switches are preserved.
 - Synthetic result: 13 candidate tests passed, including low-confidence segment merge, high-confidence quick-switch preservation, control-zone abstention, contest abstention, missing-ball persistence and deterministic adapter output.
 - Real-data result: the segment filter did not alter the output; the 5 m control zone changed H/A from 406 to 384 possessions and increased uncertain frames to 84,153. This is a structural trade-off, not accuracy evidence.
+
+## E-B-008: Duration-aware Viterbi sensitivity
+
+- Date: 2026-11-07
+- Reference: R-03 filtered semi-Markov / segment-level duration modeling
+- Implementation: age-augmented Viterbi where a state carries a dwell age; leaving H/A before the dwell horizon pays a decaying extra cost. D is exempt because dead-ball entry/exit has its own costs.
+- Experimental configurations: `candidate-b-dwell15.json` (0.6 s dwell, 1.5 penalty) and `candidate-b-dwell30.json` (1.2 s dwell, 2.5 penalty, 3.5 switch penalty)
+- Synthetic tests: strong quick H→A switch preserved; weak 5-frame A flicker suppressed; D transition still occurs under dwell.
+- Dwell15 real output: 384 H/A possessions, 96 D segments, SHA `4cd5…` (same segment counts as the main non-dwell path; only boundary frames shifted).
+- Dwell30 real output: 377 H/A possessions, 186 D segments, SHA `ab90…` (D fragmentation doubles; not acceptable).
+- Main decision: keep `dwell_frames=0` in `candidate-b.json`, use the proven simple Viterbi path, and retain dwell configs as experiments only.

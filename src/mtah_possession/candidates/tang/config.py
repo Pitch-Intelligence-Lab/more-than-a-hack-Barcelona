@@ -65,6 +65,8 @@ REQUIRED_PARAMETERS = frozenset(
         "dead_enter_penalty",
         "restart_penalty",
         "restart_boost",
+        "dwell_frames",
+        "dwell_penalty",
         "min_flicker_frames",
         "short_segment_frames",
         "short_segment_confidence",
@@ -208,6 +210,12 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
         value = _non_negative(parameters[name].value, name)
         if value > 1:
             raise CandidateConfigError(f"{name} must be between 0 and 1")
+    dwell_frames = parameters["dwell_frames"].value
+    if isinstance(dwell_frames, bool) or not isinstance(dwell_frames, int) or dwell_frames < 0:
+        raise CandidateConfigError("dwell_frames must be a non-negative integer")
+    if dwell_frames > 120:
+        raise CandidateConfigError("dwell_frames must not exceed 120")
+    _non_negative(parameters["dwell_penalty"].value, "dwell_penalty")
 
     match_id = values.get("match_id")
     if not isinstance(match_id, str) or not match_id.strip():

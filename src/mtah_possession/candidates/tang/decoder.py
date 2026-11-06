@@ -68,6 +68,41 @@ def _smooth_probabilities(
     return smoothed
 
 
+def _decode_block_simple(
+    logp: NDArray[np.float64],
+    emission: Emission,
+    features: FrameFeatures,
+    forced: NDArray[np.bool_],
+    start: int,
+    stop: int,
+    config: CandidateConfig,
+) -> tuple[NDArray[np.int8], NDArray[np.float64]]:
+    length = stop - start
+    dp = np.full((length, 3), -np.inf, dtype=np.float64)
+    back = np.zeros((length, 3), dtype=np.int8)
+    if forced[start]:
+        dp[0] = np.asarray([-np.inf, -np.inf, 0.0])
+    else:
+        dp[0] = logp[0]
+    for index in range(1, length):
+        frame = start + index
+        transition = _transitions(config, bool(features.smart_restart[frame]))
+        for to_state in range(3):
+            candidates = dp[index - 1] + transition[:, to_state] + logp[index, to_state]
+            if forced[frame] and to_state != D:
+                candidates[:] = -np.inf
+            back[index, to_state] = int(np.argmax(candidates))
+            dp[index, to_state] = candidates[back[index, to_state]]
+    state = int(np.argmax(dp[-1]))
+    states = np.empty(length, dtype=np.int8)
+    for index in range(length - 1, -1, -1):
+        states[index] = state
+        state = int(back[index, state])
+    confidence = emission.confidence[start:stop].copy()
+    confidence[forced[start:stop]] = 1.0
+    return states, confidence
+
+
 def _decode_block(
     emission: Emission,
     features: FrameFeatures,
@@ -85,29 +120,86 @@ def _decode_block(
         config.integer("dead_smoothing_half_width_frames"),
     )
     logp = np.log(np.clip(probabilities, 1e-12, 1.0))
-    dp = np.full((length, 3), -np.inf, dtype=np.float64)
-    back = np.zeros((length, 3), dtype=np.int8)
+    max_age = config.integer("dwell_frames")
+    if max_age == 0:
+        return _decode_block_simple(
+            logp,
+            emission,
+            features,
+            forced,
+            start,
+            stop,
+            config,
+        )
+    dwell_penalty = config.number("dwell_penalty")
+    dp = np.full((3, max_age + 1), -np.inf, dtype=np.float64)
+    back_label = np.full((length, 3, max_age + 1), -1, dtype=np.int8)
+    back_age = np.full((length, 3, max_age + 1), -1, dtype=np.int16)
 
     if forced[start]:
-        dp[0] = np.asarray([-np.inf, -np.inf, 0.0])
+        dp[D, 0] = 0.0
     else:
-        dp[0] = logp[0]
+        for state in range(3):
+            dp[state, 0] = logp[0, state]
 
     for index in range(1, length):
         frame = start + index
         transition = _transitions(config, bool(features.smart_restart[frame]))
-        for to_state in range(3):
-            candidates = dp[index - 1] + transition[:, to_state] + logp[index, to_state]
-            if forced[frame] and to_state != D:
-                candidates[:] = -np.inf
-            back[index, to_state] = int(np.argmax(candidates))
-            dp[index, to_state] = candidates[back[index, to_state]]
+        forced_frame = bool(forced[frame])
+        new_dp = np.full_like(dp, -np.inf)
+        for current in range(3):
+            if forced_frame and current != D:
+                continue
+            emission_score = logp[index, current]
+            # Staying in the same state increases its age.
+            for previous_age in range(max_age + 1):
+                value = dp[current, previous_age]
+                if not np.isfinite(value):
+                    continue
+                age = min(previous_age + 1, max_age)
+                score = value + emission_score
+                if score > new_dp[current, age]:
+                    new_dp[current, age] = score
+                    back_label[index, current, age] = current
+                    back_age[index, current, age] = previous_age
+            # Switching states resets the age and pays the dwell penalty.
+            for previous in range(3):
+                if previous == current:
+                    continue
+                for previous_age in range(max_age + 1):
+                    value = dp[previous, previous_age]
+                    if not np.isfinite(value):
+                        continue
+                    extra = (
+                        dwell_penalty * (1.0 - previous_age / max_age)
+                        if max_age > 0 and previous_age < max_age
+                        else 0.0
+                    )
+                    # D has its own entry/restart costs. The dwell model
+                    # targets H/A flicker, not dead-ball detection.
+                    if previous == D or current == D:
+                        extra = 0.0
+                    score = value + transition[previous, current] - extra + emission_score
+                    if score > new_dp[current, 0]:
+                        new_dp[current, 0] = score
+                        back_label[index, current, 0] = previous
+                        back_age[index, current, 0] = previous_age
+        dp = new_dp
 
-    state = int(np.argmax(dp[-1]))
+    flat_index = int(np.argmax(dp.reshape(-1)))
+    state = flat_index // (max_age + 1)
+    age = flat_index % (max_age + 1)
     states = np.empty(length, dtype=np.int8)
     for index in range(length - 1, -1, -1):
         states[index] = state
-        state = int(back[index, state])
+        if index == 0:
+            break
+        previous = int(back_label[index, state, age])
+        previous_age = int(back_age[index, state, age])
+        if previous < 0 or previous_age < 0:
+            break
+        state = previous
+        age = previous_age
 
     confidence = emission.confidence[start:stop].copy()
     confidence[forced[start:stop]] = 1.0
