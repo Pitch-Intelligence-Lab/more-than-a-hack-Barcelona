@@ -1,21 +1,33 @@
-## What changed
+## Change
 
-Describe the single problem solved by this pull request.
+Describe the task ID and the engineering change.
 
-## Evidence
+## How to run
 
-- Command run:
-- Tests and validation:
-- Output hash, if applicable:
+```powershell
+python -m pytest
+python scripts\build_submission.py --output outputs\submission.csv --config configs\baseline.json
+python scripts\validate_submission.py outputs\submission.csv
+```
 
-## Rule and data safety
+## Automated checks
 
-- [ ] No competition data, extracted rows, screenshots, clips or download links are included.
-- [ ] No manual labels or manual output-vs-video checking were used.
-- [ ] Any training or tuning uses external licensed data only.
-- [ ] Code uses `MTAH_DATA_DIR` and does not hard-code private data paths.
+- [ ] `ruff check .`
+- [ ] `ruff format --check .`
+- [ ] `python -m pytest`
+- [ ] Official validator run in the isolated data environment
+- [ ] Repeat generation produced the same SHA-256
 
-## Review
+## Output SHA-256
 
-- [ ] Another team member reviewed the change.
-- [ ] QA checks are sufficient for this change.
+`pending team-local tactical run`
+
+## Rule and data impact
+
+- [ ] No match data, video, screenshot, or extracted tracking row is committed
+- [ ] No public or private ground truth was used for training or tuning
+- [ ] The change preserves the 199,319-frame submission contract
+
+## Unresolved risks
+
+List known limitations and decisions that still need PM or QA confirmation.
