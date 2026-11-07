@@ -3,9 +3,9 @@
 ```text
 Task ID: DP-006-POLICY-REVIEW-001
 Branch: feature/DP-006-POLICY-v2
-Local commit: feature-branch HEAD reported with the pull request
+Local commit: 1c7bd3e11a0435bda42eae55bf9ca0700eb59841 implementation; final branch HEAD reported with PR
 Remote branch: feature/DP-006-POLICY-v2
-Pull request: reported after creation
+Pull request: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 Pull request base: feature/DP-006A-leakage-promotion-gate
 Policy version: DP-006-POLICY-v2
 Schema version: 2.0
