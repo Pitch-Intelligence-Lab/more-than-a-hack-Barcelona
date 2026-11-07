@@ -37,9 +37,12 @@ class TemporalFieldPolicy:
     def status(self) -> TemporalStatus:
         if not self.availability_source.strip() or self.available_at is None:
             return TemporalStatus.HOLD
-        if any(
+        future_only = any(
             fragment in self.field_name.lower() for fragment in FUTURE_ONLY_FIELD_FRAGMENTS
-        ) and self.available_at < (self.interval_end or self.event_time or float("inf")):
+        )
+        if future_only and self.interval_end is None:
+            return TemporalStatus.HOLD
+        if future_only and self.available_at < self.interval_end:
             return TemporalStatus.FAIL
         return TemporalStatus.PASS
 
@@ -82,3 +85,28 @@ def phase_gap_target(gap_frames: int) -> None:
     if gap_frames < 0:
         raise ValueError("gap_frames must be non-negative")
     return None
+
+
+def validate_temporal_feature_path(
+    fields: tuple[TemporalFieldPolicy, ...],
+    *,
+    frame_count: int,
+    fps: int,
+) -> None:
+    """Validate every registered event field across the model timeline."""
+    allowed = {
+        "forced_dead_mask",
+        "restart_evidence",
+        "source_codes",
+        "ungraded_mask",
+    }
+    unknown = sorted(field.field_name for field in fields if field.field_name not in allowed)
+    if unknown:
+        raise PolicyError(f"event fields are not registered for ModelInput: {unknown}")
+    for field in fields:
+        if field.status == TemporalStatus.HOLD:
+            raise PolicyError(f"temporal availability is HOLD for {field.field_name}")
+    for frame in range(frame_count):
+        current_time = frame / fps
+        for field in fields:
+            require_available(field, current_time)

@@ -126,10 +126,6 @@ The Revision 1 contract separates model inference from evaluation labels:
 
 No parameter, target candidate or external metric was changed by Revision 1. Full definitions are in `docs/evaluation-contract.md`.
 
-### Policy v2 status
-
-DP-006-POLICY-v2 supersedes the historical blanket treatment of external possession as diagnostic-only. External supervision is allowed by the official rules only after provider rights and internal authorization pass. Possession labels remain prohibited from model input. SkillCorner, Metrica and SoccerTrack real-data access remain `HOLD`; no policy PASS activates real-data research.
-
 ## Structural cleanup
 
 `short_flicker_absorption` replaces an H/A segment of at most 0.24 seconds only when the segment immediately before and after has the same value. It never bridges X and does not absorb D by default.
@@ -240,7 +236,7 @@ $env:MTAH_DATA_DIR = "E:\mtah2027-data"
 External audit and development evaluation:
 
 ```powershell
-$env:MTAH_EXTERNAL_DATA_DIR = "<external-data-root>"
+$env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
 .\.venv\Scripts\python scripts\audit_external.py `
   --output outputs\external-data-audit.json
 .\.venv\Scripts\python scripts\evaluate_external.py `

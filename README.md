@@ -164,6 +164,8 @@ DP-006-POLICY-v2 separates official rules, provider rights, project authorizatio
 
 The current SkillCorner, Metrica and SoccerTrack statuses are HOLD. The command therefore fails before the external loader runs. Policy implementation does not activate real external research.
 
+Historical DP-006 documents are preserved unchanged for audit history. Any older statement describing SkillCorner data as MIT-licensed is superseded by the current policy: the repository software is MIT, while data rights remain `HOLD`.
+
 ## Documents
 
 - [Team operating model](docs/team-operating-model.md)
@@ -185,6 +187,7 @@ The current SkillCorner, Metrica and SoccerTrack statuses are HOLD. The command 
 - [Split and holdout contract](docs/policy/SPLIT_AND_HOLDOUT_CONTRACT.md)
 - [SkillCorner authorization status](docs/policy/SKILLCORNER_AUTHORIZATION_STATUS.md)
 - [DP-006 policy handoff](docs/policy/DP-006_POLICY_HANDOFF.md)
+- [DP-006 policy remediation evidence](docs/policy/DP-006_POLICY_REMEDIATION_EVIDENCE.md)
 - [External reference register](docs/reference-register.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)

@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** proposed for PM/QA review
+**Status:** remediation candidate under PM/QA review
 
 ## Scope
 
@@ -53,7 +53,8 @@ Official permission does not substitute for provider rights or internal authoriz
 ## Decision
 
 ```text
-Policy implementation: PASS
+Policy design: PASS
+Production integration: UNDER PM/QA REVIEW
 Official rule traceability: PASS
 SkillCorner rights: HOLD
 Metrica rights: HOLD

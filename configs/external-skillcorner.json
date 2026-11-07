@@ -3,7 +3,12 @@
   "provider": "skillcorner",
   "repository": "https://github.com/SkillCorner/opendata",
   "commit": "4340d274572876239c154c90bc507a9b3250a656",
-  "license": "MIT",
+  "repository_software_license": "MIT",
+  "data_license_status": "HOLD",
+  "data_license_evidence": [
+    "EV-AUTH-SC-LICENSE",
+    "EV-AUTH-SC-CONTACT"
+  ],
   "license_file": "LICENSE",
   "license_sha256": "3384cc66ffd008209759af5e6328677eabded72756fb1f56f4f82e68e9b3c6eb",
   "readme_sha256": "c09886c6359e5f7ff3bfd71a653510caf2f674d238ca79219aa1ec9ebe6f4428",

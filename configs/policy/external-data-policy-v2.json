@@ -63,6 +63,18 @@
           "mapping_version": "1.0",
           "mapping_evidence": ["EV-AUTH-SC-README"],
           "status": "HOLD"
+        },
+        {
+          "provider_label_definition_id": "skillcorner_phases_v1",
+          "source_field": "phases_of_play interval gap",
+          "label_kind": "proxy",
+          "roles": ["EVALUATION_REFERENCE", "POST_INFERENCE_DIAGNOSTIC"],
+          "time_basis": "provider 10 FPS half-open frame interval",
+          "null_semantics": "phase absence does not imply truth",
+          "target_mapping_id": "skillcorner_phase_gap_to_dead_proxy_v1",
+          "mapping_version": "1.0",
+          "mapping_evidence": ["EV-AUTH-SC-README", "EV-EXT-AUDIT-2017461"],
+          "status": "HOLD"
         }
       ]
     },

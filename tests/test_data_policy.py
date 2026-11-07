@@ -193,3 +193,41 @@ def test_real_audit_cli_fails_policy_before_external_root(tmp_path: Path) -> Non
     assert "is not allowed" in result.stderr
     assert "missing" not in result.stderr.lower()
     assert not (tmp_path / "audit.json").exists()
+
+
+def test_audit_evaluation_hold_fails_before_output(tmp_path: Path) -> None:
+    def mutate(values):
+        provider = values["providers"][0]
+        for axis in (
+            "PUBLIC_SOURCE_VERIFIED",
+            "LICENSE_VERIFIED",
+            "INTERNAL_RESEARCH_AUTHORIZED",
+        ):
+            provider["statuses"][axis] = "PASS"
+        provider["uses"]["read_preprocess"] = {
+            "status": "PASS",
+            "evidence_ids": ["EV-AUTH-SC-README"],
+            "conditions": [],
+        }
+
+    policy_path = write_modified_policy(tmp_path, mutate)
+    output = tmp_path / "audit.json"
+    environment = dict(os.environ)
+    environment["MTAH_EXTERNAL_DATA_DIR"] = str(tmp_path / "nonexistent")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "audit_external.py"),
+            "--policy",
+            str(policy_path),
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert result.returncode == 1
+    assert "evaluation_reference" in result.stderr
+    assert not output.exists()

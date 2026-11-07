@@ -37,6 +37,7 @@ MODEL_INPUT_ALLOWLIST = frozenset(
         "restart_evidence",
         "source_codes",
         "ungraded_mask",
+        "temporal_fields",
         "expected_frames",
         "first_frame_id",
         "last_frame_id",

@@ -15,7 +15,7 @@
 
 The repository root contains an MIT licence, GitHub reports the repository licence as MIT, and the official README explicitly states that the repository contains the data and that the data has been open sourced. No separate data licence file was found.
 
-This was the historical interpretation used for the completed one-match diagnostic experiment. It is **not** authorization under DP-006-POLICY-v2: the MIT wording covers software and associated documentation and does not establish separate data rights. All real SkillCorner data uses are now `HOLD` until written provider terms and internal authorization pass. The data remains outside Git under the external-data root configured locally.
+This is sufficient for the internal research evaluation performed here, but the licence wording refers to software and associated documentation. The team must not redistribute the external data or claim additional data rights beyond the repository statement. The data remains outside Git at `E:\external-data\skillcorner`.
 
 ## Audited match
 

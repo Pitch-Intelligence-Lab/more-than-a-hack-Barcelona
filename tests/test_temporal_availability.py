@@ -39,6 +39,20 @@ def test_future_result_and_endpoint_fail() -> None:
         require_available(field, 2.0)
 
 
+def test_future_field_without_interval_end_is_hold() -> None:
+    field = TemporalFieldPolicy(
+        field_name="event_end_x",
+        event_time=1.0,
+        interval_start=1.0,
+        interval_end=None,
+        available_at=1.0,
+        availability_source="event export",
+    )
+    assert field.status == TemporalStatus.HOLD
+    with pytest.raises(PolicyError, match="HOLD"):
+        require_available(field, 1.0)
+
+
 def test_missing_available_at_is_hold() -> None:
     field = TemporalFieldPolicy(
         field_name="ball_x",

@@ -9,6 +9,11 @@ from numpy.typing import NDArray
 
 from mtah_possession.data.neutral import NeutralMatch, neutral_to_tracking
 from mtah_possession.data.tracking import TrackingData
+from mtah_possession.governance.roles import (
+    model_input_field_names,
+    validate_model_input_fields,
+)
+from mtah_possession.governance.temporal import TemporalFieldPolicy
 from mtah_possession.states.phase_layer import PhaseLayerEvidence
 
 
@@ -18,6 +23,7 @@ class AllowedEventEvidence:
     restart_evidence: NDArray[np.bool_]
     source_codes: NDArray[np.str_]
     ungraded_mask: NDArray[np.bool_]
+    temporal_fields: tuple[TemporalFieldPolicy, ...] = ()
 
     @classmethod
     def empty(
@@ -32,6 +38,7 @@ class AllowedEventEvidence:
             ungraded_mask=(
                 np.zeros(frame_count, dtype=bool) if ungraded_mask is None else ungraded_mask.copy()
             ),
+            temporal_fields=(),
         )
 
 
@@ -58,9 +65,27 @@ def build_model_input(
             restart_evidence=event_evidence.restart_evidence.copy(),
             source_codes=event_evidence.source_codes.copy(),
             ungraded_mask=(~match.in_period_mask()).copy(),
+            temporal_fields=(
+                TemporalFieldPolicy(
+                    field_name="forced_dead_mask",
+                    event_time=0.0,
+                    interval_start=0.0,
+                    interval_end=float(match.frame_count / match.fps),
+                    available_at=0.0,
+                    availability_source="phase-layer contract",
+                ),
+                TemporalFieldPolicy(
+                    field_name="restart_evidence",
+                    event_time=0.0,
+                    interval_start=0.0,
+                    interval_end=float(match.frame_count / match.fps),
+                    available_at=0.0,
+                    availability_source="phase-layer contract",
+                ),
+            ),
         )
     )
-    return ModelInput(
+    model_input = ModelInput(
         match_id=match.match_id,
         fps=match.fps,
         pitch_length_m=match.pitch_length_m,
@@ -68,6 +93,8 @@ def build_model_input(
         tracking=tracking,
         event_evidence=allowed,
     )
+    validate_model_input_fields(model_input_field_names(model_input))
+    return model_input
 
 
 def with_event_evidence(
@@ -76,7 +103,7 @@ def with_event_evidence(
 ) -> ModelInput:
     if event_evidence.forced_dead_mask.shape != (model_input.tracking.frame_count,):
         raise ValueError("event evidence must match the model frame count")
-    return ModelInput(
+    model_input = ModelInput(
         match_id=model_input.match_id,
         fps=model_input.fps,
         pitch_length_m=model_input.pitch_length_m,
@@ -87,5 +114,8 @@ def with_event_evidence(
             restart_evidence=event_evidence.restart_evidence.copy(),
             source_codes=event_evidence.source_codes.copy(),
             ungraded_mask=model_input.event_evidence.ungraded_mask.copy(),
+            temporal_fields=model_input.event_evidence.temporal_fields,
         ),
     )
+    validate_model_input_fields(model_input_field_names(model_input))
+    return model_input

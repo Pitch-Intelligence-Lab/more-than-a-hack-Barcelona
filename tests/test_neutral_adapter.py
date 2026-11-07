@@ -2,6 +2,7 @@ from dataclasses import fields, replace
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from mtah_possession.algorithm_config import load_algorithm_config
 from mtah_possession.data.model_input import (
@@ -27,6 +28,19 @@ from mtah_possession.evaluation.external import (
     predict_model_input,
 )
 from mtah_possession.features.evidence import build_evidence_series
+from mtah_possession.governance.authorization import (
+    EVALUATION_PHASE_PROFILE,
+    EVALUATION_POSSESSION_PROFILE,
+    AuthorizedExternalRun,
+)
+from mtah_possession.governance.policy import (
+    DataUse,
+    PolicyError,
+    PolicyStatus,
+    UsePermission,
+    load_policy,
+)
+from mtah_possession.governance.temporal import TemporalFieldPolicy
 from mtah_possession.states.phase_layer import (
     PhaseDirective,
     PhaseKind,
@@ -36,6 +50,41 @@ from mtah_possession.states.possession_state import run_state_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_CONFIG = load_algorithm_config(ROOT / "configs" / "state-engine.json")
+
+
+def authorized_run() -> AuthorizedExternalRun:
+    policy = load_policy(ROOT / "configs" / "policy" / "external-data-policy-v2.json")
+    provider = policy.provider("skillcorner")
+    profiles = tuple(
+        replace(profile, status=PolicyStatus.PASS) for profile in provider.label_profiles
+    )
+    selected_profiles = {
+        EVALUATION_POSSESSION_PROFILE: next(
+            profile
+            for profile in profiles
+            if profile.provider_label_definition_id == EVALUATION_POSSESSION_PROFILE
+        ),
+        EVALUATION_PHASE_PROFILE: next(
+            profile
+            for profile in profiles
+            if profile.provider_label_definition_id == EVALUATION_PHASE_PROFILE
+        ),
+    }
+    permissions = {
+        use: UsePermission(PolicyStatus.PASS, ("EV-AUTH-SC-README",), ())
+        for use in (
+            DataUse.TRACKING_MODEL_INPUT,
+            DataUse.PHASE_MODEL_INPUT,
+            DataUse.EVALUATION_REFERENCE,
+        )
+    }
+    return AuthorizedExternalRun(
+        policy=policy,
+        provider=replace(provider, label_profiles=profiles),
+        use_permissions=permissions,
+        label_profiles=selected_profiles,
+        freeze_hashes=None,
+    )
 
 
 def neutral(
@@ -85,13 +134,40 @@ def test_proxy_maps_missing_cases_explicitly() -> None:
         possession_status=[1, 1, 1, 0, 0, 1, 2],
         phases=(PhaseSpan(2, 4, 1, "build_up"),),
     )
-    proxy = map_proxy_target(data)
+    profiles = authorized_run().label_profiles
+    proxy = map_proxy_target(
+        data,
+        possession_profile=profiles[EVALUATION_POSSESSION_PROFILE],
+        phase_profile=profiles[EVALUATION_PHASE_PROFILE],
+    )
     assert proxy.labels.tolist() == ["X", "D", "X", "H", "A", "X", "X"]
     assert proxy.sources[0] == "outside_declared_period"
     assert proxy.sources[1] == "no_possession_and_no_phase"
     assert proxy.sources[2] == "missing_possession_inside_phase"
     assert proxy.sources[5] == "missing_tracking_frame"
     assert proxy.sources[6] == "unrecognized_possession_group"
+    assert proxy.label_profiles[EVALUATION_PHASE_PROFILE]["label_kind"] == "proxy"
+    assert proxy.label_profiles[EVALUATION_PHASE_PROFILE]["target_mapping_id"]
+    assert proxy.label_profiles[EVALUATION_PHASE_PROFILE]["mapping_version"]
+
+
+def test_phase_gap_proxy_requires_pass_label_profile() -> None:
+    data = neutral(
+        frame_count=3,
+        frame_present=[True] * 3,
+        possession_side=[-1] * 3,
+        possession_status=[1] * 3,
+    )
+    profiles = authorized_run().label_profiles
+    with pytest.raises(PolicyError, match="is HOLD"):
+        map_proxy_target(
+            data,
+            possession_profile=profiles[EVALUATION_POSSESSION_PROFILE],
+            phase_profile=replace(
+                profiles[EVALUATION_PHASE_PROFILE],
+                status=PolicyStatus.HOLD,
+            ),
+        )
 
 
 def test_neutral_metres_convert_to_engine_normalised_coordinates() -> None:
@@ -221,6 +297,7 @@ def test_synthetic_external_evaluation_preserves_requested_split() -> None:
     evaluation = evaluate_external_match(
         data,
         BASE_CONFIG,
+        authorization=authorized_run(),
         split="validation",
     )
     assert evaluation.split == "validation"
@@ -231,6 +308,43 @@ def test_synthetic_external_evaluation_preserves_requested_split() -> None:
     }
     for candidate in evaluation.candidates.values():
         assert candidate.labels.shape == (60,)
+
+
+def test_future_event_field_is_rejected_by_real_model_path() -> None:
+    data = replace(
+        neutral(
+            frame_count=10,
+            frame_present=[True] * 10,
+            possession_side=[-1] * 10,
+            possession_status=[1] * 10,
+        ),
+        periods=(PeriodSpan(1, 0, 10),),
+    )
+    model_input = build_model_input(data)
+    invalid_events = replace(
+        model_input.event_evidence,
+        temporal_fields=(
+            TemporalFieldPolicy(
+                field_name="event_end_x",
+                event_time=0.1,
+                interval_start=0.1,
+                interval_end=None,
+                available_at=0.1,
+                availability_source="event export",
+            ),
+        ),
+    )
+    with pytest.raises(PolicyError, match="event fields are not registered"):
+        predict_model_input(
+            replace(model_input, event_evidence=invalid_events),
+            replace(
+                BASE_CONFIG,
+                fps=10,
+                expected_frames=10,
+                ungraded_blocks=(),
+                forced_dead_blocks=(),
+            ),
+        )
 
 
 def test_blocks_from_mask_uses_inclusive_frame_pairs() -> None:

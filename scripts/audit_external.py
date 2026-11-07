@@ -19,13 +19,17 @@ from mtah_possession.data.skillcorner import (  # noqa: E402
     load_skillcorner_match,
 )
 from mtah_possession.evaluation.splits import (  # noqa: E402
+    EvaluationMode,  # noqa: E402
     load_split_manifest,
     split_manifest_dict,
 )
+from mtah_possession.governance.authorization import (  # noqa: E402
+    EVALUATION_PHASE_PROFILE,
+    EVALUATION_POSSESSION_PROFILE,
+    authorize_external_run,
+)
 from mtah_possession.governance.policy import (  # noqa: E402
     DataUse,
-    load_policy,
-    require_allowed,
 )
 from mtah_possession.states.phase_layer import (  # noqa: E402
     compile_phase_evidence,
@@ -72,16 +76,34 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         manifest = load_skillcorner_manifest(args.config)
-        policy = load_policy(args.policy)
-        require_allowed(
-            policy,
-            str(manifest["provider"]),
-            DataUse.READ_PREPROCESS,
+        splits = load_split_manifest(args.splits)
+        authorized = authorize_external_run(
+            policy_path=args.policy,
+            provider=str(manifest["provider"]),
             source_revision=str(manifest["commit"]),
+            requested_uses=(
+                DataUse.READ_PREPROCESS,
+                DataUse.EVALUATION_REFERENCE,
+            ),
+            label_profile_ids=(
+                EVALUATION_POSSESSION_PROFILE,
+                EVALUATION_PHASE_PROFILE,
+            ),
+            required_status_axes=(
+                "LABEL_SEMANTICS_ALIGNED",
+                "PHASE_SEMANTICS_VERIFIED",
+            ),
+            split_manifest=splits,
+            match_id=str(manifest["match_id"]),
+            split="development",
+            mode=EvaluationMode.DIAGNOSTIC,
         )
         match = load_skillcorner_match(args.config, root)
-        proxy = map_proxy_target(match)
-        splits = load_split_manifest(args.splits)
+        proxy = map_proxy_target(
+            match,
+            possession_profile=authorized.label_profiles[EVALUATION_POSSESSION_PROFILE],
+            phase_profile=authorized.label_profiles[EVALUATION_PHASE_PROFILE],
+        )
         periods = [
             {
                 "period": period.period,
@@ -123,6 +145,16 @@ def main(argv: list[str] | None = None) -> int:
             "proxy_sources": dict(proxy.source_counts),
             "source_checksums": dict(match.source_checksums),
             "split": split_manifest_dict(splits, match.match_id),
+            "policy_identity": {
+                "policy_version": authorized.policy.policy_version,
+                "label_profiles": {
+                    profile_id: {
+                        "target_mapping_id": profile.target_mapping_id,
+                        "mapping_version": profile.mapping_version,
+                    }
+                    for profile_id, profile in authorized.label_profiles.items()
+                },
+            },
         }
         _atomic_json(Path(args.output), report)
     except ValueError as error:

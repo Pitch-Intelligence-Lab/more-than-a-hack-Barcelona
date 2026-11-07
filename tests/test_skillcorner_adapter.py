@@ -2,7 +2,12 @@ import hashlib
 import json
 from pathlib import Path
 
-from mtah_possession.data.skillcorner import load_skillcorner_match
+import pytest
+
+from mtah_possession.data.skillcorner import (
+    SkillCornerDataError,
+    load_skillcorner_match,
+)
 
 
 def sha(path: Path) -> str:
@@ -55,7 +60,9 @@ def test_synthetic_skillcorner_fixture_loads_without_external_dependencies(
         "provider": "skillcorner",
         "repository": "fixture",
         "commit": "fixture",
-        "license": "MIT",
+        "repository_software_license": "MIT",
+        "data_license_status": "HOLD",
+        "data_license_evidence": ["EV-AUTH-SC-LICENSE"],
         "license_file": "LICENSE",
         "license_sha256": sha(root / "LICENSE"),
         "readme_sha256": sha(root / "README.md"),
@@ -87,3 +94,39 @@ def test_synthetic_skillcorner_fixture_loads_without_external_dependencies(
     assert loaded.slot_source_quality[0, 0] == 0
     assert loaded.frame_present.tolist() == [True, True, False]
     assert len(loaded.phases) == 1
+
+
+def test_data_license_cannot_reuse_software_mit_status(tmp_path: Path) -> None:
+    config = tmp_path / "manifest.json"
+    config.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "provider": "skillcorner",
+                "repository": "fixture",
+                "commit": "fixture-commit",
+                "repository_software_license": "MIT",
+                "data_license_status": "MIT",
+                "data_license_evidence": ["evidence"],
+                "license_file": "LICENSE",
+                "license_sha256": "a",
+                "readme_sha256": "b",
+                "retrieval_date": "2026-11-08",
+                "match_id": "99",
+                "fps": 10,
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "pitch_length_m": 105.0,
+                "pitch_width_m": 68.0,
+                "coordinate_convention": "metres-center-origin",
+                "files": {
+                    "tracking": {"path": "tracking", "sha256": "c"},
+                    "phases": {"path": "phases", "sha256": "d"},
+                    "match": {"path": "match", "sha256": "e"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(SkillCornerDataError, match="data_license_status"):
+        load_skillcorner_match(config, tmp_path)

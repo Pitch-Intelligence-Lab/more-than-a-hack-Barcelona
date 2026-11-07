@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mtah_possession.evaluation.runner import run_external_evaluation  # noqa: E402
 from mtah_possession.evaluation.splits import EvaluationMode  # noqa: E402
+from mtah_possession.governance.holdout import FreezeHashes  # noqa: E402
 
 
 def _write_json_atomic(path: Path, values: dict) -> None:
@@ -47,6 +48,16 @@ def main(argv: list[str] | None = None) -> int:
         "--policy",
         default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.json"),
     )
+    parser.add_argument(
+        "--holdout-manifest",
+        default=str(ROOT / "configs" / "policy" / "holdout-manifest-v2.json"),
+    )
+    parser.add_argument("--model-freeze-sha256", default=None)
+    parser.add_argument("--feature-set-sha256", default=None)
+    parser.add_argument("--config-freeze-sha256", default=None)
+    parser.add_argument("--hyperparameter-set-sha256", default=None)
+    parser.add_argument("--evaluation-script-sha256", default=None)
+    parser.add_argument("--metric-contract-version", default=None)
     parser.add_argument("--external-root", default=None)
     parser.add_argument(
         "--split",
@@ -65,6 +76,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         mode = EvaluationMode(args.mode)
         external_root = args.external_root or os.environ.get("MTAH_EXTERNAL_DATA_DIR")
+        freeze_values = (
+            args.model_freeze_sha256,
+            args.feature_set_sha256,
+            args.config_freeze_sha256,
+            args.hyperparameter_set_sha256,
+            args.evaluation_script_sha256,
+            args.metric_contract_version,
+        )
+        freeze_hashes = None
+        if all(value is not None for value in freeze_values):
+            freeze_hashes = FreezeHashes(*freeze_values)
         result = run_external_evaluation(
             config_path=args.config,
             state_config_path=args.state_config,
@@ -74,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
             mode=mode,
             code_commit=args.code_commit or "",
             policy_path=args.policy,
+            holdout_manifest_path=args.holdout_manifest,
+            freeze_hashes=freeze_hashes,
         )
         _write_json_atomic(Path(args.output), result.report)
     except (OSError, ValueError) as error:

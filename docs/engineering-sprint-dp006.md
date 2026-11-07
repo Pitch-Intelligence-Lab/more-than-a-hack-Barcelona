@@ -19,7 +19,7 @@ The sprint does not assume DP-006 will become the final model. The final candida
 ```text
 Code repository:       E:\mtah2027-code
 Target data root:      E:\mtah2027-data
-External data root:    <external-data-root>
+External data root:    E:\external-data\skillcorner
 Generated outputs:     E:\mtah2027-code\outputs
 ```
 

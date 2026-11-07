@@ -1,6 +1,7 @@
 import pytest
 
 from mtah_possession.governance.holdout import (
+    FreezeHashes,
     HoldoutManifest,
     HoldoutStatus,
     SplitAssignment,
@@ -31,39 +32,48 @@ def test_vendor_test_split_is_not_project_holdout() -> None:
 
 def test_sealed_holdout_requires_frozen_identities() -> None:
     sealed = HoldoutManifest.sealed(("holdout-1",))
-    with pytest.raises(PolicyError, match="frozen identities"):
+    with pytest.raises(PolicyError, match="freeze identity"):
         sealed.unseal(
             evaluation_licensed=True,
             exposure_verified=True,
-            model_freeze="",
-            feature_set="features",
-            config_freeze="config",
-            hyperparameters="params",
-            evaluation_script="script",
-            metric_contract_version="1",
+            freeze=FreezeHashes(
+                model="",
+                feature_set="features",
+                configuration="config",
+                hyperparameters="params",
+                evaluation_script="script",
+                metric_contract_version="1",
+            ),
             evaluation_independent=True,
         )
 
 
 def test_holdout_result_used_for_tuning_becomes_compromised() -> None:
-    sealed = HoldoutManifest.sealed(("holdout-1",))
-    unsealed = sealed.unseal(
-        evaluation_licensed=True,
-        exposure_verified=True,
-        model_freeze="model",
+    freeze = FreezeHashes(
+        model="model",
         feature_set="features",
-        config_freeze="config",
+        configuration="config",
         hyperparameters="params",
         evaluation_script="script",
         metric_contract_version="1",
+    )
+    sealed = HoldoutManifest.sealed(("holdout-1",), freeze)
+    unsealed = sealed.unseal(
+        evaluation_licensed=True,
+        exposure_verified=True,
+        freeze=freeze,
         evaluation_independent=True,
     )
     assert unsealed.status == HoldoutStatus.UNSEALED
     compromised = unsealed.record_result(
-        model_freeze="changed",
-        feature_set="features",
-        config_freeze="config",
-        hyperparameters="params",
+        freeze=FreezeHashes(
+            model="changed",
+            feature_set="features",
+            configuration="config",
+            hyperparameters="params",
+            evaluation_script="script",
+            metric_contract_version="1",
+        ),
         used_for_tuning=True,
     )
     assert compromised.status == HoldoutStatus.COMPROMISED

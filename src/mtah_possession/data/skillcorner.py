@@ -44,7 +44,9 @@ def load_skillcorner_manifest(
         "provider",
         "repository",
         "commit",
-        "license",
+        "repository_software_license",
+        "data_license_status",
+        "data_license_evidence",
         "license_file",
         "license_sha256",
         "readme_sha256",
@@ -66,8 +68,16 @@ def load_skillcorner_manifest(
         raise SkillCornerDataError(f"manifest has unknown keys: {sorted(unknown)}")
     if values["schema_version"] != "1.0":
         raise SkillCornerDataError("SkillCorner manifest schema_version must be '1.0'")
-    if values["license"] != "MIT":
-        raise SkillCornerDataError("this adapter is audited only for the MIT manifest")
+    if values["repository_software_license"] != "MIT":
+        raise SkillCornerDataError("repository software license must be MIT")
+    if values["data_license_status"] not in {"PASS", "HOLD", "FAIL"}:
+        raise SkillCornerDataError("invalid data_license_status")
+    if values["data_license_status"] == "MIT":
+        raise SkillCornerDataError("data_license_status cannot reuse the software license")
+    if not isinstance(values["data_license_evidence"], list) or not all(
+        isinstance(item, str) and item for item in values["data_license_evidence"]
+    ):
+        raise SkillCornerDataError("data_license_evidence must be a non-empty string list")
     if values["coordinate_convention"] != "metres-center-origin":
         raise SkillCornerDataError("unexpected coordinate convention")
     files = values["files"]
@@ -278,7 +288,9 @@ def load_skillcorner_match(
         source_metadata={
             "repository": manifest["repository"],
             "commit": manifest["commit"],
-            "license": manifest["license"],
+            "repository_software_license": manifest["repository_software_license"],
+            "data_license_status": manifest["data_license_status"],
+            "data_license_evidence": list(manifest["data_license_evidence"]),
             "retrieval_date": manifest["retrieval_date"],
             "tracking_aggregate": aggregate,
         },

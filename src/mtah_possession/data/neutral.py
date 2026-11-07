@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from mtah_possession.data.tracking import FrameAlignment, TrackingData
+from mtah_possession.governance.policy import LabelProfile, PolicyError, PolicyStatus
 
 
 class TeamSide(IntEnum):
@@ -124,10 +125,26 @@ class ProxyTarget:
     sources: NDArray[np.str_]
     counts: dict[str, int]
     source_counts: dict[str, int]
+    label_profiles: dict[str, dict[str, str]] | None = None
 
 
-def map_proxy_target(match: NeutralMatch) -> ProxyTarget:
+def map_proxy_target(
+    match: NeutralMatch,
+    *,
+    possession_profile: LabelProfile,
+    phase_profile: LabelProfile,
+) -> ProxyTarget:
     """Map neutral possession and phases to an explicit diagnostic proxy."""
+    for profile in (possession_profile, phase_profile):
+        if profile.status != PolicyStatus.PASS:
+            raise PolicyError(
+                f"proxy label profile {profile.provider_label_definition_id} is "
+                f"{profile.status.value}"
+            )
+        if profile.label_kind != "proxy":
+            raise PolicyError("phase-gap and possession proxy labels require label_kind=proxy")
+        if not profile.target_mapping_id or not profile.mapping_version:
+            raise PolicyError("proxy label mapping ID/version is missing")
     labels = np.full(match.frame_count, "X", dtype="<U1")
     sources = np.full(match.frame_count, "unknown", dtype="<U32")
     in_period = match.in_period_mask()
@@ -172,6 +189,18 @@ def map_proxy_target(match: NeutralMatch) -> ProxyTarget:
         source_counts={
             str(value): int(count)
             for value, count in zip(source_values, source_counts, strict=True)
+        },
+        label_profiles={
+            possession_profile.provider_label_definition_id: {
+                "label_kind": possession_profile.label_kind,
+                "target_mapping_id": possession_profile.target_mapping_id,
+                "mapping_version": possession_profile.mapping_version,
+            },
+            phase_profile.provider_label_definition_id: {
+                "label_kind": phase_profile.label_kind,
+                "target_mapping_id": phase_profile.target_mapping_id,
+                "mapping_version": phase_profile.mapping_version,
+            },
         },
     )
 
