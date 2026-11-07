@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pitch-intelligence-lab.local/schemas/holdout-ledger-record.schema.json",
+  "title": "Append-only holdout lifecycle record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recorded_at",
+    "event_type",
+    "holdout_id",
+    "match_ids",
+    "freeze_hashes",
+    "holdout_manifest_sha256",
+    "code_commit",
+    "prediction_sha256",
+    "previous_record_sha256",
+    "reason"
+  ],
+  "properties": {
+    "recorded_at": {"type": "string", "minLength": 1},
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "SEALED_VERIFIED",
+        "UNSEALED",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+        "EVALUATION_FAILED",
+        "COMPROMISED"
+      ]
+    },
+    "holdout_id": {"type": "string", "minLength": 1},
+    "match_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "freeze_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "feature_set",
+        "configuration",
+        "hyperparameters",
+        "evaluation_script",
+        "metric_contract_version"
+      ],
+      "properties": {
+        "model": {"type": "string", "minLength": 1},
+        "feature_set": {"type": "string", "minLength": 1},
+        "configuration": {"type": "string", "minLength": 1},
+        "hyperparameters": {"type": "string", "minLength": 1},
+        "evaluation_script": {"type": "string", "minLength": 1},
+        "metric_contract_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "holdout_manifest_sha256": {"type": "string", "minLength": 64},
+    "code_commit": {"type": "string", "minLength": 7},
+    "prediction_sha256": {"type": ["string", "null"]},
+    "previous_record_sha256": {"type": ["string", "null"]},
+    "reason": {"type": ["string", "null"]}
+  }
+}

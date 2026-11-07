@@ -70,3 +70,27 @@ only under `docs/policy/`.
 This changelog does not declare final policy acceptance. PM/QA review remains
 required, and all real external-data research remains `HOLD`.
 
+## DP-006-POLICY-REMEDIATION-002
+
+**Date:** 2026-11-08
+
+**Status:** remediation candidate submitted for independent PM/QA review
+
+### Fixed
+
+- bind Promotion to `HOLDOUT_SEAL_VERIFIED`, the declared split, a non-empty
+  holdout match set and the current match;
+- compute all freeze identities from six real artifact categories rather than
+  accepting trusted CLI hash strings;
+- persist sealed, unsealed, started, completed, failed and compromised holdout
+  lifecycle events in an append-only hash-chained JSONL ledger;
+- carry real per-frame temporal availability for phase masks, restart evidence
+  and source codes through `with_event_evidence()` and the production evaluator;
+- reject empty or incomplete temporal registries and scalar zero-time
+  placeholders for phase-derived fields.
+
+### Not claimed
+
+R3 and R5 are fix candidates only. Policy implementation final acceptance,
+merge and real-data research authorization remain `HOLD` for PM/QA.
+

@@ -32,24 +32,33 @@ class TemporalFieldPolicy:
     interval_end: float | None
     available_at: float | None
     availability_source: str
+    per_frame_available_at: tuple[float, ...] = ()
+    semantics_version: str = ""
 
     @property
     def status(self) -> TemporalStatus:
-        if not self.availability_source.strip() or self.available_at is None:
+        if not self.availability_source.strip() or not self.semantics_version.strip():
+            return TemporalStatus.HOLD
+        if not self.per_frame_available_at and self.available_at is None:
             return TemporalStatus.HOLD
         future_only = any(
             fragment in self.field_name.lower() for fragment in FUTURE_ONLY_FIELD_FRAGMENTS
         )
         if future_only and self.interval_end is None:
             return TemporalStatus.HOLD
-        if future_only and self.available_at < self.interval_end:
+        scalar_available = self.available_at
+        if scalar_available is None and self.per_frame_available_at:
+            scalar_available = min(self.per_frame_available_at)
+        if future_only and scalar_available is not None and scalar_available < self.interval_end:
             return TemporalStatus.FAIL
         return TemporalStatus.PASS
 
     def available_for(self, current_time: float) -> bool:
-        if self.status != TemporalStatus.PASS or self.available_at is None:
+        if self.status != TemporalStatus.PASS:
             return False
-        return self.available_at <= current_time
+        if self.per_frame_available_at:
+            raise PolicyError("per-frame availability requires frame-aware validation")
+        return self.available_at is not None and self.available_at <= current_time
 
 
 def require_available(field: TemporalFieldPolicy, current_time: float) -> None:
@@ -106,7 +115,25 @@ def validate_temporal_feature_path(
     for field in fields:
         if field.status == TemporalStatus.HOLD:
             raise PolicyError(f"temporal availability is HOLD for {field.field_name}")
+        if (
+            field.field_name
+            in {
+                "forced_dead_mask",
+                "restart_evidence",
+                "source_codes",
+            }
+            and not field.per_frame_available_at
+        ):
+            raise PolicyError(f"phase mask {field.field_name} requires per-frame availability")
     for frame in range(frame_count):
         current_time = frame / fps
         for field in fields:
-            require_available(field, current_time)
+            if field.per_frame_available_at:
+                if len(field.per_frame_available_at) != frame_count:
+                    raise PolicyError(
+                        f"per-frame availability length mismatch for {field.field_name}"
+                    )
+                if field.per_frame_available_at[frame] > current_time:
+                    raise PolicyError(f"phase field {field.field_name} is future at frame {frame}")
+            else:
+                require_available(field, current_time)

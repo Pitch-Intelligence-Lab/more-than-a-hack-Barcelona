@@ -2,6 +2,10 @@
 
 **Task:** DP-006-POLICY-REMEDIATION-001
 
+> Historical first-round evidence. R3 and R5 were subsequently returned to HOLD
+> and remediated by DP-006-POLICY-REMEDIATION-002. See
+> `DP-006_POLICY_REMEDIATION_002_EVIDENCE.md` for the current evidence.
+
 **Reviewed baseline:** `a1fd8064f1578fab78b78c2a202729910da30071`
 
 **Result:** remediation candidate submitted for independent PM/QA review

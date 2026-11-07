@@ -65,24 +65,7 @@ def build_model_input(
             restart_evidence=event_evidence.restart_evidence.copy(),
             source_codes=event_evidence.source_codes.copy(),
             ungraded_mask=(~match.in_period_mask()).copy(),
-            temporal_fields=(
-                TemporalFieldPolicy(
-                    field_name="forced_dead_mask",
-                    event_time=0.0,
-                    interval_start=0.0,
-                    interval_end=float(match.frame_count / match.fps),
-                    available_at=0.0,
-                    availability_source="phase-layer contract",
-                ),
-                TemporalFieldPolicy(
-                    field_name="restart_evidence",
-                    event_time=0.0,
-                    interval_start=0.0,
-                    interval_end=float(match.frame_count / match.fps),
-                    available_at=0.0,
-                    availability_source="phase-layer contract",
-                ),
-            ),
+            temporal_fields=event_evidence.temporal_fields,
         )
     )
     model_input = ModelInput(
@@ -114,7 +97,7 @@ def with_event_evidence(
             restart_evidence=event_evidence.restart_evidence.copy(),
             source_codes=event_evidence.source_codes.copy(),
             ungraded_mask=model_input.event_evidence.ungraded_mask.copy(),
-            temporal_fields=model_input.event_evidence.temporal_fields,
+            temporal_fields=event_evidence.temporal_fields,
         ),
     )
     validate_model_input_fields(model_input_field_names(model_input))

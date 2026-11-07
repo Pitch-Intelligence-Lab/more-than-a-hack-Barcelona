@@ -277,11 +277,88 @@ def test_phase_evidence_changes_only_approved_dead_and_restart_behavior() -> Non
         restart_window_s=0.2,
     )
     phase_input = with_event_evidence(base_input, phase_evidence)
+    temporal_fields = phase_input.event_evidence.temporal_fields
+    assert {field.field_name for field in temporal_fields} == {
+        "forced_dead_mask",
+        "restart_evidence",
+        "source_codes",
+    }
+    assert all(len(field.per_frame_available_at) == 30 for field in temporal_fields)
+    assert all(field.available_at is None for field in temporal_fields)
     baseline = predict_model_input(base_input, config)
     phase_aware = predict_model_input(phase_input, config)
     assert baseline.labels.tolist() == ["H"] * 30
     assert phase_aware.labels[5:11].tolist() == ["D"] * 6
     assert phase_aware.labels[11:].tolist() == ["H"] * 19
+
+
+def test_nonempty_phase_evidence_without_temporal_metadata_fails() -> None:
+    data = replace(
+        neutral(
+            frame_count=20,
+            frame_present=[True] * 20,
+            possession_side=[-1] * 20,
+            possession_status=[1] * 20,
+        ),
+        periods=(PeriodSpan(1, 0, 20),),
+    )
+    base_input = build_model_input(data)
+    phase = compile_phase_evidence(
+        20,
+        10,
+        (PhaseDirective(5, 10, PhaseKind.CORNER, confirmed_dead=True),),
+    )
+    injected = with_event_evidence(base_input, phase)
+    invalid = replace(injected, event_evidence=replace(injected.event_evidence, temporal_fields=()))
+    with pytest.raises(PolicyError, match="requires temporal metadata"):
+        predict_model_input(
+            invalid,
+            replace(
+                BASE_CONFIG,
+                fps=10,
+                expected_frames=20,
+                ungraded_blocks=(),
+                forced_dead_blocks=(),
+            ),
+        )
+
+
+def test_nonempty_phase_evidence_requires_temporal_metadata_for_each_field() -> None:
+    data = replace(
+        neutral(
+            frame_count=20,
+            frame_present=[True] * 20,
+            possession_side=[-1] * 20,
+            possession_status=[1] * 20,
+        ),
+        periods=(PeriodSpan(1, 0, 20),),
+    )
+    model_input = build_model_input(data)
+    phase = compile_phase_evidence(
+        20,
+        10,
+        (PhaseDirective(5, 10, PhaseKind.CORNER, confirmed_dead=True),),
+    )
+    injected = with_event_evidence(model_input, phase)
+    partial = replace(
+        injected.event_evidence,
+        temporal_fields=tuple(
+            field
+            for field in injected.event_evidence.temporal_fields
+            if field.field_name != "source_codes"
+        ),
+    )
+    with pytest.raises(PolicyError, match="lack temporal metadata: source_codes"):
+        predict_model_input(
+            replace(injected, event_evidence=partial),
+            replace(
+                BASE_CONFIG,
+                fps=10,
+                expected_frames=20,
+                ungraded_blocks=(),
+                forced_dead_blocks=(),
+            ),
+        )
 
 
 def test_synthetic_external_evaluation_preserves_requested_split() -> None:
@@ -331,6 +408,7 @@ def test_future_event_field_is_rejected_by_real_model_path() -> None:
                 interval_end=None,
                 available_at=0.1,
                 availability_source="event export",
+                semantics_version="DP-006-POLICY-v2",
             ),
         ),
     )

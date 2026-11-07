@@ -7,6 +7,7 @@ from mtah_possession.governance.temporal import (
     convert_interval,
     phase_gap_target,
     require_available,
+    validate_temporal_feature_path,
 )
 
 
@@ -18,6 +19,7 @@ def test_current_field_is_available_only_after_available_at() -> None:
         interval_end=2.0,
         available_at=1.0,
         availability_source="frame clock",
+        semantics_version="DP-006-POLICY-v2",
     )
     assert field.status == TemporalStatus.PASS
     assert not field.available_for(0.9)
@@ -33,6 +35,7 @@ def test_future_result_and_endpoint_fail() -> None:
         interval_end=5.0,
         available_at=4.0,
         availability_source="event export",
+        semantics_version="DP-006-POLICY-v2",
     )
     assert field.status == TemporalStatus.FAIL
     with pytest.raises(PolicyError, match="unavailable"):
@@ -47,6 +50,7 @@ def test_future_field_without_interval_end_is_hold() -> None:
         interval_end=None,
         available_at=1.0,
         availability_source="event export",
+        semantics_version="DP-006-POLICY-v2",
     )
     assert field.status == TemporalStatus.HOLD
     with pytest.raises(PolicyError, match="HOLD"):
@@ -61,6 +65,7 @@ def test_missing_available_at_is_hold() -> None:
         interval_end=2.0,
         available_at=None,
         availability_source="missing",
+        semantics_version="DP-006-POLICY-v2",
     )
     assert field.status == TemporalStatus.HOLD
     with pytest.raises(PolicyError, match="HOLD"):
@@ -73,3 +78,32 @@ def test_phase_conversion_preserves_seconds_and_gap_has_no_label() -> None:
     assert converted_10 == (0, 75)
     assert converted_25 == (0, 30)
     assert phase_gap_target(20) is None
+
+
+def test_per_frame_availability_rejects_frame_before_event() -> None:
+    field = TemporalFieldPolicy(
+        field_name="forced_dead_mask",
+        event_time=1.0,
+        interval_start=1.0,
+        interval_end=2.0,
+        available_at=None,
+        availability_source="phase interval",
+        per_frame_available_at=(1.0,) * 20,
+        semantics_version="DP-006-POLICY-v2",
+    )
+    with pytest.raises(PolicyError, match="future at frame 0"):
+        validate_temporal_feature_path((field,), frame_count=20, fps=10)
+
+
+def test_global_zero_placeholder_for_phase_mask_is_rejected() -> None:
+    field = TemporalFieldPolicy(
+        field_name="forced_dead_mask",
+        event_time=0.0,
+        interval_start=0.0,
+        interval_end=2.0,
+        available_at=0.0,
+        availability_source="placeholder",
+        semantics_version="DP-006-POLICY-v2",
+    )
+    with pytest.raises(PolicyError, match="requires per-frame availability"):
+        validate_temporal_feature_path((field,), frame_count=20, fps=10)

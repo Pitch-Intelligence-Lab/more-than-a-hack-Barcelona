@@ -342,8 +342,29 @@ def predict_model_input(
     model_input: ModelInput,
     config: StateEngineConfig,
 ) -> ModelPrediction:
+    event_evidence = model_input.event_evidence
+    has_event_evidence = bool(
+        event_evidence.forced_dead_mask.any()
+        or event_evidence.restart_evidence.any()
+        or (event_evidence.source_codes != "phase-none").any()
+    )
+    if has_event_evidence and not event_evidence.temporal_fields:
+        raise PolicyError("non-empty phase evidence requires temporal metadata")
+    temporal_names = {field.field_name for field in event_evidence.temporal_fields}
+    required_temporal_names = set()
+    if event_evidence.forced_dead_mask.any():
+        required_temporal_names.add("forced_dead_mask")
+    if event_evidence.restart_evidence.any():
+        required_temporal_names.add("restart_evidence")
+    if (event_evidence.source_codes != "phase-none").any():
+        required_temporal_names.add("source_codes")
+    missing_temporal_names = sorted(required_temporal_names - temporal_names)
+    if missing_temporal_names:
+        raise PolicyError(
+            "phase evidence fields lack temporal metadata: " + ", ".join(missing_temporal_names)
+        )
     validate_temporal_feature_path(
-        model_input.event_evidence.temporal_fields,
+        event_evidence.temporal_fields,
         frame_count=model_input.tracking.frame_count,
         fps=model_input.fps,
     )

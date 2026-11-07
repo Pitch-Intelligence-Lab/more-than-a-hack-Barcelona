@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "artifact_root": "../..",
+  "artifacts": {
+    "model": [
+      "src/mtah_possession"
+    ],
+    "feature_set": [
+      "src/mtah_possession/features"
+    ],
+    "configuration": [
+      "configs/state-engine.json",
+      "configs/policy/external-data-policy-v2.json"
+    ],
+    "hyperparameters": [
+      "configs/state-engine.json"
+    ],
+    "evaluation_script": [
+      "scripts/evaluate_external.py",
+      "src/mtah_possession/evaluation/external.py"
+    ],
+    "metric_contract": [
+      "docs/evaluation-contract.md",
+      "src/mtah_possession/evaluation/external.py"
+    ]
+  },
+  "metric_contract_version": "1.1.0"
+}

@@ -11,7 +11,6 @@ from mtah_possession.data.neutral import ProxyTarget
 from mtah_possession.evaluation.external import ExternalMatchEvaluation
 from mtah_possession.evaluation.runner import run_external_evaluation
 from mtah_possession.evaluation.splits import EvaluationMode, SplitManifestError
-from mtah_possession.governance.holdout import FreezeHashes
 from mtah_possession.governance.policy import PolicyError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +29,7 @@ def write_allowed_policy(tmp_path: Path) -> Path:
         "TEMPORAL_AVAILABILITY_VERIFIED",
         "PHASE_SEMANTICS_VERIFIED",
         "LABEL_SEMANTICS_ALIGNED",
+        "HOLDOUT_SEAL_VERIFIED",
     ):
         provider["statuses"][axis] = "PASS"
     for use in (
@@ -228,7 +228,6 @@ def test_holdout_freeze_mismatch_fails_before_external_loader(tmp_path: Path) ->
         ),
         encoding="utf-8",
     )
-    expected = FreezeHashes("model", "features", "config", "params", "script", "1")
     holdout_path = tmp_path / "holdout.json"
     holdout_path.write_text(
         json.dumps(
@@ -236,12 +235,12 @@ def test_holdout_freeze_mismatch_fails_before_external_loader(tmp_path: Path) ->
                 "schema_version": "2.0",
                 "status": "sealed",
                 "matches": ["holdout-1"],
-                "model_freeze_sha256": expected.model,
-                "feature_set_sha256": expected.feature_set,
-                "config_freeze_sha256": expected.configuration,
-                "hyperparameter_set_sha256": expected.hyperparameters,
-                "evaluation_script_sha256": expected.evaluation_script,
-                "metric_contract_version": expected.metric_contract_version,
+                "model_freeze_sha256": "0" * 64,
+                "feature_set_sha256": "0" * 64,
+                "config_freeze_sha256": "0" * 64,
+                "hyperparameter_set_sha256": "0" * 64,
+                "evaluation_script_sha256": "0" * 64,
+                "metric_contract_version": "0",
                 "unseal_log": [],
             }
         ),
@@ -265,7 +264,7 @@ def test_holdout_freeze_mismatch_fails_before_external_loader(tmp_path: Path) ->
             code_commit="fixture",
             policy_path=write_allowed_policy(tmp_path),
             holdout_manifest_path=holdout_path,
-            freeze_hashes=FreezeHashes("changed", "features", "config", "params", "script", "1"),
+            ledger_dir=tmp_path / "ledger",
             match_loader=forbidden_loader,
         )
     assert calls == 0

@@ -90,8 +90,18 @@ def authorize_external_run(
     require_split(split_manifest, match_id, split, mode=mode)
 
     if mode == EvaluationMode.PROMOTION:
+        if provider_policy.statuses["HOLDOUT_SEAL_VERIFIED"] != PolicyStatus.PASS:
+            raise PolicyError(
+                f"HOLDOUT_SEAL_VERIFIED={provider_policy.statuses['HOLDOUT_SEAL_VERIFIED'].value}"
+            )
         if holdout_manifest is None or freeze_hashes is None:
             raise PolicyError("promotion requires sealed holdout and frozen artifacts")
+        if not holdout_manifest.matches:
+            raise PolicyError("holdout manifest match set is empty")
+        if set(holdout_manifest.matches) != set(split_manifest.holdout):
+            raise PolicyError("holdout manifest matches do not equal split holdout matches")
+        if match_id not in holdout_manifest.matches:
+            raise PolicyError("current match is not in the holdout manifest")
         holdout_manifest.require_frozen(freeze_hashes)
 
     return AuthorizedExternalRun(
