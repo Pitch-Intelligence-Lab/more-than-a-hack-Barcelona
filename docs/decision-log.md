@@ -295,3 +295,18 @@ Record durable project decisions here. Do not record private competition data.
 - Status: accepted for Revision 1 local draft
 - Decision: Reports include code commit, source-adapter version, configuration version, evaluation-contract version, source hashes, prediction hashes and a canonical report hash.
 - Reason: A metric without its exact code, adapter and contract identity is not reproducible evidence.
+
+## D-043: Label roles replace blanket diagnostic-only policy
+
+- Date: 2026-11-08
+- Status: proposed in DP-006-POLICY-v2 branch
+- Decision: External possession, player and phase labels may supervise training, evaluation or diagnostics only when their exact provider, use role, rights status, internal authorization and technical gate all pass.
+- Supersedes: D-033 as a blanket evaluation-only rule.
+- Reason: Official rules permit external supervision, while the previous blanket rule was stricter than the official task and did not model provider rights per operation.
+
+## D-044: Real external data is fail-closed by policy
+
+- Date: 2026-11-08
+- Status: proposed in DP-006-POLICY-v2 branch
+- Decision: Every real external loader path validates provider revision, policy axes, exact use permission, evidence IDs and technical status before the loader is called.
+- Reason: MIT software text does not establish SkillCorner data rights. SkillCorner remains HOLD until written terms and internal approval exist.

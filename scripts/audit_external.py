@@ -14,10 +14,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from mtah_possession.data.neutral import map_proxy_target  # noqa: E402
-from mtah_possession.data.skillcorner import load_skillcorner_match  # noqa: E402
+from mtah_possession.data.skillcorner import (  # noqa: E402
+    load_skillcorner_manifest,
+    load_skillcorner_match,
+)
 from mtah_possession.evaluation.splits import (  # noqa: E402
     load_split_manifest,
     split_manifest_dict,
+)
+from mtah_possession.governance.policy import (  # noqa: E402
+    DataUse,
+    load_policy,
+    require_allowed,
 )
 from mtah_possession.states.phase_layer import (  # noqa: E402
     compile_phase_evidence,
@@ -50,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=str(ROOT / "configs" / "external-skillcorner.json"))
     parser.add_argument("--splits", default=str(ROOT / "configs" / "external-splits.json"))
+    parser.add_argument(
+        "--policy",
+        default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.json"),
+    )
     parser.add_argument("--external-root", default=None)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
@@ -59,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
         print("FAIL  MTAH_EXTERNAL_DATA_DIR is not set", file=sys.stderr)
         return 1
     try:
+        manifest = load_skillcorner_manifest(args.config)
+        policy = load_policy(args.policy)
+        require_allowed(
+            policy,
+            str(manifest["provider"]),
+            DataUse.READ_PREPROCESS,
+            source_revision=str(manifest["commit"]),
+        )
         match = load_skillcorner_match(args.config, root)
         proxy = map_proxy_target(match)
         splits = load_split_manifest(args.splits)

@@ -43,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default=str(ROOT / "configs" / "external-skillcorner.json"))
     parser.add_argument("--state-config", default=str(ROOT / "configs" / "state-engine.json"))
     parser.add_argument("--splits", default=str(ROOT / "configs" / "external-splits.json"))
+    parser.add_argument(
+        "--policy",
+        default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.json"),
+    )
     parser.add_argument("--external-root", default=None)
     parser.add_argument(
         "--split",
@@ -69,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             split=args.split,
             mode=mode,
             code_commit=args.code_commit or "",
+            policy_path=args.policy,
         )
         _write_json_atomic(Path(args.output), result.report)
     except (OSError, ValueError) as error:

@@ -1,0 +1,151 @@
+{
+  "schema_version": "2.0",
+  "policy_version": "DP-006-POLICY-v2",
+  "official_rule_revision": "f8f2629ff1e0985f81d7e59d8413678514ee1530",
+  "providers": [
+    {
+      "provider": "skillcorner",
+      "source_revision": "4340d274572876239c154c90bc507a9b3250a656",
+      "source_evidence": [
+        "EV-AUTH-SC-README",
+        "EV-AUTH-SC-LICENSE",
+        "EV-AUTH-SC-CONTACT"
+      ],
+      "statuses": {
+        "PUBLIC_SOURCE_VERIFIED": "PASS",
+        "LICENSE_VERIFIED": "HOLD",
+        "INTERNAL_RESEARCH_AUTHORIZED": "HOLD",
+        "TRAINING_AUTHORIZED": "HOLD",
+        "EVALUATION_AUTHORIZED": "HOLD",
+        "PUBLICATION_AUTHORIZED": "HOLD",
+        "REDISTRIBUTION_AUTHORIZED": "HOLD",
+        "TEMPORAL_AVAILABILITY_VERIFIED": "HOLD",
+        "PHASE_SEMANTICS_VERIFIED": "HOLD",
+        "PLAYER_ID_LABEL_QUALITY_VERIFIED": "HOLD",
+        "LABEL_SEMANTICS_ALIGNED": "HOLD",
+        "HOLDOUT_SEAL_VERIFIED": "HOLD"
+      },
+      "uses": {
+        "download_store": {"status": "HOLD", "evidence_ids": [], "conditions": ["Written data-specific rights required."]},
+        "read_preprocess": {"status": "HOLD", "evidence_ids": [], "conditions": ["Internal processing authorization required."]},
+        "tracking_model_input": {"status": "HOLD", "evidence_ids": [], "conditions": ["License, temporal audit and model-input approval required."]},
+        "possession_group_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["Training rights and label-semantic audit required."]},
+        "possession_player_aux_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["Training rights and player-label quality audit required."]},
+        "phase_auxiliary_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["Training rights and phase-boundary audit required."]},
+        "phase_model_input": {"status": "HOLD", "evidence_ids": [], "conditions": ["Leakage and phase-semantics review required."]},
+        "evaluation_reference": {"status": "HOLD", "evidence_ids": [], "conditions": ["Evaluation rights and sealed split required."]},
+        "derived_model": {"status": "HOLD", "evidence_ids": [], "conditions": ["Written derived-model terms required."]},
+        "publication": {"status": "HOLD", "evidence_ids": [], "conditions": ["Publication rights required."]},
+        "source_redistribution": {"status": "FAIL", "evidence_ids": [], "conditions": ["Do not redistribute source files."]},
+        "derived_redistribution": {"status": "FAIL", "evidence_ids": [], "conditions": ["Do not publish reconstructible derived data."]}
+      },
+      "label_profiles": [
+        {
+          "provider_label_definition_id": "skillcorner_possession_group_v1",
+          "source_field": "possession.group",
+          "label_kind": "proxy",
+          "roles": ["TRAINING_TARGET", "EVALUATION_REFERENCE", "POST_INFERENCE_DIAGNOSTIC"],
+          "time_basis": "provider 10 FPS frame",
+          "null_semantics": "provider null semantics must be audited",
+          "target_mapping_id": "skillcorner_group_to_ha_v1",
+          "mapping_version": "1.0",
+          "mapping_evidence": ["EV-AUTH-SC-README", "EV-EXT-AUDIT-2017461"],
+          "status": "HOLD"
+        },
+        {
+          "provider_label_definition_id": "skillcorner_possession_player_v1",
+          "source_field": "possession.player_id",
+          "label_kind": "proxy",
+          "roles": ["AUXILIARY_TRAINING_TARGET", "POST_INFERENCE_DIAGNOSTIC"],
+          "time_basis": "provider 10 FPS frame",
+          "null_semantics": "provider null semantics must be audited",
+          "target_mapping_id": "skillcorner_player_to_team_v1",
+          "mapping_version": "1.0",
+          "mapping_evidence": ["EV-AUTH-SC-README"],
+          "status": "HOLD"
+        }
+      ]
+    },
+    {
+      "provider": "metrica",
+      "source_revision": "e706dd506b360d69d9d123d5b8026e7294b13996",
+      "source_evidence": ["EV-AUTH-MET-README", "EV-AUTH-MET-TERMS"],
+      "statuses": {
+        "PUBLIC_SOURCE_VERIFIED": "PASS",
+        "LICENSE_VERIFIED": "HOLD",
+        "INTERNAL_RESEARCH_AUTHORIZED": "HOLD",
+        "TRAINING_AUTHORIZED": "HOLD",
+        "EVALUATION_AUTHORIZED": "HOLD",
+        "PUBLICATION_AUTHORIZED": "HOLD",
+        "REDISTRIBUTION_AUTHORIZED": "HOLD",
+        "TEMPORAL_AVAILABILITY_VERIFIED": "HOLD",
+        "PHASE_SEMANTICS_VERIFIED": "NOT_APPLICABLE",
+        "PLAYER_ID_LABEL_QUALITY_VERIFIED": "HOLD",
+        "LABEL_SEMANTICS_ALIGNED": "HOLD",
+        "HOLDOUT_SEAL_VERIFIED": "HOLD"
+      },
+      "uses": {
+        "download_store": {"status": "HOLD", "evidence_ids": [], "conditions": ["Data-specific terms required."]},
+        "read_preprocess": {"status": "HOLD", "evidence_ids": [], "conditions": ["Data-specific terms required."]},
+        "tracking_model_input": {"status": "HOLD", "evidence_ids": [], "conditions": ["Internal processing authorization required."]},
+        "possession_group_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["Confirmed possession label source required."]},
+        "possession_player_aux_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["Confirmed possession label source required."]},
+        "phase_auxiliary_target": {"status": "NOT_APPLICABLE", "evidence_ids": [], "conditions": []},
+        "phase_model_input": {"status": "NOT_APPLICABLE", "evidence_ids": [], "conditions": []},
+        "evaluation_reference": {"status": "HOLD", "evidence_ids": [], "conditions": ["Data-specific terms required."]},
+        "derived_model": {"status": "HOLD", "evidence_ids": [], "conditions": ["Written terms required."]},
+        "publication": {"status": "HOLD", "evidence_ids": [], "conditions": ["Attribution and publication terms required."]},
+        "source_redistribution": {"status": "FAIL", "evidence_ids": [], "conditions": ["Do not redistribute source files."]},
+        "derived_redistribution": {"status": "FAIL", "evidence_ids": [], "conditions": ["Do not publish reconstructible derived data."]}
+      },
+      "label_profiles": []
+    },
+    {
+      "provider": "soccertrack_v2",
+      "source_revision": "325bd4c57ee8e135ab652f3921d274526ada496b",
+      "source_evidence": ["EV-AUTH-ST-README", "EV-AUTH-ST-LICENSE", "EV-AUTH-ST-HF"],
+      "statuses": {
+        "PUBLIC_SOURCE_VERIFIED": "PASS",
+        "LICENSE_VERIFIED": "HOLD",
+        "INTERNAL_RESEARCH_AUTHORIZED": "HOLD",
+        "TRAINING_AUTHORIZED": "HOLD",
+        "EVALUATION_AUTHORIZED": "HOLD",
+        "PUBLICATION_AUTHORIZED": "HOLD",
+        "REDISTRIBUTION_AUTHORIZED": "HOLD",
+        "TEMPORAL_AVAILABILITY_VERIFIED": "HOLD",
+        "PHASE_SEMANTICS_VERIFIED": "HOLD",
+        "PLAYER_ID_LABEL_QUALITY_VERIFIED": "HOLD",
+        "LABEL_SEMANTICS_ALIGNED": "HOLD",
+        "HOLDOUT_SEAL_VERIFIED": "HOLD"
+      },
+      "uses": {
+        "download_store": {"status": "HOLD", "evidence_ids": [], "conditions": ["Gated terms require owner review."]},
+        "read_preprocess": {"status": "HOLD", "evidence_ids": [], "conditions": ["P1 processing approval required."]},
+        "tracking_model_input": {"status": "HOLD", "evidence_ids": [], "conditions": ["Access and internal authorization required."]},
+        "possession_group_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["No direct possession target is documented."]},
+        "possession_player_aux_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["No direct possession target is documented."]},
+        "phase_auxiliary_target": {"status": "HOLD", "evidence_ids": [], "conditions": ["Restart labels require semantic mapping."]},
+        "phase_model_input": {"status": "HOLD", "evidence_ids": [], "conditions": ["Access and leakage review required."]},
+        "evaluation_reference": {"status": "HOLD", "evidence_ids": [], "conditions": ["Access and evaluation rights required."]},
+        "derived_model": {"status": "HOLD", "evidence_ids": [], "conditions": ["Access and owner approval required."]},
+        "publication": {"status": "HOLD", "evidence_ids": [], "conditions": ["Attribution and gated terms review required."]},
+        "source_redistribution": {"status": "HOLD", "evidence_ids": [], "conditions": ["CC BY and gated conditions require review."]},
+        "derived_redistribution": {"status": "HOLD", "evidence_ids": [], "conditions": ["CC BY and gated conditions require review."]}
+      },
+      "label_profiles": [
+        {
+          "provider_label_definition_id": "soccertrack_bas_restart_v0",
+          "source_field": "BAS event category",
+          "label_kind": "event-derived",
+          "roles": ["AUXILIARY_TRAINING_TARGET", "EVALUATION_REFERENCE", "POST_INFERENCE_DIAGNOSTIC"],
+          "time_basis": "event milliseconds",
+          "null_semantics": "not audited",
+          "target_mapping_id": "soccertrack_restart_to_dead_candidate_v0",
+          "mapping_version": "0.1",
+          "mapping_evidence": ["EV-AUTH-ST-README"],
+          "status": "HOLD"
+        }
+      ]
+    }
+  ]
+}

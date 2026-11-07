@@ -64,7 +64,7 @@ The development comparison therefore recommends keeping DP-005 v1.2 as the provi
 ## Reproduction
 
 ```powershell
-$env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
+$env:MTAH_EXTERNAL_DATA_DIR = "<external-data-root>"
 .\.venv\Scripts\python scripts\audit_external.py `
   --output outputs\external-data-audit.json
 .\.venv\Scripts\python scripts\evaluate_external.py `

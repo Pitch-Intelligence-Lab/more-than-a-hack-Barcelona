@@ -1,0 +1,8 @@
+clause_id,source_file,official_quote,implication,decision
+OFFICIAL-001,RULES.md,Any method at all subject to organiser access and inspectability.,External models and data are allowed when inspectable,PASS
+OFFICIAL-002,RULES.md,Hand labels on the provided game are prohibited; labels on other games are allowed.,External supervision is allowed subject to rights,PASS
+OFFICIAL-003,RULES.md,Public five-minute truth is pipeline-check only.,Training tuning and model selection are prohibited,PASS
+OFFICIAL-004,RULES.md,Repository must reproduce the submission.,All inputs and processing must be documented,PASS
+OFFICIAL-005,RULES.md,Match assets and reconstructible extracts may not be redistributed.,Target data remains outside Git,PASS
+OFFICIAL-006,FAQ.md,Pretrained models and external data are allowed; target extracts may not enter cloud LLMs.,Provider rights still control external use,PASS
+OFFICIAL-007,RULES.md,Private unavailable resources are not allowed.,The method must remain inspectable,PASS

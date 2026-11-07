@@ -11,6 +11,7 @@ from mtah_possession.data.neutral import ProxyTarget
 from mtah_possession.evaluation.external import ExternalMatchEvaluation
 from mtah_possession.evaluation.runner import run_external_evaluation
 from mtah_possession.evaluation.splits import EvaluationMode, SplitManifestError
+from mtah_possession.governance.policy import PolicyError
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,6 +57,25 @@ def test_holdout_selection_is_used_in_report_and_versions(
         ),
         encoding="utf-8",
     )
+    policy_values = json.loads(
+        (ROOT / "configs" / "policy" / "external-data-policy-v2.json").read_text(encoding="utf-8")
+    )
+    provider = policy_values["providers"][0]
+    for axis in (
+        "PUBLIC_SOURCE_VERIFIED",
+        "LICENSE_VERIFIED",
+        "INTERNAL_RESEARCH_AUTHORIZED",
+        "EVALUATION_AUTHORIZED",
+    ):
+        provider["statuses"][axis] = "PASS"
+    for use in ("read_preprocess", "evaluation_reference"):
+        provider["uses"][use] = {
+            "status": "PASS",
+            "evidence_ids": ["EV-AUTH-SC-README"],
+            "conditions": [],
+        }
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps(policy_values), encoding="utf-8")
     match = SimpleNamespace(
         match_id="2017461",
         fps=10,
@@ -90,6 +110,7 @@ def test_holdout_selection_is_used_in_report_and_versions(
         split="holdout",
         mode=EvaluationMode.PROMOTION,
         code_commit="abcdef0123456789",
+        policy_path=policy_path,
         match_loader=lambda *_args: match,
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
@@ -101,3 +122,26 @@ def test_holdout_selection_is_used_in_report_and_versions(
     assert provenance["source_adapter_version"] == "1.1.0"
     assert provenance["evaluation_contract_version"] == "1.1.0"
     assert provenance["code_commit"] == "abcdef0123456789"
+    assert result.report["policy_identity"]["policy_version"] == "DP-006-POLICY-v2"
+
+
+def test_skillcorner_hold_fails_before_external_loader(tmp_path: Path) -> None:
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("external loader must not be called")
+
+    with pytest.raises(PolicyError, match="is not allowed"):
+        run_external_evaluation(
+            config_path=ROOT / "configs" / "external-skillcorner.json",
+            state_config_path=ROOT / "configs" / "state-engine.json",
+            splits_path=ROOT / "configs" / "external-splits.json",
+            external_root=tmp_path / "external",
+            split="development",
+            mode=EvaluationMode.DIAGNOSTIC,
+            code_commit="fixture",
+            match_loader=forbidden_loader,
+        )
+    assert calls == 0

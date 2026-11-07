@@ -201,9 +201,26 @@ This entry records code-only local drafting under the v1.4 approval gate. Existi
 - Tests: 100 passed
 - Warning-free tests: 100 passed with `-W error`
 - Ruff check and format: passed
-- Invalid external-root test run: 100 passed with `MTAH_EXTERNAL_DATA_DIR=E:\external-data\nonexistent`
+- Invalid external-root test run passed with `MTAH_EXTERNAL_DATA_DIR` pointing to a nonexistent directory
 - Source adapter version: `1.1.0`
 - Evaluation contract version: `1.1.0`
 - Changes: explicit split CLI, ModelInput boundary, three source-quality categories, end-to-end label isolation, lifecycle-separated validation/promotion gates, fail-closed loader test, metric aggregation rules and versioned report identity
 
 The existing local external reports were not reopened or regenerated. They remain historical diagnostic artifacts from before Revision 1.
+
+## E-015: DP-006 policy v2 implementation
+
+- Date: 2026-11-08
+- External data accessed: no
+- Real external evaluation run: no
+- Training or tuning run: no
+- Scope: provider × use × status policy, label roles, temporal availability, provider label alignment, holdout lifecycle and fail-closed external loading
+- Official rule revision: `f8f2629ff1e0985f81d7e59d8413678514ee1530`
+- Policy version: `DP-006-POLICY-v2`
+- Schema version: `2.0`
+- SkillCorner rights: `HOLD`
+- Metrica rights: `HOLD`
+- SoccerTrack access: `HOLD`
+- Result: implementation and synthetic tests completed; 133 tests passed with and
+  without `-W error`; the same 133 tests pass with a nonexistent external-data
+  root; no real-data research activated
