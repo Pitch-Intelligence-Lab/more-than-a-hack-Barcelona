@@ -1,5 +1,10 @@
 # DP-006 Policy Remediation 006 Closure Correction Evidence
 
+> C2 lifecycle notice: this file records the correction candidate in which
+> SourceIdentitySet data modeling passed but one-ledger multi-match production
+> lifecycle remained incomplete. Current C2 production evidence is in
+> `DP-006_POLICY_REMEDIATION_006_C2_LIFECYCLE_EVIDENCE.md`.
+
 **Task:** `DP-006-POLICY-REMEDIATION-006-CLOSURE-CORRECTION`
 
 **Review baseline:** `9fffc4f4363e478ac8edba1edbb2e25867894ec3`

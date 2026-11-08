@@ -160,6 +160,30 @@ This is an engineer correction candidate only. It does not start Final
 Assurance, authorize REPAIR-007 or merge PR #9, and it does not declare Policy
 implementation PASS.
 
+## DP-006-POLICY-REMEDIATION-006-C2-LIFECYCLE-CLOSURE
+
+**Date:** 2026-11-09
+
+**Status:** C2 production lifecycle candidate for Independent REPAIR-006 Re-review
+
+### Fixed
+
+- stop comparing a later Holdout match against the first sealed single-match
+  `source_identity`;
+- select the current match identity from the sealed `SourceIdentitySet`;
+- add V6 collection and match event scopes;
+- track `NOT_STARTED`, `RUNNING`, `FAILED` and `COMPLETED` independently per
+  match;
+- derive aggregate completion only when every registered match is completed;
+- require one shared ledger for positive multi-match evidence;
+- preserve collection-level `COMPROMISED` as a permanent terminal state;
+- keep V4 and V5 ledgers fail-closed behind controlled re-seal requirements.
+
+### Not claimed
+
+This is an engineer candidate only. Final Assurance, REPAIR-007, merge and
+Policy implementation PASS remain not authorized.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08
