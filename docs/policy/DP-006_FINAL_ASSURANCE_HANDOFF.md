@@ -12,7 +12,7 @@
 
 **Current implementation commit:** `b8a93cc955ec80c549489c00f2ad1737663abba0`
 
-**Final docs-only handoff HEAD:** `PENDING_FINAL_DOCS_COMMIT`
+**Final docs-only evidence commit:** `f40d6bf5ff3deaefadfcb680f36c77f6aa99a45d`
 
 **Requested gate:** Independent DP-006 Final Assurance Review
 
@@ -54,8 +54,9 @@ worktree clean = yes
 PR state = OPEN, UNMERGED, HOLD
 ```
 
-The final docs-only handoff commit changes only documentation. Its commit SHA is
-recorded in the final `06_工程师交付回执.md` metadata commit and PR #9.
+The docs-only evidence commit is
+`f40d6bf5ff3deaefadfcb680f36c77f6aa99a45d`. The final metadata HEAD is
+recorded by the subsequent receipt-only commit and PR #9.
 
 ## Evidence index
 
