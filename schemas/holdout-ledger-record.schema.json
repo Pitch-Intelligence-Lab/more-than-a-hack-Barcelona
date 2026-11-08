@@ -107,6 +107,13 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
+    "source_config_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_identity": {
+      "$ref": "source-identity.schema.json"
+    },
     "migration_receipt": {
       "$ref": "holdout-migration-receipt.schema.json"
     },

@@ -6,10 +6,21 @@ import hashlib
 import json
 import os
 import subprocess
+import tarfile
+import tempfile
+from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from mtah_possession.governance.artifacts import compute_freeze_hashes
+from mtah_possession.governance.holdout import FreezeHashes
 from mtah_possession.governance.policy import PolicyError
+from mtah_possession.governance.source import (
+    SourceIdentity,
+    build_source_identity,
+    source_identity_from_dict,
+)
 
 MIGRATION_TOOL_PATH = "scripts/migrate_holdout_ledger.py"
 MIGRATION_RECEIPT_FIELDS = frozenset(
@@ -31,11 +42,13 @@ MIGRATION_RECEIPT_FIELDS = frozenset(
         "model_freeze_spec_sha256",
         "evaluation_freeze_spec_sha256",
         "policy_sha256",
+        "source_config_sha256",
         "old_holdout_manifest_sha256",
         "target_model_identity",
         "target_evaluation_identity",
         "target_split_manifest_sha256",
         "target_holdout_manifest_sha256",
+        "target_source_identity",
         "governance_identity_digest",
         "approver",
         "approval_evidence_ids",
@@ -43,6 +56,13 @@ MIGRATION_RECEIPT_FIELDS = frozenset(
         "previous_record_sha256",
     }
 )
+
+
+@dataclass(frozen=True)
+class VerifiedMigration:
+    receipt: dict[str, Any]
+    model_freeze: FreezeHashes
+    source_identity: SourceIdentity
 
 
 def validate_migration_receipt(receipt: Any) -> dict[str, Any]:
@@ -56,8 +76,13 @@ def load_verified_migration_receipt(
     approval_commit: str,
     migration_commit: str,
     receipt_path: str | os.PathLike[str],
+    freeze_spec_path: str | os.PathLike[str],
+    split_manifest_path: str | os.PathLike[str],
+    holdout_manifest_path: str | os.PathLike[str],
+    policy_path: str | os.PathLike[str],
+    source_config_path: str | os.PathLike[str],
     expected: dict[str, Any],
-) -> dict[str, Any]:
+) -> VerifiedMigration:
     root = Path(repo_root).resolve(strict=True)
     relative_receipt = _relative_path(receipt_path)
     resolved_approval_commit = _git(
@@ -115,13 +140,173 @@ def load_verified_migration_receipt(
     ).strip()
     if old_code_commit != receipt["old_code_commit"]:
         raise PolicyError("old code commit is not present in the repository")
+    _require_ancestor(root, migration_commit, approval_commit, "approval")
+    _require_ancestor(root, old_code_commit, migration_commit, "old code")
     tool_sha256 = hashlib.sha256(committed_tool).hexdigest()
     if receipt["migration_tool_sha256"] != tool_sha256:
         raise PolicyError("migration tool SHA-256 does not match the receipt")
+    verified = _verify_git_targets(
+        root=root,
+        migration_commit=migration_commit,
+        receipt=receipt,
+        freeze_spec_path=freeze_spec_path,
+        split_manifest_path=split_manifest_path,
+        holdout_manifest_path=holdout_manifest_path,
+        policy_path=policy_path,
+        source_config_path=source_config_path,
+    )
     for key, value in expected.items():
         if receipt.get(key) != value:
             raise PolicyError(f"migration receipt does not match approved {key}")
-    return receipt
+    return verified
+
+
+def _verify_git_targets(
+    *,
+    root: Path,
+    migration_commit: str,
+    receipt: dict[str, Any],
+    freeze_spec_path: str | os.PathLike[str],
+    split_manifest_path: str | os.PathLike[str],
+    holdout_manifest_path: str | os.PathLike[str],
+    policy_path: str | os.PathLike[str],
+    source_config_path: str | os.PathLike[str],
+) -> VerifiedMigration:
+    freeze_spec = _relative_path(freeze_spec_path)
+    split_manifest = _relative_path(split_manifest_path)
+    holdout_manifest = _relative_path(holdout_manifest_path)
+    policy = _relative_path(policy_path)
+    source_config = _relative_path(source_config_path)
+    archive = _git_bytes(root, "archive", "--format=tar", migration_commit)
+    with tempfile.TemporaryDirectory() as temporary:
+        archive_root = Path(temporary)
+        _extract_archive(archive, archive_root)
+        git_freeze_spec = archive_root / freeze_spec
+        if not git_freeze_spec.is_file():
+            raise PolicyError("migration commit is missing target freeze spec")
+        try:
+            git_model_freeze = compute_freeze_hashes(git_freeze_spec)
+        except (OSError, ValueError) as error:
+            raise PolicyError(
+                "could not recompute target identities from migration commit"
+            ) from error
+        git_source_config = archive_root / source_config
+        if not git_source_config.is_file():
+            raise PolicyError("migration commit is missing source config")
+        git_source_identity = build_source_identity(git_source_config)
+        git_split_sha = _sha256_committed_file(archive_root, split_manifest)
+        git_holdout_sha = _sha256_committed_file(archive_root, holdout_manifest)
+        git_policy_sha = _sha256_committed_file(archive_root, policy)
+        git_freeze_spec_sha = hashlib.sha256(git_freeze_spec.read_bytes()).hexdigest()
+        _compare_receipt_targets(
+            receipt=receipt,
+            model_freeze=git_model_freeze,
+            source_identity=git_source_identity,
+            split_sha=git_split_sha,
+            holdout_sha=git_holdout_sha,
+            policy_sha=git_policy_sha,
+            freeze_spec_sha=git_freeze_spec_sha,
+        )
+
+    current_freeze_spec = root / freeze_spec
+    try:
+        current_model_freeze = compute_freeze_hashes(current_freeze_spec)
+        current_source_identity = build_source_identity(root / source_config)
+    except (OSError, ValueError) as error:
+        raise PolicyError("could not recompute current target identities") from error
+    if current_model_freeze != git_model_freeze:
+        raise PolicyError("current worktree artifacts differ from migration commit")
+    if current_source_identity != git_source_identity:
+        raise PolicyError("current Source Identity differs from migration commit")
+    current_split_sha = _sha256_file(root / split_manifest)
+    current_holdout_sha = _sha256_file(root / holdout_manifest)
+    current_policy_sha = _sha256_file(root / policy)
+    if (
+        current_split_sha != git_split_sha
+        or current_holdout_sha != git_holdout_sha
+        or current_policy_sha != git_policy_sha
+        or _sha256_file(current_freeze_spec) != git_freeze_spec_sha
+    ):
+        raise PolicyError("current worktree target files differ from migration commit")
+    return VerifiedMigration(
+        receipt=receipt,
+        model_freeze=git_model_freeze,
+        source_identity=git_source_identity,
+    )
+
+
+def _compare_receipt_targets(
+    *,
+    receipt: dict[str, Any],
+    model_freeze: FreezeHashes,
+    source_identity: SourceIdentity,
+    split_sha: str,
+    holdout_sha: str,
+    policy_sha: str,
+    freeze_spec_sha: str,
+) -> None:
+    expected_model = {
+        "model": model_freeze.model,
+        "feature_set": model_freeze.feature_set,
+        "configuration": model_freeze.configuration,
+        "hyperparameters": model_freeze.hyperparameters,
+    }
+    expected_evaluation = {
+        "evaluation_script": model_freeze.evaluation_script,
+        "metric_contract_version": model_freeze.metric_contract_version,
+    }
+    comparisons = {
+        "target_model_identity": expected_model,
+        "target_evaluation_identity": expected_evaluation,
+        "target_source_identity": source_identity.to_dict(),
+        "target_split_manifest_sha256": split_sha,
+        "target_holdout_manifest_sha256": holdout_sha,
+        "policy_sha256": policy_sha,
+        "source_config_sha256": source_identity.source_config_sha256,
+        "model_freeze_spec_sha256": freeze_spec_sha,
+        "evaluation_freeze_spec_sha256": freeze_spec_sha,
+    }
+    for key, expected in comparisons.items():
+        if receipt.get(key) != expected:
+            raise PolicyError(f"migration commit artifacts do not match receipt {key}")
+
+
+def _require_ancestor(
+    root: Path,
+    ancestor: str,
+    descendant: str,
+    label: str,
+) -> None:
+    result = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", ancestor, descendant],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise PolicyError(f"{label} commit is not an ancestor of migration commit")
+
+
+def _extract_archive(archive: bytes, destination: Path) -> None:
+    try:
+        with tarfile.open(fileobj=BytesIO(archive), mode="r:") as handle:
+            handle.extractall(destination, filter="data")
+    except (OSError, tarfile.TarError) as error:
+        raise PolicyError("could not extract migration commit artifacts") from error
+
+
+def _sha256_committed_file(root: Path, relative: str) -> str:
+    path = root / relative
+    if not path.is_file():
+        raise PolicyError(f"migration commit is missing target artifact: {relative}")
+    return _sha256_file(path)
+
+
+def _sha256_file(path: Path) -> str:
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise PolicyError(f"target artifact is unreadable: {path}") from error
+    return hashlib.sha256(data).hexdigest()
 
 
 def _validate_receipt_shape(receipt: Any) -> None:
@@ -161,6 +346,7 @@ def _validate_receipt_shape(receipt: Any) -> None:
         "model_freeze_spec_sha256",
         "evaluation_freeze_spec_sha256",
         "policy_sha256",
+        "source_config_sha256",
         "old_holdout_manifest_sha256",
         "target_split_manifest_sha256",
         "target_holdout_manifest_sha256",
@@ -196,6 +382,9 @@ def _validate_receipt_shape(receipt: Any) -> None:
         or not evaluation_identity["metric_contract_version"].strip()
     ):
         raise PolicyError("migration target metric contract is invalid")
+    source_identity = source_identity_from_dict(receipt["target_source_identity"])
+    if source_identity.source_config_sha256 != receipt["source_config_sha256"]:
+        raise PolicyError("migration source identity does not match source config")
     legacy_freeze = receipt["legacy_combined_freeze"]
     if not isinstance(legacy_freeze, dict) or not all(
         isinstance(value, str) and value for value in legacy_freeze.values()

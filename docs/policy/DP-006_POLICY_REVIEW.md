@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** fifth-round audit-only migration and immutable-seal candidate under PM/QA review
+**Status:** REPAIR-006 closure candidate ready for Final Assurance Review
 
 ## Scope
 
@@ -57,7 +57,8 @@ Policy design: PASS
 R3 model/governance identity separation: FIX CANDIDATE, PM/QA review required
 R3 audit-only legacy migration: FIX CANDIDATE, PM/QA review required
 R3 Holdout Manifest immutability: FIX CANDIDATE, PM/QA review required
-R3 Evaluation/Split identity coverage: FIX CANDIDATE, PM/QA review required
+R3 Source Identity seal coverage: FIX CANDIDATE, Final Assurance review required
+R3 Migration Git-object verification: FIX CANDIDATE, Final Assurance review required
 R5 Temporal integration: FIX CANDIDATE, PM/QA review required
 Policy implementation final acceptance: HOLD
 PR #9: open, unmerged, PM/QA review required

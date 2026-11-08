@@ -51,6 +51,7 @@ from mtah_possession.governance.policy import (
     DataUse,
     PolicyError,
 )
+from mtah_possession.governance.source import build_source_identity
 from mtah_possession.validation.submission import sha256_file
 
 DEFAULT_POLICY_PATH = (
@@ -96,6 +97,7 @@ def run_external_evaluation(
     manifest = load_skillcorner_manifest(config_path)
     provider_name = str(manifest["provider"])
     source_revision = str(manifest["commit"])
+    source_identity = build_source_identity(config_path)
     holdout_manifest: HoldoutManifest | None = None
     freeze_hashes: FreezeHashes | None = None
     ledger: HoldoutLedger | None = None
@@ -120,6 +122,7 @@ def run_external_evaluation(
             holdout_manifest_path_sha256=holdout_manifest_path_sha256,
             split_manifest_sha256=split_manifest_sha256,
             code_commit=code_commit,
+            source_identity=source_identity,
         )
         ledger_state = ledger.state
         if ledger_state == HoldoutLedgerState.COMPROMISED:
@@ -134,6 +137,8 @@ def run_external_evaluation(
             raise PolicyError("legacy holdout ledger requires explicit freeze migration")
         if ledger.requires_split_protocol_reseal:
             raise PolicyError("pre-split holdout ledger requires a new approved seal")
+        if ledger.requires_source_protocol_reseal:
+            raise PolicyError("pre-source holdout ledger requires a new approved seal")
         sealed_manifest_sha256 = ledger.sealed_manifest_sha256()
         if sealed_manifest_sha256 is not None and sealed_manifest_sha256 != holdout_manifest_sha256:
             raise PolicyError("sealed Holdout Manifest SHA-256 has changed")
@@ -146,6 +151,9 @@ def run_external_evaluation(
             and sealed_manifest_path_sha256 != holdout_manifest_path_sha256
         ):
             raise PolicyError("sealed Holdout Manifest path has changed")
+        sealed_source_identity = ledger.sealed_source_identity()
+        if sealed_source_identity is not None and sealed_source_identity != source_identity:
+            raise PolicyError("sealed Source Identity has changed")
         prior_freeze = ledger.model_freeze_hashes()
         if prior_freeze is not None and prior_freeze != freeze_hashes:
             identity = build_governance_identity(

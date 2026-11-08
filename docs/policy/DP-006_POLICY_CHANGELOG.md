@@ -116,6 +116,25 @@ merge and real-data research authorization remain `HOLD` for PM/QA.
 Policy implementation final acceptance, merge and real-data research
 authorization remain `HOLD` for PM/QA.
 
+## DP-006-POLICY-REMEDIATION-006
+
+**Date:** 2026-11-08
+
+**Status:** bounded closure candidate for DP-006 Final Assurance Review
+
+### Closed
+
+- bind canonical provider/config/path/file Source Identity to V4 Holdout seals;
+- reject all post-seal Source changes before the external loader;
+- verify migration target artifacts from the actual migration Git tree;
+- reject worktree/commit mismatches and invalid approval/old-code ancestry;
+- preserve audit-only migration and all prior authorization/lifecycle controls.
+
+### Not claimed
+
+Policy implementation final acceptance remains `HOLD`.
+No automatic REPAIR-007 is authorized.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08

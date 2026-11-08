@@ -1,5 +1,9 @@
 # DP-006 Policy Remediation 005 Evidence
 
+> Historical fifth-round evidence. The independent review found Source Identity
+> and migration Git-object gaps. Current closure evidence is in
+> `DP-006_POLICY_REMEDIATION_006_EVIDENCE.md`.
+
 **Task:** DP-006-POLICY-REMEDIATION-005
 
 **Base commit:** `c8c0661943008e0b73b6e0ab506ad589a3642144`

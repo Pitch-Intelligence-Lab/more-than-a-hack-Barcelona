@@ -31,6 +31,7 @@ from mtah_possession.governance.ledger import (
     stable_holdout_identity,
 )
 from mtah_possession.governance.policy import PolicyError
+from mtah_possession.governance.source import build_source_identity
 from mtah_possession.validation.submission import sha256_file
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -908,6 +909,8 @@ def test_migration_cli_appends_explicit_protocol_event(tmp_path: Path) -> None:
             str(fixture["policy_path"]),
             "--source-revision",
             SOURCE_REVISION,
+            "--source-config",
+            str(fixture["config_path"]),
             "--holdout-manifest",
             str(fixture["holdout_path"]),
             "--target-holdout-manifest",
@@ -966,9 +969,8 @@ def test_rp5_02_modified_model_cannot_be_migrated(
         "prediction=changed\n",
         encoding="utf-8",
     )
-    changed_freeze = compute_freeze_hashes(fixture["freeze_spec_path"])
-    with pytest.raises(PolicyError, match="target_model_identity"):
-        _migrate_fixture(fixture, model_freeze=changed_freeze)
+    with pytest.raises(PolicyError, match="worktree artifacts differ"):
+        _migrate_fixture(fixture)
     assert path.read_bytes() == before
 
 
@@ -1157,10 +1159,239 @@ def test_rp5_09_compromised_match_set_cannot_be_recovered(
     assert holdout_id == ledger.holdout_id
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "tracking_path",
+        "tracking_sha",
+        "phases_path",
+        "match_sha",
+        "source_revision",
+        "match_id",
+        "fps",
+        "home_team_id",
+        "away_team_id",
+        "pitch_length_m",
+        "pitch_width_m",
+        "coordinate_convention",
+    ],
+)
+def test_r6_01_to_r6_05_source_mutation_fails_before_loader(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("source seal established")
+
+    with pytest.raises(RuntimeError, match="source seal"):
+        run_prepared_promotion(fixture, loader=failing_loader)
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    source_before = build_source_identity(fixture["config_path"])
+    freeze_before = compute_freeze_hashes(fixture["freeze_spec_path"])
+    values = json.loads(fixture["config_path"].read_text(encoding="utf-8"))
+    if field == "tracking_path":
+        values["files"]["tracking"]["path"] = "different-tracking-file.jsonl"
+    elif field == "tracking_sha":
+        values["files"]["tracking"]["sha256"] = "f" * 64
+    elif field == "phases_path":
+        values["files"]["phases"]["path"] = "different-phases.csv"
+    elif field == "match_sha":
+        values["files"]["match"]["sha256"] = "9" * 64
+    elif field == "source_revision":
+        values["commit"] = "1" * 40
+    elif field == "match_id":
+        values["match_id"] = "other-match"
+    elif field == "fps":
+        values["fps"] = 11
+    elif field == "home_team_id":
+        values["home_team_id"] = 9
+    elif field == "away_team_id":
+        values["away_team_id"] = 10
+    elif field == "pitch_length_m":
+        values["pitch_length_m"] = 106.0
+    elif field == "pitch_width_m":
+        values["pitch_width_m"] = 69.0
+    elif field == "coordinate_convention":
+        values["coordinate_convention"] = "different-convention"
+    fixture["config_path"].write_text(json.dumps(values), encoding="utf-8")
+    assert compute_freeze_hashes(fixture["freeze_spec_path"]) == freeze_before
+    if field != "coordinate_convention":
+        source_after = build_source_identity(fixture["config_path"])
+        assert source_after.source_identity_sha256 != source_before.source_identity_sha256
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(ValueError):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+def test_r6_06_same_source_can_retry_after_evaluation_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("retryable source evaluation failure")
+
+    with pytest.raises(RuntimeError, match="retryable"):
+        run_prepared_promotion(fixture, loader=failing_loader)
+    run_prepared_promotion(fixture)
+    records = _ledger_records(fixture["ledger_dir"])
+    assert (
+        records[0]["source_identity"]["source_identity_sha256"]
+        == (records[1]["source_identity"]["source_identity_sha256"])
+    )
+    assert "COMPROMISED" not in {record["event_type"] for record in records}
+    assert records[-1]["event_type"] == "EVALUATION_COMPLETED"
+
+
+def test_r6_07_uncommitted_model_with_new_receipt_rejected(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    fixture["artifact_paths"]["prediction_code"].write_text(
+        "prediction=uncommitted-change\n",
+        encoding="utf-8",
+    )
+    changed = compute_freeze_hashes(fixture["freeze_spec_path"])
+    receipt_path = fixture["repo_root"] / fixture["approval_receipt_path"]
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["target_model_identity"]["model"] = changed.model
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    approval_commit = _commit_current_receipt(fixture, fixture["migration_commit"])
+    path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = path.read_bytes()
+    with pytest.raises(PolicyError, match="migration commit artifacts"):
+        _migrate_fixture(fixture, approval_commit=approval_commit)
+    assert path.read_bytes() == before
+
+
+def test_r6_08_receipt_artifact_mismatch_rejected(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    receipt_path = fixture["repo_root"] / fixture["approval_receipt_path"]
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["target_evaluation_identity"]["evaluation_script"] = "0" * 64
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    approval_commit = _commit_current_receipt(fixture, fixture["migration_commit"])
+    path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = path.read_bytes()
+    with pytest.raises(PolicyError, match="migration commit artifacts"):
+        _migrate_fixture(fixture, approval_commit=approval_commit)
+    assert path.read_bytes() == before
+
+
+def test_r6_09_missing_migration_commit_artifact_rejected(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    _git(fixture["repo_root"], "rm", "--", "model-artifacts/prediction/model.py")
+    _git(fixture["repo_root"], "commit", "-m", "remove target artifact")
+    missing_commit = _git(fixture["repo_root"], "rev-parse", "HEAD").strip()
+    receipt_path = fixture["repo_root"] / fixture["approval_receipt_path"]
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["migration_commit"] = missing_commit
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    approval_commit = _commit_current_receipt(fixture, missing_commit)
+    path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = path.read_bytes()
+    with pytest.raises(PolicyError, match="missing|migration commit"):
+        _migrate_fixture(
+            fixture,
+            approval_commit=approval_commit,
+            migration_commit=missing_commit,
+        )
+    assert path.read_bytes() == before
+
+
+def test_r6_10_approval_commit_must_descend_from_migration(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    receipt_path = fixture["repo_root"] / fixture["approval_receipt_path"]
+    _git(fixture["repo_root"], "add", "--", fixture["approval_receipt_path"])
+    tree = _git(fixture["repo_root"], "write-tree").strip()
+    side_approval = _git(
+        fixture["repo_root"],
+        "commit-tree",
+        tree,
+        "-m",
+        "unrelated approval",
+    ).strip()
+    with pytest.raises(PolicyError, match="not an ancestor"):
+        _migrate_fixture(fixture, approval_commit=side_approval)
+    assert receipt_path.exists()
+
+
+def test_r6_11_old_code_commit_must_relate_to_migration(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    _git(fixture["repo_root"], "add", "--", fixture["approval_receipt_path"])
+    tree = _git(fixture["repo_root"], "write-tree").strip()
+    unrelated = _git(
+        fixture["repo_root"],
+        "commit-tree",
+        tree,
+        "-m",
+        "unrelated old candidate",
+    ).strip()
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    record = json.loads(ledger_path.read_text(encoding="utf-8"))
+    record["code_commit"] = unrelated
+    ledger_path.write_text(
+        json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    receipt_path = fixture["repo_root"] / fixture["approval_receipt_path"]
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["old_code_commit"] = unrelated
+    receipt["source_ledger_head_sha256"] = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+    receipt["previous_record_sha256"] = _test_record_sha256(record)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    approval_commit = _commit_current_receipt(
+        fixture,
+        fixture["migration_commit"],
+    )
+    with pytest.raises(PolicyError, match="old code commit"):
+        _migrate_fixture(fixture, approval_commit=approval_commit)
+
+
+def test_r6_12_audit_only_migration_never_promotes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    ledger = _migrate_fixture(fixture)
+    assert ledger.state == HoldoutLedgerState.MIGRATED_AUDIT_ONLY
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="audit-only"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+
+
 def _migrate_fixture(
     fixture: dict,
     *,
-    model_freeze=None,
     approval_commit: str | None = None,
     migration_commit: str | None = None,
     approval_receipt_path: str | None = None,
@@ -1171,18 +1402,22 @@ def _migrate_fixture(
         repo_root=repo_root or fixture["repo_root"],
         provider="skillcorner",
         match_ids=("holdout-1",),
-        model_freeze=model_freeze or fixture["model_freeze"],
         governance_identity=fixture["governance_identity"],
         holdout_manifest_sha256=sha256_file(fixture["holdout_path"]),
         holdout_manifest_path_sha256=sha256_path_identity(fixture["holdout_path"]),
-        target_holdout_manifest_sha256=sha256_file(fixture["holdout_path"]),
-        split_manifest_sha256=sha256_file(fixture["splits_path"]),
-        freeze_spec_sha256=sha256_file(fixture["freeze_spec_path"]),
-        policy_sha256=sha256_file(fixture["policy_path"]),
+        freeze_spec_path=_fixture_relative(fixture, fixture["freeze_spec_path"]),
+        split_manifest_path=_fixture_relative(fixture, fixture["splits_path"]),
+        target_holdout_manifest_path=_fixture_relative(fixture, fixture["holdout_path"]),
+        policy_path=_fixture_relative(fixture, fixture["policy_path"]),
+        source_config_path=_fixture_relative(fixture, fixture["config_path"]),
         approval_receipt_path=approval_receipt_path or fixture["approval_receipt_path"],
         approval_commit=approval_commit or fixture["approval_commit"],
         migration_commit=migration_commit or fixture["migration_commit"],
     )
+
+
+def _fixture_relative(fixture: dict, path: Path) -> str:
+    return path.resolve().relative_to(fixture["repo_root"].resolve()).as_posix()
 
 
 def _new_ledger(fixture: dict):
@@ -1202,6 +1437,7 @@ def _new_ledger(fixture: dict):
         split_manifest_sha256=sha256_file(fixture["splits_path"]),
         code_commit=fixture["code_commit"],
         governance_identity=governance_identity,
+        source_identity=build_source_identity(fixture["config_path"]),
     )
 
 
@@ -1362,6 +1598,7 @@ def prepare_legacy_migration(
         provider="skillcorner",
         source_revision=SOURCE_REVISION,
     )
+    source_identity = build_source_identity(config_path)
     script_path = tmp_path / "scripts" / "migrate_holdout_ledger.py"
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(
@@ -1397,6 +1634,7 @@ def prepare_legacy_migration(
         "model_freeze_spec_sha256": sha256_file(new_spec_path),
         "evaluation_freeze_spec_sha256": sha256_file(new_spec_path),
         "policy_sha256": sha256_file(policy_path),
+        "source_config_sha256": source_identity.source_config_sha256,
         "old_holdout_manifest_sha256": sha256_file(holdout_path),
         "target_model_identity": {
             "model": model_freeze.model,
@@ -1410,6 +1648,7 @@ def prepare_legacy_migration(
         },
         "target_split_manifest_sha256": sha256_file(tmp_path / "splits.json"),
         "target_holdout_manifest_sha256": sha256_file(holdout_path),
+        "target_source_identity": source_identity.to_dict(),
         "governance_identity_digest": governance_identity.authorization_status_digest,
         "approver": "qa-lead",
         "approval_evidence_ids": ["PM-QA-APPROVAL-005"],
@@ -1435,6 +1674,7 @@ def prepare_legacy_migration(
         "approval_receipt_path": receipt_path.name,
         "model_freeze": model_freeze,
         "governance_identity": governance_identity,
+        "source_identity": source_identity,
         "artifact_paths": artifact_paths,
         "governance_file": governance_file,
     }
@@ -1454,3 +1694,13 @@ def _git(root: Path, *args: str) -> str:
 def _test_record_sha256(record: dict) -> str:
     canonical = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(canonical).hexdigest()
+
+
+def _commit_current_receipt(fixture: dict, parent: str | None) -> str:
+    _git(fixture["repo_root"], "add", "--", fixture["approval_receipt_path"])
+    tree = _git(fixture["repo_root"], "write-tree").strip()
+    args = ["commit-tree", tree]
+    if parent is not None:
+        args.extend(["-p", parent])
+    args.extend(["-m", "approval receipt update"])
+    return _git(fixture["repo_root"], *args).strip()

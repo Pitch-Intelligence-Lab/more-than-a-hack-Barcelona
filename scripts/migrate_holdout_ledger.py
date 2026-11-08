@@ -10,7 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mtah_possession.governance.artifacts import compute_freeze_hashes  # noqa: E402
 from mtah_possession.governance.authorization import (  # noqa: E402
     build_governance_identity,
 )
@@ -44,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
         default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.json"),
     )
     parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--source-config", required=True)
     parser.add_argument("--holdout-manifest", required=True)
     parser.add_argument("--target-holdout-manifest", required=True)
     parser.add_argument(
@@ -57,7 +57,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        model_freeze = compute_freeze_hashes(args.freeze_spec)
         governance_identity = build_governance_identity(
             policy_path=args.policy,
             provider=args.provider,
@@ -68,14 +67,17 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=args.repo_root,
             provider=args.provider,
             match_ids=tuple(args.match_ids),
-            model_freeze=model_freeze,
             governance_identity=governance_identity,
             holdout_manifest_sha256=sha256_file(args.holdout_manifest),
             holdout_manifest_path_sha256=sha256_path_identity(args.target_holdout_manifest),
-            target_holdout_manifest_sha256=sha256_file(args.target_holdout_manifest),
-            split_manifest_sha256=sha256_file(args.split_manifest),
-            freeze_spec_sha256=sha256_file(args.freeze_spec),
-            policy_sha256=sha256_file(args.policy),
+            freeze_spec_path=_relative_to_root(args.freeze_spec, args.repo_root),
+            split_manifest_path=_relative_to_root(args.split_manifest, args.repo_root),
+            target_holdout_manifest_path=_relative_to_root(
+                args.target_holdout_manifest,
+                args.repo_root,
+            ),
+            policy_path=_relative_to_root(args.policy, args.repo_root),
+            source_config_path=_relative_to_root(args.source_config, args.repo_root),
             approval_receipt_path=args.approval_receipt,
             approval_commit=args.approval_commit,
             migration_commit=args.migration_commit,
@@ -89,6 +91,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"model_freeze={ledger.model_freeze_hashes()}")
     print(f"ledger={ledger.path.resolve()}")
     return 0
+
+
+def _relative_to_root(path: str, root: str) -> str:
+    try:
+        resolved = Path(path).resolve(strict=True)
+        return resolved.relative_to(Path(root).resolve(strict=True)).as_posix()
+    except (OSError, ValueError) as error:
+        raise ValueError(f"migration artifact is outside repository root: {path}") from error
 
 
 if __name__ == "__main__":
