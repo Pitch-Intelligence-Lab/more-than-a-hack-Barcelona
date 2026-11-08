@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** fourth-round dual-identity and freeze-migration candidate under PM/QA review
+**Status:** fifth-round audit-only migration and immutable-seal candidate under PM/QA review
 
 ## Scope
 
@@ -55,7 +55,9 @@ Official permission does not substitute for provider rights or internal authoriz
 ```text
 Policy design: PASS
 R3 model/governance identity separation: FIX CANDIDATE, PM/QA review required
-R3 legacy ledger migration: FIX CANDIDATE, PM/QA review required
+R3 audit-only legacy migration: FIX CANDIDATE, PM/QA review required
+R3 Holdout Manifest immutability: FIX CANDIDATE, PM/QA review required
+R3 Evaluation/Split identity coverage: FIX CANDIDATE, PM/QA review required
 R5 Temporal integration: FIX CANDIDATE, PM/QA review required
 Policy implementation final acceptance: HOLD
 PR #9: open, unmerged, PM/QA review required

@@ -17,6 +17,11 @@ from mtah_possession.governance.authorization import (
     governance_identity_from_dict,
 )
 from mtah_possession.governance.holdout import FreezeHashes
+from mtah_possession.governance.migration import (
+    MIGRATION_RECEIPT_FIELDS,
+    load_verified_migration_receipt,
+    validate_migration_receipt,
+)
 from mtah_possession.governance.policy import PolicyError
 
 
@@ -38,6 +43,7 @@ class HoldoutLedgerState(StrEnum):
     EVALUATION_COMPLETED = "EVALUATION_COMPLETED"
     EVALUATION_FAILED = "EVALUATION_FAILED"
     COMPROMISED = "COMPROMISED"
+    MIGRATED_AUDIT_ONLY = "MIGRATED_AUDIT_ONLY"
 
 
 LEGACY_RECORD_FIELDS = frozenset(
@@ -56,19 +62,15 @@ LEGACY_RECORD_FIELDS = frozenset(
     }
 )
 V2_RECORD_FIELDS = LEGACY_RECORD_FIELDS | {"governance_identity"}
-MIGRATION_RECORD_FIELDS = V2_RECORD_FIELDS | {
-    "old_protocol_version",
-    "new_protocol_version",
-    "legacy_combined_freeze",
-    "new_model_freeze",
-    "governance_identity_digest",
-    "old_code_commit",
-    "migration_commit",
-    "migration_rule_version",
-    "approver",
+V3_RECORD_FIELDS = V2_RECORD_FIELDS | {
+    "freeze_protocol_version",
+    "holdout_manifest_path_sha256",
+    "split_manifest_sha256",
 }
+MIGRATION_RECORD_FIELDS = V3_RECORD_FIELDS | {"migration_receipt"}
 LEGACY_FREEZE_PROTOCOL_VERSION = "combined-policy-model-v1"
-MODEL_FREEZE_PROTOCOL_VERSION = "model-governance-separated-v2"
+PRE_SPLIT_FREEZE_PROTOCOL_VERSION = "model-governance-separated-v2"
+SEAL_BOUND_FREEZE_PROTOCOL_VERSION = "seal-bound-evaluation-v3"
 MIGRATION_RULE_VERSION = "1.0"
 _LIFECYCLE_FREEZE_EVENTS = {
     LedgerEvent.SEALED_VERIFIED.value,
@@ -87,6 +89,8 @@ class HoldoutLedger:
     match_ids: tuple[str, ...]
     freeze_hashes: FreezeHashes
     holdout_manifest_sha256: str
+    holdout_manifest_path_sha256: str | None
+    split_manifest_sha256: str | None
     code_commit: str
     governance_identity: GovernanceAuthorizationIdentity | None = None
 
@@ -99,6 +103,10 @@ class HoldoutLedger:
     ) -> dict[str, Any]:
         if self.governance_identity is None:
             raise PolicyError("holdout ledger append requires a governance identity")
+        if self.split_manifest_sha256 is None:
+            raise PolicyError("holdout ledger append requires a split manifest SHA-256")
+        if self.holdout_manifest_path_sha256 is None:
+            raise PolicyError("holdout ledger append requires a Manifest path SHA-256")
         existing = self.records()
         previous = _record_sha256(existing[-1]) if existing else None
         record = {
@@ -114,6 +122,9 @@ class HoldoutLedger:
             "previous_record_sha256": previous,
             "reason": reason,
             "governance_identity": self.governance_identity.to_dict(),
+            "freeze_protocol_version": SEAL_BOUND_FREEZE_PROTOCOL_VERSION,
+            "holdout_manifest_path_sha256": self.holdout_manifest_path_sha256,
+            "split_manifest_sha256": self.split_manifest_sha256,
         }
         _validate_record(
             record,
@@ -136,16 +147,17 @@ class HoldoutLedger:
     def append_freeze_migration(
         self,
         *,
-        migration_commit: str,
-        approver: str,
-        reason: str,
+        migration_receipt: Mapping[str, Any],
     ) -> dict[str, Any]:
         if self.governance_identity is None:
             raise PolicyError("freeze migration requires a governance identity")
-        if not migration_commit.strip() or len(migration_commit.strip()) < 7:
-            raise PolicyError("migration commit is required")
-        if not approver.strip() or not reason.strip():
-            raise PolicyError("migration approver and reason are required")
+        if set(migration_receipt) != MIGRATION_RECEIPT_FIELDS:
+            raise PolicyError("migration receipt has missing or unknown fields")
+        if (
+            migration_receipt["status"] != "MIGRATED_AUDIT_ONLY"
+            or migration_receipt["promotion_authorized"] is not False
+        ):
+            raise PolicyError("migration receipt must be audit-only")
         records = self.records()
         if not records:
             raise PolicyError("legacy holdout ledger is empty")
@@ -153,16 +165,15 @@ class HoldoutLedger:
             raise PolicyError("COMPROMISED holdout ledger cannot be migrated")
         if any(_ledger_record_kind(record) != "legacy" for record in records):
             raise PolicyError("holdout ledger is already on a newer freeze protocol")
-        lifecycle_records = [
-            record for record in records if record["event_type"] in _LIFECYCLE_FREEZE_EVENTS
-        ]
-        if not lifecycle_records:
-            raise PolicyError("legacy ledger has no frozen lifecycle event")
-        legacy_freezes = {_canonical_json(record["freeze_hashes"]) for record in lifecycle_records}
-        if len(legacy_freezes) != 1:
-            raise PolicyError("legacy combined freeze identity is inconsistent")
-        legacy_freeze = lifecycle_records[-1]["freeze_hashes"]
         previous = _record_sha256(records[-1])
+        if migration_receipt["previous_record_sha256"] != previous:
+            raise PolicyError("migration receipt does not bind the ledger head")
+        if migration_receipt["source_provider"] != self.provider:
+            raise PolicyError("migration receipt provider does not match ledger")
+        if migration_receipt["source_holdout_id"] != self.holdout_id:
+            raise PolicyError("migration receipt Holdout ID does not match ledger")
+        if migration_receipt["source_match_ids"] != list(self.match_ids):
+            raise PolicyError("migration receipt match set does not match ledger")
         record = {
             "recorded_at": datetime.now(UTC).isoformat(),
             "event_type": LedgerEvent.FREEZE_PROTOCOL_MIGRATED.value,
@@ -170,21 +181,16 @@ class HoldoutLedger:
             "holdout_id": self.holdout_id,
             "match_ids": list(self.match_ids),
             "freeze_hashes": _freeze_dict(self.freeze_hashes),
-            "holdout_manifest_sha256": self.holdout_manifest_sha256,
-            "code_commit": migration_commit,
+            "holdout_manifest_sha256": migration_receipt["old_holdout_manifest_sha256"],
+            "holdout_manifest_path_sha256": self.holdout_manifest_path_sha256,
+            "split_manifest_sha256": migration_receipt["target_split_manifest_sha256"],
+            "freeze_protocol_version": SEAL_BOUND_FREEZE_PROTOCOL_VERSION,
+            "code_commit": migration_receipt["migration_commit"],
             "prediction_sha256": None,
             "previous_record_sha256": previous,
-            "reason": reason,
+            "reason": migration_receipt["reason"],
             "governance_identity": self.governance_identity.to_dict(),
-            "old_protocol_version": LEGACY_FREEZE_PROTOCOL_VERSION,
-            "new_protocol_version": MODEL_FREEZE_PROTOCOL_VERSION,
-            "legacy_combined_freeze": dict(legacy_freeze),
-            "new_model_freeze": _freeze_dict(self.freeze_hashes),
-            "governance_identity_digest": (self.governance_identity.authorization_status_digest),
-            "old_code_commit": str(records[-1]["code_commit"]),
-            "migration_commit": migration_commit,
-            "migration_rule_version": MIGRATION_RULE_VERSION,
-            "approver": approver,
+            "migration_receipt": dict(migration_receipt),
         }
         _validate_record(
             record,
@@ -222,6 +228,7 @@ class HoldoutLedger:
         except (OSError, json.JSONDecodeError) as error:
             raise PolicyError(f"could not read holdout ledger at {self.path}") from error
         _validate_protocol_sequence(records)
+        _validate_seal_immutability(records)
         reduce_holdout_state(records)
         return records
 
@@ -248,6 +255,35 @@ class HoldoutLedger:
             and (not self.has_migration_event())
         )
 
+    @property
+    def requires_split_protocol_reseal(self) -> bool:
+        records = self.records()
+        return bool(records) and _ledger_record_kind(records[0]) == "v2"
+
+    def sealed_manifest_sha256(self) -> str | None:
+        for record in self.records():
+            if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value:
+                return str(record["holdout_manifest_sha256"])
+        return None
+
+    def sealed_split_manifest_sha256(self) -> str | None:
+        for record in self.records():
+            if (
+                record["event_type"] == LedgerEvent.SEALED_VERIFIED.value
+                and _ledger_record_kind(record) == "v3"
+            ):
+                return str(record["split_manifest_sha256"])
+        return None
+
+    def sealed_manifest_path_sha256(self) -> str | None:
+        for record in self.records():
+            if (
+                record["event_type"] == LedgerEvent.SEALED_VERIFIED.value
+                and _ledger_record_kind(record) == "v3"
+            ):
+                return str(record["holdout_manifest_path_sha256"])
+        return None
+
     def lifecycle_freeze_hashes(self) -> FreezeHashes | None:
         for record in self.records():
             if record["event_type"] in {
@@ -264,8 +300,8 @@ class HoldoutLedger:
         records = self.records()
         for record in reversed(records):
             if record["event_type"] == LedgerEvent.FREEZE_PROTOCOL_MIGRATED.value:
-                return _freeze_from_mapping(record["new_model_freeze"])
-            if _ledger_record_kind(record) == "v2":
+                return _freeze_from_record(record)
+            if _ledger_record_kind(record) == "v3":
                 return _freeze_from_record(record)
         return None
 
@@ -281,10 +317,12 @@ def reduce_holdout_state(
             event = LedgerEvent(record["event_type"])
         except (KeyError, TypeError, ValueError) as error:
             raise PolicyError("holdout ledger event type is invalid") from error
-        if event in {
-            LedgerEvent.AUTHORIZATION_DENIED,
-            LedgerEvent.FREEZE_PROTOCOL_MIGRATED,
-        }:
+        if event == LedgerEvent.FREEZE_PROTOCOL_MIGRATED:
+            if state == HoldoutLedgerState.COMPROMISED:
+                raise PolicyError("holdout ledger has migration after COMPROMISED")
+            state = HoldoutLedgerState.MIGRATED_AUDIT_ONLY
+            continue
+        if event == LedgerEvent.AUTHORIZATION_DENIED:
             if state == HoldoutLedgerState.COMPROMISED:
                 raise PolicyError("holdout ledger has events after COMPROMISED")
             continue
@@ -295,6 +333,8 @@ def reduce_holdout_state(
             continue
         if state == HoldoutLedgerState.COMPROMISED:
             raise PolicyError("holdout ledger has events after COMPROMISED")
+        if state == HoldoutLedgerState.MIGRATED_AUDIT_ONLY:
+            raise PolicyError("migrated audit-only ledger cannot re-enter Promotion")
         if event == LedgerEvent.SEALED_VERIFIED:
             if state != HoldoutLedgerState.SEALED or sealed_verified:
                 raise PolicyError("holdout ledger has an invalid SEALED_VERIFIED transition")
@@ -328,6 +368,8 @@ def create_ledger(
     match_ids: tuple[str, ...],
     freeze_hashes: FreezeHashes,
     holdout_manifest_sha256: str,
+    holdout_manifest_path_sha256: str,
+    split_manifest_sha256: str,
     code_commit: str,
     governance_identity: GovernanceAuthorizationIdentity | None = None,
 ) -> HoldoutLedger:
@@ -345,6 +387,8 @@ def create_ledger(
         match_ids=normalized_matches,
         freeze_hashes=freeze_hashes,
         holdout_manifest_sha256=holdout_manifest_sha256,
+        holdout_manifest_path_sha256=holdout_manifest_path_sha256,
+        split_manifest_sha256=split_manifest_sha256,
         code_commit=code_commit,
         governance_identity=governance_identity,
     )
@@ -377,6 +421,8 @@ def load_existing_ledger(
         match_ids=normalized_matches,
         freeze_hashes=placeholder,
         holdout_manifest_sha256="",
+        holdout_manifest_path_sha256=None,
+        split_manifest_sha256=None,
         code_commit="",
     )
     records = ledger.records()
@@ -399,6 +445,16 @@ def load_existing_ledger(
             else _freeze_from_record(last)
         ),
         holdout_manifest_sha256=str(last["holdout_manifest_sha256"]),
+        holdout_manifest_path_sha256=(
+            str(last["holdout_manifest_path_sha256"])
+            if _ledger_record_kind(last) in {"v3", "migration"}
+            else None
+        ),
+        split_manifest_sha256=(
+            str(last["split_manifest_sha256"])
+            if _ledger_record_kind(last) in {"v3", "migration"}
+            else None
+        ),
         code_commit=str(last["code_commit"]),
         governance_identity=identity,
     )
@@ -407,19 +463,79 @@ def load_existing_ledger(
 def migrate_legacy_ledger(
     ledger_dir: str | os.PathLike[str],
     *,
+    repo_root: str | os.PathLike[str],
     provider: str,
     match_ids: tuple[str, ...],
     model_freeze: FreezeHashes,
     governance_identity: GovernanceAuthorizationIdentity,
     holdout_manifest_sha256: str,
+    holdout_manifest_path_sha256: str,
+    target_holdout_manifest_sha256: str,
+    split_manifest_sha256: str,
+    freeze_spec_sha256: str,
+    policy_sha256: str,
+    approval_receipt_path: str | os.PathLike[str],
+    approval_commit: str,
     migration_commit: str,
-    approver: str,
-    reason: str,
 ) -> HoldoutLedger:
     existing = load_existing_ledger(
         ledger_dir,
         provider=provider,
         match_ids=match_ids,
+    )
+    if existing.state == HoldoutLedgerState.COMPROMISED:
+        raise PolicyError("COMPROMISED holdout ledger cannot be migrated")
+    raw_ledger = existing.path.read_bytes()
+    source_ledger_head_sha256 = hashlib.sha256(raw_ledger).hexdigest()
+    records = existing.records()
+    lifecycle_records = [
+        record for record in records if record["event_type"] in _LIFECYCLE_FREEZE_EVENTS
+    ]
+    if not lifecycle_records:
+        raise PolicyError("legacy ledger has no frozen lifecycle event")
+    legacy_freezes = {_canonical_json(record["freeze_hashes"]) for record in lifecycle_records}
+    if len(legacy_freezes) != 1:
+        raise PolicyError("legacy combined freeze identity is inconsistent")
+    legacy_freeze = lifecycle_records[-1]["freeze_hashes"]
+    old_code_commit = str(records[-1]["code_commit"])
+    previous_record_sha256 = _record_sha256(records[-1])
+    target_model_identity = {
+        "model": model_freeze.model,
+        "feature_set": model_freeze.feature_set,
+        "configuration": model_freeze.configuration,
+        "hyperparameters": model_freeze.hyperparameters,
+    }
+    target_evaluation_identity = {
+        "evaluation_script": model_freeze.evaluation_script,
+        "metric_contract_version": model_freeze.metric_contract_version,
+    }
+    receipt = load_verified_migration_receipt(
+        repo_root=repo_root,
+        approval_commit=approval_commit,
+        migration_commit=migration_commit,
+        receipt_path=approval_receipt_path,
+        expected={
+            "status": "MIGRATED_AUDIT_ONLY",
+            "promotion_authorized": False,
+            "source_provider": existing.provider,
+            "source_holdout_id": existing.holdout_id,
+            "source_match_ids": list(existing.match_ids),
+            "source_protocol_version": LEGACY_FREEZE_PROTOCOL_VERSION,
+            "source_ledger_head_sha256": source_ledger_head_sha256,
+            "legacy_combined_freeze": legacy_freeze,
+            "old_code_commit": old_code_commit,
+            "migration_commit": migration_commit,
+            "model_freeze_spec_sha256": freeze_spec_sha256,
+            "evaluation_freeze_spec_sha256": freeze_spec_sha256,
+            "policy_sha256": policy_sha256,
+            "old_holdout_manifest_sha256": holdout_manifest_sha256,
+            "target_model_identity": target_model_identity,
+            "target_evaluation_identity": target_evaluation_identity,
+            "target_split_manifest_sha256": split_manifest_sha256,
+            "target_holdout_manifest_sha256": target_holdout_manifest_sha256,
+            "governance_identity_digest": (governance_identity.authorization_status_digest),
+            "previous_record_sha256": previous_record_sha256,
+        },
     )
     ledger = HoldoutLedger(
         path=existing.path,
@@ -427,15 +543,13 @@ def migrate_legacy_ledger(
         holdout_id=existing.holdout_id,
         match_ids=existing.match_ids,
         freeze_hashes=model_freeze,
-        holdout_manifest_sha256=holdout_manifest_sha256,
+        holdout_manifest_sha256=target_holdout_manifest_sha256,
+        holdout_manifest_path_sha256=holdout_manifest_path_sha256,
+        split_manifest_sha256=split_manifest_sha256,
         code_commit=migration_commit,
         governance_identity=governance_identity,
     )
-    ledger.append_freeze_migration(
-        migration_commit=migration_commit,
-        approver=approver,
-        reason=reason,
-    )
+    ledger.append_freeze_migration(migration_receipt=receipt)
     return ledger
 
 
@@ -495,6 +609,52 @@ def stable_holdout_identity(
     return normalized_provider, normalized_matches, f"holdout-{digest[:24]}"
 
 
+def sha256_path_identity(path: str | os.PathLike[str]) -> str:
+    resolved = Path(path).resolve(strict=True)
+    return hashlib.sha256(resolved.as_posix().encode("utf-8")).hexdigest()
+
+
+def manifest_path_has_conflicting_identity(
+    ledger_dir: str | os.PathLike[str],
+    *,
+    provider: str,
+    match_ids: tuple[str, ...],
+    manifest_path_sha256: str,
+) -> bool:
+    normalized_provider, normalized_matches, holdout_id = stable_holdout_identity(
+        provider,
+        match_ids,
+    )
+    directory = Path(ledger_dir)
+    if not directory.exists():
+        return False
+    for path in sorted(directory.glob("*.jsonl")):
+        try:
+            raw_records = [
+                json.loads(line)
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except (OSError, json.JSONDecodeError):
+            continue
+        matching = [
+            record
+            for record in raw_records
+            if isinstance(record, dict)
+            and record.get("holdout_manifest_path_sha256") == manifest_path_sha256
+        ]
+        if not matching:
+            continue
+        first = matching[0]
+        if (
+            first.get("provider") != normalized_provider
+            or first.get("holdout_id") != holdout_id
+            or first.get("match_ids") != list(normalized_matches)
+        ):
+            return True
+    return False
+
+
 def _validate_record(
     record: Mapping[str, Any],
     *,
@@ -508,9 +668,11 @@ def _validate_record(
         raise PolicyError("legacy holdout ledger record has invalid fields")
     if kind == "v2" and set(record) != V2_RECORD_FIELDS:
         raise PolicyError("holdout ledger record has missing or unknown fields")
+    if kind == "v3" and set(record) != V3_RECORD_FIELDS:
+        raise PolicyError("seal-bound ledger record has missing or unknown fields")
     if kind == "migration" and set(record) != MIGRATION_RECORD_FIELDS:
         raise PolicyError("holdout migration record has missing or unknown fields")
-    if kind not in {"legacy", "v2", "migration"}:
+    if kind not in {"legacy", "v2", "v3", "migration"}:
         raise PolicyError("holdout ledger record has missing or unknown fields")
     try:
         event = LedgerEvent(record["event_type"])
@@ -544,6 +706,14 @@ def _validate_record(
         raise PolicyError("holdout ledger completed event requires a prediction SHA-256")
     if event == LedgerEvent.FREEZE_PROTOCOL_MIGRATED and kind != "migration":
         raise PolicyError("FREEZE_PROTOCOL_MIGRATED record is incomplete")
+    if kind in {"v3", "migration"}:
+        if record["freeze_protocol_version"] != SEAL_BOUND_FREEZE_PROTOCOL_VERSION:
+            raise PolicyError("seal-bound freeze protocol version is unsupported")
+        _validate_sha256(
+            record["holdout_manifest_path_sha256"],
+            "Manifest path SHA-256",
+        )
+        _validate_sha256(record["split_manifest_sha256"], "split manifest SHA-256")
     if kind == "migration":
         if event != LedgerEvent.FREEZE_PROTOCOL_MIGRATED:
             raise PolicyError("migration fields require FREEZE_PROTOCOL_MIGRATED event")
@@ -553,7 +723,8 @@ def _validate_record(
         if identity.provider != provider:
             raise PolicyError("holdout ledger governance provider mismatch")
         if kind == "migration" and (
-            record["governance_identity_digest"] != identity.authorization_status_digest
+            record["migration_receipt"]["governance_identity_digest"]
+            != identity.authorization_status_digest
         ):
             raise PolicyError("migration governance identity digest does not match")
 
@@ -600,31 +771,35 @@ def _freeze_from_mapping(freeze: Any) -> FreezeHashes:
 
 
 def _validate_migration_record(record: Mapping[str, Any]) -> None:
-    if record["old_protocol_version"] != LEGACY_FREEZE_PROTOCOL_VERSION:
-        raise PolicyError("legacy freeze protocol version is unsupported")
-    if record["new_protocol_version"] != MODEL_FREEZE_PROTOCOL_VERSION:
-        raise PolicyError("new freeze protocol version is unsupported")
-    if record["migration_rule_version"] != MIGRATION_RULE_VERSION:
-        raise PolicyError("freeze migration rule version is unsupported")
-    _freeze_from_mapping(record["legacy_combined_freeze"])
-    new_model_freeze = _freeze_from_mapping(record["new_model_freeze"])
-    if _freeze_dict(new_model_freeze) != record["freeze_hashes"]:
-        raise PolicyError("migration new model freeze does not match event freeze")
-    if record["migration_commit"] != record["code_commit"]:
+    receipt = validate_migration_receipt(record["migration_receipt"])
+    if receipt["source_provider"] != record["provider"]:
+        raise PolicyError("migration receipt provider does not match record")
+    if receipt["source_holdout_id"] != record["holdout_id"]:
+        raise PolicyError("migration receipt Holdout ID does not match record")
+    if receipt["source_match_ids"] != record["match_ids"]:
+        raise PolicyError("migration receipt match set does not match record")
+    if receipt["previous_record_sha256"] != record["previous_record_sha256"]:
+        raise PolicyError("migration receipt previous hash does not match record")
+    if receipt["migration_commit"] != record["code_commit"]:
         raise PolicyError("migration commit does not match event code commit")
-    for field in ("old_code_commit", "migration_commit"):
-        value = record[field]
-        if (
-            not isinstance(value, str)
-            or len(value) != 40
-            or any(character not in "0123456789abcdef" for character in value)
-        ):
-            raise PolicyError(f"migration {field} is invalid")
-    if not isinstance(record["approver"], str) or not record["approver"].strip():
-        raise PolicyError("migration approver is required")
-    if not isinstance(record["reason"], str) or not record["reason"].strip():
-        raise PolicyError("migration reason is required")
-    _validate_sha256(record["governance_identity_digest"], "governance identity digest")
+    if receipt["old_holdout_manifest_sha256"] != record["holdout_manifest_sha256"]:
+        raise PolicyError("migration old Holdout Manifest SHA does not match record")
+    if receipt["target_split_manifest_sha256"] != record["split_manifest_sha256"]:
+        raise PolicyError("migration split identity does not match record")
+    target_model = {
+        "model": record["freeze_hashes"]["model"],
+        "feature_set": record["freeze_hashes"]["feature_set"],
+        "configuration": record["freeze_hashes"]["configuration"],
+        "hyperparameters": record["freeze_hashes"]["hyperparameters"],
+    }
+    if receipt["target_model_identity"] != target_model:
+        raise PolicyError("migration target model identity does not match record")
+    target_evaluation = {
+        "evaluation_script": record["freeze_hashes"]["evaluation_script"],
+        "metric_contract_version": record["freeze_hashes"]["metric_contract_version"],
+    }
+    if receipt["target_evaluation_identity"] != target_evaluation:
+        raise PolicyError("migration target evaluation identity does not match record")
 
 
 def _ledger_record_kind(record: Mapping[str, Any]) -> str:
@@ -633,6 +808,8 @@ def _ledger_record_kind(record: Mapping[str, Any]) -> str:
         return "legacy"
     if fields == V2_RECORD_FIELDS:
         return "v2"
+    if fields == V3_RECORD_FIELDS:
+        return "v3"
     if fields == MIGRATION_RECORD_FIELDS:
         return "migration"
     return "invalid"
@@ -648,8 +825,12 @@ def _validate_protocol_sequence(records: Sequence[Mapping[str, Any]]) -> None:
         if any(kind != "v2" for kind in kinds):
             raise PolicyError("native v2 holdout ledger has mixed protocol records")
         return
+    if kinds[0] == "v3":
+        if any(kind != "v3" for kind in kinds):
+            raise PolicyError("seal-bound holdout ledger has mixed protocol records")
+        return
     if kinds[0] != "legacy":
-        raise PolicyError("holdout ledger must begin with a legacy or v2 record")
+        raise PolicyError("holdout ledger must begin with a legacy, v2 or v3 record")
     migration_indexes = [index for index, kind in enumerate(kinds) if kind == "migration"]
     if len(migration_indexes) > 1:
         raise PolicyError("holdout ledger has multiple freeze migrations")
@@ -660,8 +841,38 @@ def _validate_protocol_sequence(records: Sequence[Mapping[str, Any]]) -> None:
     migration_index = migration_indexes[0]
     if any(kind != "legacy" for kind in kinds[:migration_index]):
         raise PolicyError("holdout migration is out of protocol order")
-    if any(kind != "v2" for kind in kinds[migration_index + 1 :]):
-        raise PolicyError("holdout ledger has legacy records after migration")
+    if migration_index != len(kinds) - 1:
+        raise PolicyError("migrated audit-only ledger cannot accept later events")
+
+
+def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
+    sealed_manifest_sha256: str | None = None
+    sealed_manifest_path_sha256: str | None = None
+    sealed_split_sha256: str | None = None
+    for record in records:
+        if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value:
+            if sealed_manifest_sha256 is None:
+                sealed_manifest_sha256 = str(record["holdout_manifest_sha256"])
+                if _ledger_record_kind(record) == "v3":
+                    sealed_manifest_path_sha256 = str(record["holdout_manifest_path_sha256"])
+                    sealed_split_sha256 = str(record["split_manifest_sha256"])
+            continue
+        if sealed_manifest_sha256 is None:
+            continue
+        if record["holdout_manifest_sha256"] != sealed_manifest_sha256:
+            raise PolicyError("holdout ledger contains a changed sealed Manifest SHA")
+        if (
+            sealed_manifest_path_sha256 is not None
+            and _ledger_record_kind(record) == "v3"
+            and record["holdout_manifest_path_sha256"] != sealed_manifest_path_sha256
+        ):
+            raise PolicyError("holdout ledger contains a changed sealed Manifest path")
+        if (
+            sealed_split_sha256 is not None
+            and _ledger_record_kind(record) == "v3"
+            and record["split_manifest_sha256"] != sealed_split_sha256
+        ):
+            raise PolicyError("holdout ledger contains a changed sealed split SHA")
 
 
 def _canonical_json(values: Mapping[str, Any]) -> bytes:

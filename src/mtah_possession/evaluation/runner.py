@@ -44,6 +44,8 @@ from mtah_possession.governance.ledger import (
     HoldoutLedgerState,
     LedgerEvent,
     create_ledger,
+    manifest_path_has_conflicting_identity,
+    sha256_path_identity,
 )
 from mtah_possession.governance.policy import (
     DataUse,
@@ -90,6 +92,7 @@ def run_external_evaluation(
     ),
 ) -> ExternalRunResult:
     splits = load_split_manifest(splits_path)
+    split_manifest_sha256 = sha256_file(splits_path)
     manifest = load_skillcorner_manifest(config_path)
     provider_name = str(manifest["provider"])
     source_revision = str(manifest["commit"])
@@ -99,23 +102,50 @@ def run_external_evaluation(
     if mode == EvaluationMode.PROMOTION:
         holdout_manifest = load_holdout_manifest(holdout_manifest_path)
         freeze_hashes = compute_freeze_hashes(freeze_spec_path)
+        holdout_manifest_sha256 = sha256_file(holdout_manifest_path)
+        holdout_manifest_path_sha256 = sha256_path_identity(holdout_manifest_path)
+        if manifest_path_has_conflicting_identity(
+            ledger_dir,
+            provider=provider_name,
+            match_ids=holdout_manifest.matches,
+            manifest_path_sha256=holdout_manifest_path_sha256,
+        ):
+            raise PolicyError("sealed Holdout Manifest path is bound to a different match identity")
         ledger = create_ledger(
             ledger_dir,
             provider=provider_name,
             match_ids=holdout_manifest.matches,
             freeze_hashes=freeze_hashes,
-            holdout_manifest_sha256=sha256_file(holdout_manifest_path),
+            holdout_manifest_sha256=holdout_manifest_sha256,
+            holdout_manifest_path_sha256=holdout_manifest_path_sha256,
+            split_manifest_sha256=split_manifest_sha256,
             code_commit=code_commit,
         )
         ledger_state = ledger.state
         if ledger_state == HoldoutLedgerState.COMPROMISED:
             raise PolicyError("holdout ledger is permanently COMPROMISED")
+        if ledger_state == HoldoutLedgerState.MIGRATED_AUDIT_ONLY:
+            raise PolicyError("migrated holdout ledger is audit-only and cannot promote")
         if ledger_state == HoldoutLedgerState.EVALUATION_COMPLETED:
             raise PolicyError("holdout evaluation is already completed and cannot be reused")
         if ledger_state == HoldoutLedgerState.EVALUATION_RUNNING:
             raise PolicyError("holdout evaluation is already running or indeterminate")
         if ledger.requires_freeze_migration:
             raise PolicyError("legacy holdout ledger requires explicit freeze migration")
+        if ledger.requires_split_protocol_reseal:
+            raise PolicyError("pre-split holdout ledger requires a new approved seal")
+        sealed_manifest_sha256 = ledger.sealed_manifest_sha256()
+        if sealed_manifest_sha256 is not None and sealed_manifest_sha256 != holdout_manifest_sha256:
+            raise PolicyError("sealed Holdout Manifest SHA-256 has changed")
+        sealed_split_sha256 = ledger.sealed_split_manifest_sha256()
+        if sealed_split_sha256 is not None and sealed_split_sha256 != split_manifest_sha256:
+            raise PolicyError("sealed split manifest SHA-256 has changed")
+        sealed_manifest_path_sha256 = ledger.sealed_manifest_path_sha256()
+        if (
+            sealed_manifest_path_sha256 is not None
+            and sealed_manifest_path_sha256 != holdout_manifest_path_sha256
+        ):
+            raise PolicyError("sealed Holdout Manifest path has changed")
         prior_freeze = ledger.model_freeze_hashes()
         if prior_freeze is not None and prior_freeze != freeze_hashes:
             identity = build_governance_identity(
@@ -158,7 +188,7 @@ def run_external_evaluation(
             holdout_manifest=holdout_manifest,
             freeze_hashes=freeze_hashes,
             governance_identity=governance_identity,
-            verify_holdout_freeze=not (ledger is not None and ledger.has_migration_event()),
+            verify_holdout_freeze=True,
         )
     except HoldoutCompromisedError as error:
         if ledger is not None:

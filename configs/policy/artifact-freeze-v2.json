@@ -23,7 +23,9 @@
     "evaluation_script": [
       "scripts/evaluate_external.py",
       "src/mtah_possession/evaluation/external.py",
-      "src/mtah_possession/evaluation/provenance.py"
+      "src/mtah_possession/evaluation/provenance.py",
+      "src/mtah_possession/evaluation/runner.py",
+      "src/mtah_possession/evaluation/splits.py"
     ],
     "metric_contract": [
       "docs/evaluation-contract.md",

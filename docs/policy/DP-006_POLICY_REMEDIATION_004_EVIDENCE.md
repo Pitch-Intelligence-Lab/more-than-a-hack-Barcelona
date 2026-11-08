@@ -1,5 +1,10 @@
 # DP-006 Policy Remediation 004 Evidence
 
+> Historical fourth-round evidence. The independent review found migration and
+> seal immutability gaps. See
+> `DP-006_POLICY_REMEDIATION_005_EVIDENCE.md` for current R3 migration/Eval/Split
+> coverage evidence.
+
 **Task:** DP-006-POLICY-REMEDIATION-004
 
 **Base commit:** `d83cb9e0096a852e9245b8734111746403b0d337`

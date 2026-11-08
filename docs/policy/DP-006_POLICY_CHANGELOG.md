@@ -116,6 +116,29 @@ merge and real-data research authorization remain `HOLD` for PM/QA.
 Policy implementation final acceptance, merge and real-data research
 authorization remain `HOLD` for PM/QA.
 
+## DP-006-POLICY-REMEDIATION-005
+
+**Date:** 2026-11-08
+
+**Status:** audit-only migration and immutable-seal candidate for PM/QA review
+
+### Fixed
+
+- migration now produces only `MIGRATED_AUDIT_ONLY` and never Promotion authority;
+- migration receipts are verified against real Git commits, committed approval
+  evidence and current approved Model/Evaluation/Split identities;
+- first `SEALED_VERIFIED` binds immutable Holdout Manifest content/path and split
+  manifest SHA-256;
+- `runner.py`, `splits.py` and `configs/external-splits.json` now affect
+  Evaluation/Split Identity;
+- compromised match sets cannot be recovered through migration, re-sealing or a
+  new stable identity.
+
+### Not claimed
+
+Policy implementation final acceptance, merge and real-data research
+authorization remain `HOLD` for PM/QA.
+
 ## DP-006-POLICY-REMEDIATION-004
 
 **Date:** 2026-11-08

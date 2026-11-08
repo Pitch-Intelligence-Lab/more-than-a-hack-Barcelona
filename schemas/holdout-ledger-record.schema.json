@@ -98,6 +98,18 @@
         }
       }
     },
+    "freeze_protocol_version": {"type": "string", "minLength": 1},
+    "holdout_manifest_path_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "split_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "migration_receipt": {
+      "$ref": "holdout-migration-receipt.schema.json"
+    },
     "old_protocol_version": {"type": "string", "minLength": 1},
     "new_protocol_version": {"type": "string", "minLength": 1},
     "legacy_combined_freeze": {"type": "object"},
