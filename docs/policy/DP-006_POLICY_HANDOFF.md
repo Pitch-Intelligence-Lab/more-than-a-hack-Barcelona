@@ -11,8 +11,8 @@ Task ID: DP-006-POLICY-REMEDIATION-006-TUNING-CONTAMINATION-CLOSURE
 Base commit: 9f0558b1eac4472b30963427781b68d8e79598ef
 Branch: feature/DP-006-POLICY-v2
 Implementation commit: b8a93cc955ec80c549489c00f2ad1737663abba0
-Documentation commit: resolved by the tuning evidence commit
-Final HEAD at documentation submission: resolved by the tuning evidence commit
+Documentation commit: 19279e864939bd872f4e52562e777fc319bdef71
+Final HEAD at documentation submission: 19279e864939bd872f4e52562e777fc319bdef71
 Remote HEAD at documentation submission: resolved after push
 PR: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 PR visibility/status: verified; OPEN, UNMERGED, HOLD
