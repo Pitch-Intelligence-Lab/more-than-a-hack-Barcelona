@@ -1,33 +1,32 @@
-# DP-006 Policy Remediation 005 Engineering Handoff
+# DP-006 Policy Remediation 006 Closure Handoff
 
 ```text
-Task ID: DP-006-POLICY-REMEDIATION-005
-Base commit: c8c0661943008e0b73b6e0ab506ad589a3642144
+Task ID: DP-006-POLICY-REMEDIATION-006
+Base commit: d924f7fafd8b63f653dea6966ea127e61c87e460
 Branch: feature/DP-006-POLICY-v2
-Implementation commit: 68ac7b2844a328db7e2f59781529cbb6e5ad0e26
-Final HEAD at implementation submission: 68ac7b2844a328db7e2f59781529cbb6e5ad0e26
-Remote HEAD at implementation submission: 68ac7b2844a328db7e2f59781529cbb6e5ad0e26
+Implementation commit: e85e96bc3cb4de3a9de7501f4aa6ee1cca6fc5e9
+Final HEAD at implementation submission: e85e96bc3cb4de3a9de7501f4aa6ee1cca6fc5e9
+Remote HEAD at implementation submission: e85e96bc3cb4de3a9de7501f4aa6ee1cca6fc5e9
 PR: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 PR visibility/status: verified; OPEN, UNMERGED, HOLD
 PR base: feature/DP-006A-leakage-promotion-gate
 
-R5.1 Migration audit-only: PASS candidate
-R5.2 No implicit Promotion or model replacement: PASS candidate
-R5.3 Verified migration provenance: PASS candidate
-R5.4 Manifest immutability: PASS candidate
-R5.5 Evaluation Identity coverage: PASS candidate
-R5.6 Split Identity coverage: PASS candidate
-R5.7 Compromised remains terminal: PASS candidate
-R5.8 Existing authorization/state-machine repairs: PASS
+R6.1 Source Identity: PASS candidate
+R6.2 Source immutability: PASS candidate
+R6.3 Source paths/files: PASS candidate
+R6.4 Migration targets from Git objects: PASS candidate
+R6.5 Migration ancestry: PASS candidate
+R6.6 No worktree self-report: PASS candidate
+R6.7 Existing repairs: PASS
+R6.8 Final Assurance readiness: READY FOR INDEPENDENT REVIEW
 
+R6-01 through R6-12: PASS
 RP5-01 through RP5-09: PASS
-Tests: 187 passed
-Warning-free: 187 passed with -W error
+Tests: 206 passed
+Warning-free: 206 passed with -W error
 Ruff: check passed
 Format: format check passed
-Invalid external-root: 187 passed
-Production split manifest SHA-256: 0d971d324f260110905587fc09f434fb3a58892d5890156020f88a88426b9525
-Production Holdout Manifest SHA-256: 0f58b53681e2c6920efa5a34dff9d565fd2f586d38d4d73a5e55a219ae49d708
+Invalid external-root: 206 passed
 
 External data accessed: no
 Real evaluation run: no
@@ -40,14 +39,14 @@ PR merged: no
 ## Final review status
 
 ```text
-Audit-only legacy migration: FIX CANDIDATE
-Immutable Holdout Manifest seal: FIX CANDIDATE
-Evaluation/Split freeze coverage: FIX CANDIDATE
+Source Identity sealed: FIX CANDIDATE
+Migration Git-object verification: FIX CANDIDATE
+Existing authorization/lifecycle controls: PRESERVED
 Policy implementation final acceptance: HOLD
-R5 synthetic Temporal integration: PASS and unchanged
-R5 real-data Temporal verification: HOLD
 Real-data research activation: HOLD
 Merge: DENIED
+Automatic REPAIR-007: NOT APPROVED
+Next gate: DP-006 Final Assurance Review
 ```
 
 The engineer does not declare Policy implementation PASS and does not merge
@@ -55,19 +54,19 @@ PR #9.
 
 ## Evidence
 
-- `docs/policy/DP-006_POLICY_REMEDIATION_005_EVIDENCE.md`
-- `docs/policy/06_工程师交付回执.md`
-- `schemas/holdout-migration-receipt.schema.json`
+- `docs/policy/DP-006_POLICY_REMEDIATION_006_EVIDENCE.md`
+- `docs/policy/08_工程师交付回执.md`
+- `docs/policy/SOURCE_IDENTITY_EXAMPLE.json`
+- `schemas/source-identity.schema.json`
+- `src/mtah_possession/governance/source.py`
 - `src/mtah_possession/governance/migration.py`
 - `tests/test_holdout_gates.py`
 
 ## Remaining HOLD items
 
-- PM/QA acceptance of audit-only migration and seal binding.
-- Independently approved creation/activation of any replacement v2 seal.
+- Independent DP-006 Final Assurance Review.
 - Real provider rights and internal authorization.
-- Real field-level temporal verification.
-- Real phase-boundary verification.
+- Real field-level temporal and phase verification.
 - Cross-provider semantic mappings.
 - Active independent holdout.
 - Merge approval.
