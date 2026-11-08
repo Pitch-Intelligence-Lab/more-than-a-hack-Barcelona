@@ -12,8 +12,8 @@ Task ID: DP-006-POLICY-REMEDIATION-006-C2-LIFECYCLE-CLOSURE
 Base commit: 0aaac62b04b8ba0aae4c6dfda55451f971cdf4a7
 Branch: feature/DP-006-POLICY-v2
 Implementation commit: 3d4683de74e12e50304455f108a70a9796a6e216
-Documentation commit: resolved by the C2 evidence commit
-Final HEAD at documentation submission: resolved by the C2 evidence commit
+Documentation commit: 81dd36feef5e10a9c780c09e303a89303b31bdd9
+Final HEAD at documentation submission: 81dd36feef5e10a9c780c09e303a89303b31bdd9
 Remote HEAD at documentation submission: resolved after push
 PR: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 PR visibility/status: verified; OPEN, UNMERGED, HOLD
