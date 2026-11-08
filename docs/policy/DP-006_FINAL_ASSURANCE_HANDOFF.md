@@ -14,7 +14,7 @@
 
 **TOCTOU implementation commit:** `5f1108d8d67ef27680a812c9b9ec2d2dd4cf7c77`
 
-**Final docs-only HEAD:** `PENDING_FINAL_DOCS_COMMIT`
+**Final docs-only evidence commit:** `ca8973629eca4c19df1738034b3e39043fd61084`
 
 ## Status
 
