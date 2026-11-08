@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -75,11 +76,25 @@ class SourceIdentitySet:
 
 def build_source_identity(config_path: str | os.PathLike[str]) -> SourceIdentity:
     manifest = load_skillcorner_manifest(config_path)
+    return build_source_identity_from_manifest(manifest)
+
+
+def build_source_identity_from_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    actual_file_sha256: Mapping[str, str] | None = None,
+    actual_license_sha256: str | None = None,
+    actual_readme_sha256: str | None = None,
+) -> SourceIdentity:
     files = {
         role: {
             "path": _logical_path(manifest["files"][role]["path"]),
             "sha256": _required_sha256(
-                manifest["files"][role]["sha256"],
+                (
+                    actual_file_sha256[role]
+                    if actual_file_sha256 is not None
+                    else manifest["files"][role]["sha256"]
+                ),
                 f"{role} file SHA-256",
             ),
         }
@@ -119,11 +134,19 @@ def build_source_identity(config_path: str | os.PathLike[str]) -> SourceIdentity
             "coordinate convention",
         ),
         "license_sha256": _required_sha256(
-            manifest["license_sha256"],
+            (
+                actual_license_sha256
+                if actual_license_sha256 is not None
+                else manifest["license_sha256"]
+            ),
             "license SHA-256",
         ),
         "readme_sha256": _required_sha256(
-            manifest["readme_sha256"],
+            (
+                actual_readme_sha256
+                if actual_readme_sha256 is not None
+                else manifest["readme_sha256"]
+            ),
             "README SHA-256",
         ),
         "files": files,
@@ -252,6 +275,7 @@ def build_source_identity_set(
     provider: str,
     holdout_matches: tuple[str, ...],
     source_root: str | os.PathLike[str] | None = None,
+    identity_overrides: Mapping[str, SourceIdentity] | None = None,
 ) -> SourceIdentitySet:
     path = Path(descriptor_path)
     repository_root = Path(source_root) if source_root is not None else path.parent
@@ -281,7 +305,11 @@ def build_source_identity_set(
         seen.add(match_id)
         source_config = _logical_path(member["source_config"])
         config_path = repository_root / source_config
-        identity = build_source_identity(config_path)
+        identity = (
+            identity_overrides[match_id]
+            if identity_overrides is not None and match_id in identity_overrides
+            else build_source_identity(config_path)
+        )
         if identity.provider != provider or identity.match_id != match_id:
             raise PolicyError("source-set member identity does not match its match ID")
         parsed_members.append({"match_id": match_id, "source_config": source_config})
@@ -309,8 +337,9 @@ def build_single_source_identity_set(
     provider: str,
     match_id: str,
     source_config: str | os.PathLike[str],
+    identity_override: SourceIdentity | None = None,
 ) -> SourceIdentitySet:
-    identity = build_source_identity(source_config)
+    identity = identity_override or build_source_identity(source_config)
     if identity.provider != provider or identity.match_id != match_id:
         raise PolicyError("single source identity does not match current match")
     source_config_name = Path(source_config).name
@@ -332,8 +361,9 @@ def current_source_identity(
     match_id: str,
     source_config: str | os.PathLike[str],
     source_root: str | os.PathLike[str] | None,
+    identity_override: SourceIdentity | None = None,
 ) -> SourceIdentity:
-    identity = build_source_identity(source_config)
+    identity = identity_override or build_source_identity(source_config)
     if match_id not in source_set.identity_digests:
         raise PolicyError("current match is not registered in SourceIdentitySet")
     if source_root is not None:

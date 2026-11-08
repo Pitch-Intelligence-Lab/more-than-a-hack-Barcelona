@@ -10,10 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from mtah_possession.algorithm_config import StateEngineConfig, load_algorithm_config
-from mtah_possession.data.neutral import NeutralMatch
 from mtah_possession.data.skillcorner import (
-    load_skillcorner_manifest,
-    load_skillcorner_match,
+    LoadedSkillCornerSource,
+    SkillCornerDataError,
+    SkillCornerManifestSnapshot,
+    create_skillcorner_manifest_snapshot,
+    load_skillcorner_match_from_snapshot,
 )
 from mtah_possession.evaluation.external import (
     ExternalMatchEvaluation,
@@ -53,9 +55,10 @@ from mtah_possession.governance.policy import (
     PolicyError,
 )
 from mtah_possession.governance.source import (
+    SourceIdentity,
     build_single_source_identity_set,
+    build_source_identity_from_manifest,
     build_source_identity_set,
-    current_source_identity,
 )
 from mtah_possession.validation.submission import sha256_file
 
@@ -87,9 +90,14 @@ def run_external_evaluation(
     mode: EvaluationMode,
     code_commit: str,
     policy_path: str | os.PathLike[str] = DEFAULT_POLICY_PATH,
-    match_loader: Callable[[str | os.PathLike[str], str | os.PathLike[str]], NeutralMatch] = (
-        load_skillcorner_match
-    ),
+    match_loader: Callable[
+        [
+            SkillCornerManifestSnapshot,
+            str | os.PathLike[str],
+            SourceIdentity,
+        ],
+        LoadedSkillCornerSource,
+    ] = load_skillcorner_match_from_snapshot,
     holdout_manifest_path: str | os.PathLike[str] = DEFAULT_HOLDOUT_MANIFEST_PATH,
     freeze_spec_path: str | os.PathLike[str] = DEFAULT_FREEZE_SPEC_PATH,
     ledger_dir: str | os.PathLike[str] = DEFAULT_LEDGER_DIR,
@@ -100,7 +108,9 @@ def run_external_evaluation(
 ) -> ExternalRunResult:
     splits = load_split_manifest(splits_path)
     split_manifest_sha256 = sha256_file(splits_path)
-    manifest = load_skillcorner_manifest(config_path)
+    manifest_snapshot = create_skillcorner_manifest_snapshot(config_path)
+    manifest = manifest_snapshot.manifest
+    snapshot_source_identity = build_source_identity_from_manifest(manifest)
     provider_name = str(manifest["provider"])
     source_revision = str(manifest["commit"])
     holdout_manifest: HoldoutManifest | None = None
@@ -129,13 +139,19 @@ def run_external_evaluation(
                         provider=provider_name,
                         holdout_matches=holdout_manifest.matches,
                         source_root=source_root,
+                        identity_overrides={
+                            str(manifest["match_id"]): snapshot_source_identity,
+                        },
                     )
-                    source_identity = current_source_identity(
-                        source_set,
-                        match_id=str(manifest["match_id"]),
-                        source_config=config_path,
-                        source_root=source_root,
+                    source_identity = source_set.identities[str(manifest["match_id"])]
+                    member = next(
+                        member
+                        for member in source_set.members
+                        if member["match_id"] == str(manifest["match_id"])
                     )
+                    expected_config = (source_root / member["source_config"]).resolve(strict=False)
+                    if expected_config.as_posix() != manifest_snapshot.source_path:
+                        raise PolicyError("current source config does not match SourceIdentitySet")
                 else:
                     if len(holdout_manifest.matches) != 1:
                         raise PolicyError("multi-match Holdout requires a source-set descriptor")
@@ -143,6 +159,7 @@ def run_external_evaluation(
                         provider=provider_name,
                         match_id=str(manifest["match_id"]),
                         source_config=config_path,
+                        identity_override=snapshot_source_identity,
                     )
                     source_identity = source_set.identities[str(manifest["match_id"])]
             except PolicyError as error:
@@ -235,6 +252,7 @@ def run_external_evaluation(
             provider=provider_name,
             match_id=str(manifest["match_id"]),
             source_config=config_path,
+            identity_override=snapshot_source_identity,
         )
         source_identity = source_set.identities[str(manifest["match_id"])]
     if ledger is not None:
@@ -308,7 +326,32 @@ def run_external_evaluation(
             match_id=str(manifest["match_id"]),
         )
     try:
-        match = match_loader(config_path, external_root)
+        loaded_source = match_loader(
+            manifest_snapshot,
+            external_root,
+            source_identity,
+        )
+        if not isinstance(loaded_source, LoadedSkillCornerSource):
+            raise SkillCornerDataError(
+                "external loader must return an immutable SkillCorner source result"
+            )
+        if loaded_source.manifest_snapshot.snapshot_digest != manifest_snapshot.snapshot_digest:
+            raise SkillCornerDataError("loader manifest snapshot digest does not match")
+        if loaded_source.actual_source_identity != source_identity:
+            raise SkillCornerDataError("loader actual Source Identity does not match the seal")
+        expected_checksums = {
+            "license": source_identity.license_sha256,
+            "readme": source_identity.readme_sha256,
+            **{
+                role: source_identity.files[role]["sha256"]
+                for role in ("tracking", "phases", "match")
+            },
+        }
+        if dict(loaded_source.actual_checksums) != expected_checksums:
+            raise SkillCornerDataError("loader actual checksums do not match the seal")
+        if loaded_source.match.match_id != source_identity.match_id:
+            raise SkillCornerDataError("loader match ID does not match the sealed source")
+        match = loaded_source.match
         state_config = state_config_loader(state_config_path)
         if not isinstance(state_config, StateEngineConfig):
             raise ValueError("external evaluation requires a state-engine configuration")
@@ -336,6 +379,11 @@ def run_external_evaluation(
             prediction_sha256=hashlib.sha256(prediction_hashes.encode()).hexdigest(),
         )
     report = evaluation.to_dict()
+    report["source_integrity"] = {
+        "source_identity_sha256": source_identity.source_identity_sha256,
+        "source_snapshot_digest": loaded_source.snapshot_digest,
+        "actual_checksums": dict(loaded_source.actual_checksums),
+    }
     report["split_manifest"] = split_manifest_dict(splits, match.match_id)
     report["policy_identity"] = {
         "policy_version": authorized.policy.policy_version,

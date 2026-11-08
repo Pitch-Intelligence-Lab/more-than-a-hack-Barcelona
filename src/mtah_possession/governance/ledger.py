@@ -184,6 +184,7 @@ class HoldoutLedger:
                 prediction_sha256=prediction_sha256,
                 reason=reason,
                 previous=previous,
+                source_identity=source_identity_from_dict(completed[-1]["source_identity"]),
             )
             _validate_candidate(records, record)
             _atomic_append_record(self.path, record)
@@ -197,6 +198,7 @@ class HoldoutLedger:
         prediction_sha256: str | None,
         reason: str | None,
         previous: str | None,
+        source_identity: SourceIdentity | None = None,
     ) -> dict[str, Any]:
         if self.governance_identity is None:
             raise PolicyError("holdout ledger append requires a governance identity")
@@ -204,7 +206,8 @@ class HoldoutLedger:
             raise PolicyError("holdout ledger append requires a split manifest SHA-256")
         if self.holdout_manifest_path_sha256 is None:
             raise PolicyError("holdout ledger append requires a Manifest path SHA-256")
-        if self.source_identity is None:
+        effective_source_identity = source_identity or self.source_identity
+        if effective_source_identity is None:
             raise PolicyError("holdout ledger append requires a Source Identity")
         if self.source_identity_set is None:
             raise PolicyError("holdout ledger append requires a SourceIdentitySet")
@@ -231,8 +234,8 @@ class HoldoutLedger:
             "freeze_protocol_version": MATCH_LIFECYCLE_PROTOCOL_VERSION,
             "holdout_manifest_path_sha256": self.holdout_manifest_path_sha256,
             "split_manifest_sha256": self.split_manifest_sha256,
-            "source_config_sha256": self.source_identity.source_config_sha256,
-            "source_identity": self.source_identity.to_dict(),
+            "source_config_sha256": effective_source_identity.source_config_sha256,
+            "source_identity": effective_source_identity.to_dict(),
             "source_identity_set": self.source_identity_set.to_dict(),
         }
 
@@ -972,6 +975,12 @@ def _validate_record(
         source_identity = source_identity_from_dict(record["source_identity"])
         if source_identity.source_config_sha256 != record["source_config_sha256"]:
             raise PolicyError("source config SHA does not match Source Identity")
+        if (
+            kind == "v6"
+            and event in _MATCH_EVENTS
+            and record["match_id"] != source_identity.match_id
+        ):
+            raise PolicyError(f"{event.value} match ID does not match its Source Identity")
     if kind in {"v5", "v6", "migration"}:
         source_set = source_identity_set_from_dict(record["source_identity_set"])
         if source_set.provider != record["provider"]:

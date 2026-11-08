@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers import loaded_source_result
 
 import mtah_possession.evaluation.runner as runner_module
 from mtah_possession.algorithm_config import load_algorithm_config
@@ -94,12 +94,6 @@ def test_diagnostic_selection_is_used_in_report_and_versions(
         encoding="utf-8",
     )
     policy_path = write_allowed_policy(tmp_path)
-    match = SimpleNamespace(
-        match_id="2017461",
-        fps=10,
-        source_checksums={"tracking": "abc"},
-        source_metadata={"tracking_aggregate": {}},
-    )
     observed_split = []
 
     def fake_evaluator(_match, _config, *, authorization, split: str):
@@ -130,7 +124,11 @@ def test_diagnostic_selection_is_used_in_report_and_versions(
         mode=EvaluationMode.DIAGNOSTIC,
         code_commit="abcdef0123456789",
         policy_path=policy_path,
-        match_loader=lambda *_args: match,
+        match_loader=lambda snapshot, _root, identity: loaded_source_result(
+            snapshot,
+            identity,
+            "2017461",
+        ),
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
         ),

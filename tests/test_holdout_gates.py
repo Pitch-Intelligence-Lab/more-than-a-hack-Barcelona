@@ -3,16 +3,22 @@ import json
 import subprocess
 import sys
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType
 
 import numpy as np
 import pytest
+from helpers import loaded_source_result, write_skillcorner_source
 
 import mtah_possession.evaluation.runner as runner_module
 import mtah_possession.governance.ledger as ledger_module
 from mtah_possession.algorithm_config import load_algorithm_config
 from mtah_possession.data.neutral import ProxyTarget
+from mtah_possession.data.skillcorner import (
+    SkillCornerDataError,
+    load_skillcorner_match_from_snapshot,
+)
 from mtah_possession.evaluation.external import (
     ExternalCandidateResult,
     ExternalMatchEvaluation,
@@ -268,12 +274,11 @@ def prepare_promotion(
 
 
 def run_prepared_promotion(fixture: dict, *, loader=None):
-    match = SimpleNamespace(
-        match_id=fixture.get("match_id", "holdout-1"),
-        fps=10,
-        source_checksums={"tracking": "fixture"},
-        source_metadata={"tracking_aggregate": {}},
-    )
+    match_id = fixture.get("match_id", "holdout-1")
+
+    def default_loader(snapshot, _external_root, expected_identity):
+        return loaded_source_result(snapshot, expected_identity, match_id)
+
     return run_external_evaluation(
         config_path=fixture["config_path"],
         state_config_path=ROOT / "configs" / "state-engine.json",
@@ -287,7 +292,7 @@ def run_prepared_promotion(fixture: dict, *, loader=None):
         freeze_spec_path=fixture["freeze_spec_path"],
         ledger_dir=fixture["ledger_dir"],
         source_set_path=fixture.get("source_set_path"),
-        match_loader=loader or (lambda *_args: match),
+        match_loader=loader or default_loader,
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
         ),
@@ -312,6 +317,27 @@ def load_multi_match_ledger(base: dict):
         base["ledger_dir"],
         provider="skillcorner",
         match_ids=("holdout-1", "holdout-2"),
+    )
+
+
+def run_snapshot_match(base: dict, match_id: str, *, loader=None):
+    return run_external_evaluation(
+        config_path=base["sources"][match_id]["config"],
+        state_config_path=ROOT / "configs" / "state-engine.json",
+        splits_path=base["splits_path"],
+        external_root=base["external_root"],
+        split="holdout",
+        mode=EvaluationMode.PROMOTION,
+        code_commit=base["code_commit"],
+        policy_path=base["policy_path"],
+        holdout_manifest_path=base["holdout_path"],
+        freeze_spec_path=base["freeze_spec_path"],
+        ledger_dir=base["ledger_dir"],
+        source_set_path=base["source_set_path"],
+        match_loader=loader or load_skillcorner_match_from_snapshot,
+        state_config_loader=lambda _path: load_algorithm_config(
+            ROOT / "configs" / "state-engine.json"
+        ),
     )
 
 
@@ -2490,14 +2516,13 @@ def test_tc09_concurrent_contamination_and_next_start_linearize_safely(
         return fake_evaluator(*args, **kwargs)
 
     def counting_loader(match_id):
-        def loader(*_args, **_kwargs):
+        def loader(snapshot, _external_root, expected_identity):
             nonlocal loader_calls
             loader_calls += 1
-            return SimpleNamespace(
-                match_id=match_id,
-                fps=10,
-                source_checksums={"tracking": "fixture"},
-                source_metadata={"tracking_aggregate": {}},
+            return loaded_source_result(
+                snapshot,
+                expected_identity,
+                match_id,
             )
 
         return loader
@@ -2600,6 +2625,305 @@ def test_tc12_candidate_validation_failure_does_not_write(
             reason="candidate rejected",
         )
     assert ledger_path.read_bytes() == before
+
+
+def test_to01_config_replaced_after_snapshot_uses_sealed_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    config_path = fixture["config_path"]
+    replacement_values = json.loads(config_path.read_text(encoding="utf-8"))
+    replacement_values["match_id"] = "102"
+    replacement = json.dumps(replacement_values)
+
+    def swapping_loader(snapshot, external_root, expected_identity):
+        config_path.write_text(replacement, encoding="utf-8")
+        return load_skillcorner_match_from_snapshot(
+            snapshot,
+            external_root,
+            expected_identity,
+        )
+
+    result = run_snapshot_match(fixture, "101", loader=swapping_loader)
+    assert result.evaluation.match_id == "101"
+    assert result.report["source_integrity"]["source_identity_sha256"]
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101",),
+    )
+    assert ledger.state == HoldoutLedgerState.COMPLETED
+
+
+def test_to02_replaced_data_file_fails_hash_parse_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    fixture["sources"]["101"]["tracking"].write_text('{"frame":0}\n', encoding="utf-8")
+    with pytest.raises(SkillCornerDataError, match="checksum mismatch"):
+        run_snapshot_match(fixture, "101")
+    records = _ledger_records(fixture["ledger_dir"])
+    assert records[-1]["event_type"] == "EVALUATION_FAILED"
+    assert "EVALUATION_COMPLETED" not in {record["event_type"] for record in records}
+
+
+def test_to03_loader_checksum_mismatch_never_completes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def mismatched_loader(snapshot, external_root, expected_identity):
+        loaded = load_skillcorner_match_from_snapshot(
+            snapshot,
+            external_root,
+            expected_identity,
+        )
+        checksums = dict(loaded.actual_checksums)
+        checksums["tracking"] = "0" * 64
+        return replace(loaded, actual_checksums=MappingProxyType(checksums))
+
+    with pytest.raises(SkillCornerDataError, match="checksums do not match"):
+        run_snapshot_match(fixture, "101", loader=mismatched_loader)
+    records = _ledger_records(fixture["ledger_dir"])
+    assert records[-1]["event_type"] == "EVALUATION_FAILED"
+    assert "EVALUATION_COMPLETED" not in {record["event_type"] for record in records}
+
+
+def test_to04_normal_snapshot_source_completes_with_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    result = run_snapshot_match(fixture, "101")
+    records = _ledger_records(fixture["ledger_dir"])
+    completed = records[-1]
+    assert completed["event_type"] == "EVALUATION_COMPLETED"
+    assert completed["source_identity"]["match_id"] == "101"
+    assert (
+        completed["source_identity"]["source_identity_sha256"]
+        == (result.report["source_integrity"]["source_identity_sha256"])
+    )
+    assert set(result.report["source_integrity"]["actual_checksums"]) == {
+        "license",
+        "readme",
+        "tracking",
+        "phases",
+        "match",
+    }
+
+
+def test_to05_multi_match_each_uses_snapshot_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path, match_ids=("101", "102"))
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    first = run_snapshot_match(fixture, "101")
+    second = run_snapshot_match(fixture, "102")
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101", "102"),
+    )
+    assert ledger.match_states == {
+        "101": MatchLedgerState.COMPLETED,
+        "102": MatchLedgerState.COMPLETED,
+    }
+    assert (
+        first.report["source_integrity"]["source_identity_sha256"]
+        != (second.report["source_integrity"]["source_identity_sha256"])
+    )
+    completed_identities = {
+        record["match_id"]: record["source_identity"]["source_identity_sha256"]
+        for record in ledger.records()
+        if record["event_type"] == "EVALUATION_COMPLETED"
+    }
+    assert completed_identities == {
+        "101": first.report["source_integrity"]["source_identity_sha256"],
+        "102": second.report["source_integrity"]["source_identity_sha256"],
+    }
+
+
+def test_to06_failed_snapshot_ledger_is_hash_chain_valid_without_partial_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    fixture["sources"]["101"]["phases"].write_text("bad,csv\n", encoding="utf-8")
+    with pytest.raises(SkillCornerDataError, match="checksum mismatch"):
+        run_snapshot_match(fixture, "101")
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101",),
+    )
+    assert ledger.records()[-1]["event_type"] == "EVALUATION_FAILED"
+    assert ledger.state == HoldoutLedgerState.IN_PROGRESS
+    assert ledger.path.read_text(encoding="utf-8").endswith("\n")
+
+
+def test_to07_config_path_replacement_is_not_consumed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    config_path = fixture["config_path"]
+    replacement = json.loads(config_path.read_text(encoding="utf-8"))
+    replacement["match_id"] = "102"
+
+    def swap_before_loader(snapshot, external_root, expected_identity):
+        config_path.write_text(json.dumps(replacement), encoding="utf-8")
+        return load_skillcorner_match_from_snapshot(
+            snapshot,
+            external_root,
+            expected_identity,
+        )
+
+    result = run_snapshot_match(fixture, "101", loader=swap_before_loader)
+    assert result.evaluation.match_id == "101"
+    assert json.loads(config_path.read_text(encoding="utf-8"))["match_id"] == "102"
+    completed = _ledger_records(fixture["ledger_dir"])[-1]
+    assert completed["source_identity"]["match_id"] == "101"
+
+
+def test_to08_data_path_replacement_after_read_uses_original_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    tracking_path = fixture["sources"]["101"]["tracking"]
+    original_read_bytes = Path.read_bytes
+    swapped = False
+
+    def read_then_swap(path: Path) -> bytes:
+        nonlocal swapped
+        data = original_read_bytes(path)
+        if path == tracking_path and not swapped:
+            swapped = True
+            path.write_text('{"frame":0}\n', encoding="utf-8")
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", read_then_swap)
+    result = run_snapshot_match(fixture, "101")
+    assert swapped
+    assert result.evaluation.match_id == "101"
+    assert tracking_path.read_text(encoding="utf-8") == '{"frame":0}\n'
+
+
+def test_to09_match_event_source_identity_mismatch_rejected_before_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path, match_ids=("101", "102"))
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("seal established")
+
+    with pytest.raises(RuntimeError, match="seal established"):
+        run_snapshot_match(fixture, "101", loader=failing_loader)
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101", "102"),
+    )
+    source_set = ledger.sealed_source_identity_set()
+    assert source_set is not None
+    before = ledger.path.read_bytes()
+    mismatched = replace(
+        ledger,
+        source_identity=build_source_identity(fixture["sources"]["102"]["config"]),
+    )
+    with pytest.raises(PolicyError, match="match ID does not match"):
+        mismatched.append(LedgerEvent.EVALUATION_STARTED, match_id="101")
+    assert ledger.path.read_bytes() == before
+
+
+def test_to10_partial_tuning_uses_trigger_member_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path, match_ids=("101", "102"))
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_snapshot_match(fixture, "101")
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("second failed")
+
+    with pytest.raises(RuntimeError, match="second failed"):
+        run_snapshot_match(fixture, "102", loader=failing_loader)
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101", "102"),
+    )
+    completed = next(
+        record
+        for record in ledger.records()
+        if record["event_type"] == "EVALUATION_COMPLETED" and record["match_id"] == "101"
+    )
+    mark_holdout_used_for_tuning(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101", "102"),
+        prediction_sha256=completed["prediction_sha256"],
+        reason="trigger member audit",
+    )
+    compromised = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101", "102"),
+    ).records()[-1]
+    assert compromised["event_type"] == "COMPROMISED"
+    assert compromised["match_id"] is None
+    assert compromised["source_identity"]["match_id"] == "101"
+
+
+def test_to11_single_holdout_snapshot_compatibility(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    result = run_snapshot_match(fixture, "101")
+    assert result.report["split_manifest"]["holdout"] == ["101"]
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("101",),
+    )
+    assert ledger.state == HoldoutLedgerState.COMPLETED
+
+
+def test_to12_failed_snapshot_retry_preserves_source_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    tracking_path = fixture["sources"]["101"]["tracking"]
+    original = tracking_path.read_bytes()
+    tracking_path.write_text('{"frame":0}\n', encoding="utf-8")
+    with pytest.raises(SkillCornerDataError, match="checksum mismatch"):
+        run_snapshot_match(fixture, "101")
+    tracking_path.write_bytes(original)
+    result = run_snapshot_match(fixture, "101")
+    records = _ledger_records(fixture["ledger_dir"])
+    lifecycle = [record for record in records if record["event_type"].startswith("EVALUATION_")]
+    identities = {record["source_identity"]["source_identity_sha256"] for record in lifecycle}
+    assert len(identities) == 1
+    assert result.evaluation.match_id == "101"
+    assert records[-1]["event_type"] == "EVALUATION_COMPLETED"
 
 
 def _migrate_fixture(
@@ -2800,6 +3124,74 @@ def prepare_multi_source_promotion(tmp_path: Path) -> dict:
         "source_set_path": source_set_path,
         "source_1": source_1,
         "source_2": source_2,
+    }
+
+
+def prepare_snapshot_promotion(
+    tmp_path: Path,
+    *,
+    match_ids: tuple[str, ...] = ("101",),
+) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    spec_path, artifact_paths, governance_file = separated_artifact_spec(tmp_path)
+    freeze = compute_freeze_hashes(spec_path)
+    data_root = tmp_path / "external"
+    sources = {
+        match_id: write_skillcorner_source(
+            data_root=data_root,
+            config_path=tmp_path / f"source-{match_id}.json",
+            match_id=match_id,
+            source_revision=SOURCE_REVISION,
+        )
+        for match_id in match_ids
+    }
+    members = [
+        {
+            "match_id": match_id,
+            "source_config": sources[match_id]["config"].name,
+        }
+        for match_id in match_ids
+    ]
+    source_set_path = (
+        write_source_set_descriptor(
+            tmp_path,
+            members,
+            filename="source-set-real.json",
+        )
+        if len(match_ids) > 1
+        else None
+    )
+    holdout_path = holdout_manifest(tmp_path, freeze, list(match_ids))
+    split_path = tmp_path / "splits-real.json"
+    split_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "split_unit": "match",
+                "development": ["dev-1"],
+                "validation": ["val-1"],
+                "holdout": list(match_ids),
+                "status": "ready_for_promotion_review",
+                "reason": "synthetic snapshot promotion",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "config_path": sources[match_ids[0]]["config"],
+        "splits_path": split_path,
+        "policy_path": allowed_policy(tmp_path),
+        "holdout_path": holdout_path,
+        "freeze_spec_path": spec_path,
+        "ledger_dir": tmp_path / "ledger",
+        "external_root": data_root,
+        "code_commit": "abcdef0123456789abcdef0123456789abcdef01",
+        "artifact_paths": artifact_paths,
+        "governance_file": governance_file,
+        "freeze": freeze,
+        "source_set_path": source_set_path,
+        "sources": sources,
+        "match_ids": match_ids,
     }
 
 
