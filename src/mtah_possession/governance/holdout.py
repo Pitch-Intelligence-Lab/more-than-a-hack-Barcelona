@@ -13,6 +13,10 @@ from typing import Any
 from mtah_possession.governance.policy import PolicyError
 
 
+class HoldoutCompromisedError(PolicyError):
+    """Raised when a frozen holdout identity no longer matches."""
+
+
 class HoldoutStatus(StrEnum):
     UNASSIGNED = "unassigned"
     SEALED = "sealed"
@@ -118,7 +122,7 @@ class HoldoutManifest:
             freeze.metric_contract_version,
         )
         if stored != expected:
-            raise PolicyError("holdout freeze hash or metric contract does not match")
+            raise HoldoutCompromisedError("holdout freeze hash or metric contract does not match")
 
     def unseal(
         self,

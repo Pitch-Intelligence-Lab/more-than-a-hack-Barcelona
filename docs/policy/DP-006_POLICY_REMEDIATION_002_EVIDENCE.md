@@ -1,5 +1,9 @@
 # DP-006 Policy Remediation 002 Evidence
 
+> Historical second-round evidence. R3 was subsequently returned for ledger
+> state-machine remediation under DP-006-POLICY-REMEDIATION-003. See
+> `DP-006_POLICY_REMEDIATION_003_EVIDENCE.md` for current R3 evidence.
+
 **Task:** DP-006-POLICY-REMEDIATION-002
 
 **Review baseline:** `20595823ac3c2973a371324b17bb1fdda1d64aca`

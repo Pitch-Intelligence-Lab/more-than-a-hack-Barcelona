@@ -7,6 +7,7 @@
   "required": [
     "recorded_at",
     "event_type",
+    "provider",
     "holdout_id",
     "match_ids",
     "freeze_hashes",
@@ -21,6 +22,7 @@
     "event_type": {
       "type": "string",
       "enum": [
+        "AUTHORIZATION_DENIED",
         "SEALED_VERIFIED",
         "UNSEALED",
         "EVALUATION_STARTED",
@@ -29,6 +31,7 @@
         "COMPROMISED"
       ]
     },
+    "provider": {"type": "string", "minLength": 1},
     "holdout_id": {"type": "string", "minLength": 1},
     "match_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "freeze_hashes": {

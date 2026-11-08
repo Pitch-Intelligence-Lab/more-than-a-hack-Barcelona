@@ -94,3 +94,25 @@ required, and all real external-data research remains `HOLD`.
 R3 and R5 are fix candidates only. Policy implementation final acceptance,
 merge and real-data research authorization remain `HOLD` for PM/QA.
 
+## DP-006-POLICY-REMEDIATION-003
+
+**Date:** 2026-11-08
+
+**Status:** Holdout ledger state-machine fix candidate for PM/QA review
+
+### Fixed
+
+- separate `AUTHORIZATION_DENIED` from permanent Holdout contamination;
+- derive lifecycle state through an explicit event reducer;
+- make `COMPROMISED` permanent across Promotion attempts;
+- identify a Holdout by provider plus sorted match IDs rather than manifest SHA;
+- add a production CLI/API that marks a completed result as used for tuning and
+  permanently compromises the Holdout;
+- fail closed on invalid JSON, broken hash chains, illegal event order and
+  mismatched stable identity.
+
+### Not claimed
+
+Policy implementation final acceptance, merge and real-data research
+authorization remain `HOLD` for PM/QA.
+

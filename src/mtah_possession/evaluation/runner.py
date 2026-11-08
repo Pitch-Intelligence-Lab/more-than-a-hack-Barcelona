@@ -22,6 +22,7 @@ from mtah_possession.evaluation.external import (
 from mtah_possession.evaluation.provenance import report_with_identity
 from mtah_possession.evaluation.splits import (
     EvaluationMode,
+    SplitManifestError,
     load_split_manifest,
     split_manifest_dict,
 )
@@ -33,11 +34,13 @@ from mtah_possession.governance.authorization import (
 )
 from mtah_possession.governance.holdout import (
     FreezeHashes,
+    HoldoutCompromisedError,
     HoldoutManifest,
     load_holdout_manifest,
 )
 from mtah_possession.governance.ledger import (
     HoldoutLedger,
+    HoldoutLedgerState,
     LedgerEvent,
     create_ledger,
 )
@@ -91,9 +94,40 @@ def run_external_evaluation(
     source_revision = str(manifest["commit"])
     holdout_manifest: HoldoutManifest | None = None
     freeze_hashes: FreezeHashes | None = None
+    ledger: HoldoutLedger | None = None
     if mode == EvaluationMode.PROMOTION:
         holdout_manifest = load_holdout_manifest(holdout_manifest_path)
         freeze_hashes = compute_freeze_hashes(freeze_spec_path)
+        ledger = create_ledger(
+            ledger_dir,
+            provider=provider_name,
+            match_ids=holdout_manifest.matches,
+            freeze_hashes=freeze_hashes,
+            holdout_manifest_sha256=sha256_file(holdout_manifest_path),
+            code_commit=code_commit,
+        )
+        ledger_state = ledger.state
+        if ledger_state == HoldoutLedgerState.COMPROMISED:
+            raise PolicyError("holdout ledger is permanently COMPROMISED")
+        if ledger_state == HoldoutLedgerState.EVALUATION_COMPLETED:
+            raise PolicyError("holdout evaluation is already completed and cannot be reused")
+        if ledger_state == HoldoutLedgerState.EVALUATION_RUNNING:
+            raise PolicyError("holdout evaluation is already running or indeterminate")
+        prior_freeze = ledger.lifecycle_freeze_hashes()
+        if prior_freeze is not None and prior_freeze != freeze_hashes:
+            _append_compromised(
+                ledger,
+                reason="freeze identity changed after holdout verification",
+            )
+            raise PolicyError("holdout freeze identity changed after verification")
+        try:
+            holdout_manifest.require_frozen(freeze_hashes)
+        except HoldoutCompromisedError as error:
+            _append_compromised(ledger, reason=str(error))
+            raise
+        except PolicyError:
+            # Non-sealed or incomplete manifests remain authorization failures.
+            pass
     try:
         authorized = authorize_external_run(
             policy_path=policy_path,
@@ -116,33 +150,23 @@ def run_external_evaluation(
             holdout_manifest=holdout_manifest,
             freeze_hashes=freeze_hashes,
         )
-    except PolicyError as error:
-        if mode == EvaluationMode.PROMOTION and code_commit.strip():
-            _append_compromised(
-                ledger_dir,
-                holdout_manifest=holdout_manifest,
-                freeze_hashes=freeze_hashes,
-                holdout_manifest_path=holdout_manifest_path,
-                code_commit=code_commit,
-                reason=str(error),
-            )
+    except HoldoutCompromisedError as error:
+        if ledger is not None:
+            _append_compromised(ledger, reason=str(error))
+        raise
+    except (PolicyError, SplitManifestError) as error:
+        if ledger is not None and code_commit.strip():
+            ledger.append(LedgerEvent.AUTHORIZATION_DENIED, reason=str(error))
         raise
     if not code_commit.strip():
         raise ValueError("code commit is required")
-    ledger: HoldoutLedger | None = None
-    if mode == EvaluationMode.PROMOTION:
-        ledger = create_ledger(
-            ledger_dir,
-            match_ids=holdout_manifest.matches if holdout_manifest is not None else (),
-            freeze_hashes=freeze_hashes,
-            holdout_manifest_sha256=sha256_file(holdout_manifest_path),
-            code_commit=code_commit,
-        )
-        ledger.append(LedgerEvent.SEALED_VERIFIED)
     if not external_root:
         raise ValueError("MTAH_EXTERNAL_DATA_DIR is not set")
     if ledger is not None:
-        ledger.append(LedgerEvent.UNSEALED)
+        if not ledger.has_event(LedgerEvent.SEALED_VERIFIED):
+            ledger.append(LedgerEvent.SEALED_VERIFIED)
+        if not ledger.has_event(LedgerEvent.UNSEALED):
+            ledger.append(LedgerEvent.UNSEALED)
         ledger.append(LedgerEvent.EVALUATION_STARTED)
     try:
         match = match_loader(config_path, external_root)
@@ -195,21 +219,8 @@ def run_external_evaluation(
 
 
 def _append_compromised(
-    ledger_dir: str | os.PathLike[str],
+    ledger: HoldoutLedger,
     *,
-    holdout_manifest: HoldoutManifest | None,
-    freeze_hashes: FreezeHashes | None,
-    holdout_manifest_path: str | os.PathLike[str],
-    code_commit: str,
     reason: str,
 ) -> None:
-    if holdout_manifest is None or freeze_hashes is None:
-        return
-    ledger = create_ledger(
-        ledger_dir,
-        match_ids=holdout_manifest.matches,
-        freeze_hashes=freeze_hashes,
-        holdout_manifest_sha256=sha256_file(holdout_manifest_path),
-        code_commit=code_commit,
-    )
     ledger.append(LedgerEvent.COMPROMISED, reason=reason)
