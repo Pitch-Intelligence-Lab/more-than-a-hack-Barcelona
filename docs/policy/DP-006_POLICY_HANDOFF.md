@@ -1,10 +1,10 @@
 # DP-006 Policy Remediation 006 Closure Handoff
 
-> TOCTOU notice: Final Assurance found an A2 Source Integrity P0. The immutable
-> snapshot remediation is complete as an engineer candidate; the prior Final
-> Assurance result is superseded and a full rerun is required. See
-> `DP-006_FINAL_ASSURANCE_TOCTOU_EVIDENCE.md` and
-> `DP-006_FINAL_ASSURANCE_HANDOFF.md`.
+> Audit snapshot notice: Final Assurance found a second A2 P0 in the Audit
+> production entry. The Audit snapshot remediation is an engineer candidate; the
+> prior Final Assurance result is superseded and a full rerun is required. See
+> `DP-006_FINAL_ASSURANCE_AUDIT_SNAPSHOT_EVIDENCE.md`,
+> `07_工程师交付回执.md` and `DP-006_FINAL_ASSURANCE_HANDOFF.md`.
 
 ```text
 Task ID: DP-006-POLICY-REMEDIATION-006-TUNING-CONTAMINATION-CLOSURE

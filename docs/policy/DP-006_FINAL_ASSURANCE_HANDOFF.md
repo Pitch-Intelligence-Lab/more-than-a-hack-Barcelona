@@ -1,6 +1,6 @@
 # DP-006 Final Assurance Freeze Handoff
 
-**Task:** `DP-006-FINAL-ASSURANCE-TOCTOU-001` handoff
+**Task:** `DP-006-FINAL-ASSURANCE-AUDIT-SNAPSHOT-001` handoff
 
 **Repository:** `E:\mtah2027-code`
 
@@ -12,17 +12,19 @@
 
 **Prior docs baseline:** `0ef1cb89afc46ebb581335ff1da73aac81f78f66`
 
-**TOCTOU implementation commit:** `5f1108d8d67ef27680a812c9b9ec2d2dd4cf7c77`
+**Audit snapshot implementation commit:** `748c4dbe6cd189e0a5f815e1127155ff45c9a85d`
 
-**Final docs-only evidence commit:** `ca8973629eca4c19df1738034b3e39043fd61084`
+**Final docs-only evidence commit:** recorded in PR #9 after the audit evidence commit
 
 ## Status
 
 ```text
-P0 A2 Source Integrity TOCTOU: FIX CANDIDATE
+Main Runner A2 Source Integrity TOCTOU: PASS
+Audit production A2 Source Integrity TOCTOU: FIX CANDIDATE
 P1 compromised trigger identity: FIX CANDIDATE
 P1 match-event identity binding: FIX CANDIDATE
 
+TA-01 through TA-08: PASS
 TO-01 through TO-12: PASS
 CL-01 through CL-16: PASS
 TC-01 through TC-12: PASS
@@ -58,6 +60,9 @@ The runner no longer passes a mutable config path to the production loader.
 `load_skillcorner_match_from_snapshot()` receives the immutable manifest snapshot
 and expected Source Identity, then returns `LoadedSkillCornerSource`.
 
+`scripts/audit_external.py` now follows the same snapshot path and validates the
+loader actual identity/checksums before audit proxy/report generation.
+
 ## Evidence index
 
 | Property | Evidence |
@@ -70,8 +75,9 @@ and expected Source Identity, then returns `LoadedSkillCornerSource`.
 
 Primary documents:
 
+- `docs/policy/DP-006_FINAL_ASSURANCE_AUDIT_SNAPSHOT_EVIDENCE.md`
+- `docs/policy/07_工程师交付回执.md`
 - `docs/policy/DP-006_FINAL_ASSURANCE_TOCTOU_EVIDENCE.md`
-- `docs/policy/08_工程师交付回执.md`
 - `docs/policy/DP-006_POLICY_REMEDIATION_006_CORRECTION_EVIDENCE.md`
 - `docs/policy/DP-006_POLICY_REMEDIATION_006_C2_LIFECYCLE_EVIDENCE.md`
 - `docs/policy/DP-006_POLICY_REMEDIATION_006_TUNING_CONTAMINATION_EVIDENCE.md`
@@ -122,14 +128,15 @@ Mismatches are rejected before write.
 ## Test evidence
 
 ```text
-pytest -q -W error: 263 passed
-invalid MTAH_EXTERNAL_DATA_DIR: 263 passed
+pytest -q -W error: 271 passed
+invalid MTAH_EXTERNAL_DATA_DIR: 271 passed
 Ruff check: PASS
 Ruff format --check: PASS
 ```
 
 ```text
 TO-01 through TO-12: PASS
+TA-01 through TA-08: PASS
 CL-01 through CL-16: PASS
 TC-01 through TC-12: PASS
 RC-01 through RC-17: PASS

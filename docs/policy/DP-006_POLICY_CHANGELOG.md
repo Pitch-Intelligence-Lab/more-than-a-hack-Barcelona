@@ -248,6 +248,29 @@ acceptance, PR merge and real-data research remain separate decisions.
 This does not declare Final Assurance PASS, Policy implementation PASS, PR merge
 approval or real-data authorization.
 
+## DP-006-FINAL-ASSURANCE-AUDIT-SNAPSHOT-001
+
+**Date:** 2026-11-09
+
+**Status:** Audit production P0 remediation candidate for full Assurance rerun
+
+### Fixed
+
+- bind `scripts/audit_external.py` to one immutable manifest snapshot;
+- build Source Identity and authorization from the same snapshot manifest;
+- pass the snapshot and expected identity to the production snapshot loader;
+- validate actual identity, checksums, snapshot digest and match ID before map or
+  report generation;
+- write source-integrity provenance into successful Audit output;
+- fail without replacing successful/partial output on mismatch;
+- mark the mutable-path loader compatibility-only and scan production scripts for
+  its use.
+
+### Boundary
+
+This does not declare Final Assurance PASS, Policy implementation PASS, merge
+approval or real-data authorization.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08

@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** TOCTOU remediation candidate; full Final Assurance rerun required
+**Status:** Audit snapshot remediation candidate; full Final Assurance rerun required
 
 ## Scope
 
@@ -68,6 +68,7 @@ R3 Contamination/start linearization: PASS
 R5 Temporal integration: FIX CANDIDATE, PM/QA review required
 REPAIR-006 Re-review: PASS
 Final Assurance A2 TOCTOU: FIX CANDIDATE
+Audit production snapshot gate: FIX CANDIDATE
 P1 compromised trigger identity: FIX CANDIDATE
 P1 match-event identity binding: FIX CANDIDATE
 Policy implementation final acceptance: HOLD
