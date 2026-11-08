@@ -141,6 +141,63 @@ class HoldoutLedger:
         prediction_sha256: str | None = None,
         reason: str | None = None,
     ) -> dict[str, Any]:
+        with _ledger_lock(self.path):
+            existing = self.records()
+            previous = _record_sha256(existing[-1]) if existing else None
+            record = self._record_payload(
+                event_type,
+                match_id=match_id,
+                prediction_sha256=prediction_sha256,
+                reason=reason,
+                previous=previous,
+            )
+            _validate_candidate(existing, record)
+            _atomic_append_record(self.path, record)
+            return record
+
+    def mark_used_for_tuning(
+        self,
+        *,
+        prediction_sha256: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Atomically turn any matching completed member into global contamination."""
+        with _ledger_lock(self.path):
+            records = self.records()
+            state = reduce_holdout_state(records)
+            if state == HoldoutLedgerState.COMPROMISED:
+                raise PolicyError("holdout ledger is permanently COMPROMISED")
+            if state == HoldoutLedgerState.MIGRATED_AUDIT_ONLY:
+                raise PolicyError("migrated audit-only ledger cannot be marked for tuning")
+            completed = [
+                record
+                for record in records
+                if record["event_type"] == LedgerEvent.EVALUATION_COMPLETED.value
+                and record["prediction_sha256"] == prediction_sha256
+            ]
+            if not completed:
+                raise PolicyError("prediction SHA-256 does not match a completed holdout match")
+            previous = _record_sha256(records[-1]) if records else None
+            record = self._record_payload(
+                LedgerEvent.COMPROMISED,
+                match_id=None,
+                prediction_sha256=prediction_sha256,
+                reason=reason,
+                previous=previous,
+            )
+            _validate_candidate(records, record)
+            _atomic_append_record(self.path, record)
+            return record
+
+    def _record_payload(
+        self,
+        event_type: LedgerEvent,
+        *,
+        match_id: str | None,
+        prediction_sha256: str | None,
+        reason: str | None,
+        previous: str | None,
+    ) -> dict[str, Any]:
         if self.governance_identity is None:
             raise PolicyError("holdout ledger append requires a governance identity")
         if self.split_manifest_sha256 is None:
@@ -156,34 +213,28 @@ class HoldoutLedger:
             if len(self.match_ids) != 1:
                 raise PolicyError(f"holdout ledger {event_type.value} requires a match ID")
             effective_match_id = self.match_ids[0]
-        with _ledger_lock(self.path):
-            existing = self.records()
-            previous = _record_sha256(existing[-1]) if existing else None
-            record = {
-                "schema_version": V6_RECORD_SCHEMA_VERSION,
-                "recorded_at": datetime.now(UTC).isoformat(),
-                "event_type": event_type.value,
-                "provider": self.provider,
-                "holdout_id": self.holdout_id,
-                "match_ids": list(self.match_ids),
-                "match_id": effective_match_id,
-                "freeze_hashes": _freeze_dict(self.freeze_hashes),
-                "holdout_manifest_sha256": self.holdout_manifest_sha256,
-                "code_commit": self.code_commit,
-                "prediction_sha256": prediction_sha256,
-                "previous_record_sha256": previous,
-                "reason": reason,
-                "governance_identity": self.governance_identity.to_dict(),
-                "freeze_protocol_version": MATCH_LIFECYCLE_PROTOCOL_VERSION,
-                "holdout_manifest_path_sha256": self.holdout_manifest_path_sha256,
-                "split_manifest_sha256": self.split_manifest_sha256,
-                "source_config_sha256": self.source_identity.source_config_sha256,
-                "source_identity": self.source_identity.to_dict(),
-                "source_identity_set": self.source_identity_set.to_dict(),
-            }
-            _validate_candidate(existing, record)
-            _atomic_append_record(self.path, record)
-            return record
+        return {
+            "schema_version": V6_RECORD_SCHEMA_VERSION,
+            "recorded_at": datetime.now(UTC).isoformat(),
+            "event_type": event_type.value,
+            "provider": self.provider,
+            "holdout_id": self.holdout_id,
+            "match_ids": list(self.match_ids),
+            "match_id": effective_match_id,
+            "freeze_hashes": _freeze_dict(self.freeze_hashes),
+            "holdout_manifest_sha256": self.holdout_manifest_sha256,
+            "code_commit": self.code_commit,
+            "prediction_sha256": prediction_sha256,
+            "previous_record_sha256": previous,
+            "reason": reason,
+            "governance_identity": self.governance_identity.to_dict(),
+            "freeze_protocol_version": MATCH_LIFECYCLE_PROTOCOL_VERSION,
+            "holdout_manifest_path_sha256": self.holdout_manifest_path_sha256,
+            "split_manifest_sha256": self.split_manifest_sha256,
+            "source_config_sha256": self.source_identity.source_config_sha256,
+            "source_identity": self.source_identity.to_dict(),
+            "source_identity_set": self.source_identity_set.to_dict(),
+        }
 
     def append_freeze_migration(
         self,
@@ -752,23 +803,13 @@ def mark_holdout_used_for_tuning(
         raise PolicyError("prediction SHA-256 is required")
     if not reason.strip():
         raise PolicyError("tuning contamination reason is required")
+    _validate_sha256(prediction_sha256, "prediction SHA-256")
     ledger = load_existing_ledger(
         ledger_dir,
         provider=provider,
         match_ids=match_ids,
     )
-    if ledger.state != HoldoutLedgerState.EVALUATION_COMPLETED:
-        raise PolicyError("only a completed holdout evaluation can be marked for tuning")
-    completed = [
-        record
-        for record in ledger.records()
-        if record["event_type"] == LedgerEvent.EVALUATION_COMPLETED.value
-        and record["prediction_sha256"] == prediction_sha256
-    ]
-    if not completed:
-        raise PolicyError("prediction SHA-256 does not match the completed evaluation")
-    ledger.append(
-        LedgerEvent.COMPROMISED,
+    ledger.mark_used_for_tuning(
         prediction_sha256=prediction_sha256,
         reason=reason,
     )

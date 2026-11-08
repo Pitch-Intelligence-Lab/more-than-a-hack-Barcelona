@@ -2180,6 +2180,428 @@ def test_cl16_running_match_blocks_only_that_match(
     assert states["holdout-2"] == MatchLedgerState.COMPLETED
 
 
+def _completed_prediction(base: dict, match_id: str) -> str:
+    return next(
+        record["prediction_sha256"]
+        for record in load_multi_match_ledger(base).records()
+        if record["event_type"] == "EVALUATION_COMPLETED" and record["match_id"] == match_id
+    )
+
+
+def test_tc01_partial_completion_tuning_compromises_whole_holdout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    ledger = load_multi_match_ledger(base)
+    prediction_sha256 = _completed_prediction(base, "holdout-1")
+    assert ledger.state == HoldoutLedgerState.IN_PROGRESS
+    assert ledger.match_state("holdout-2") == MatchLedgerState.NOT_STARTED
+    mark_holdout_used_for_tuning(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
+        prediction_sha256=prediction_sha256,
+        reason="partial holdout result used for tuning",
+    )
+    contaminated = load_multi_match_ledger(base)
+    assert contaminated.state == HoldoutLedgerState.COMPROMISED
+    compromised = contaminated.records()[-1]
+    assert compromised["event_type"] == "COMPROMISED"
+    assert compromised["match_id"] is None
+    assert compromised["prediction_sha256"] == prediction_sha256
+
+
+def test_tc02_other_match_rejected_after_partial_tuning_contamination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    mark_holdout_used_for_tuning(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
+        prediction_sha256=_completed_prediction(base, "holdout-1"),
+        reason="partial contamination",
+    )
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="permanently COMPROMISED"):
+        run_multi_match(base, "holdout-2", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+def test_tc03_completed_match_rejected_after_partial_contamination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    mark_holdout_used_for_tuning(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
+        prediction_sha256=_completed_prediction(base, "holdout-1"),
+        reason="partial contamination",
+    )
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="permanently COMPROMISED"):
+        run_multi_match(base, "holdout-1", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+def test_tc04_failed_other_match_does_not_block_contamination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("second match failed")
+
+    with pytest.raises(RuntimeError, match="second match failed"):
+        run_multi_match(base, "holdout-2", loader=failing_loader)
+    mark_holdout_used_for_tuning(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
+        prediction_sha256=_completed_prediction(base, "holdout-1"),
+        reason="completed member used while other member failed",
+    )
+    ledger = load_multi_match_ledger(base)
+    assert ledger.state == HoldoutLedgerState.COMPROMISED
+    assert ledger.match_state("holdout-1") == MatchLedgerState.COMPLETED
+    assert ledger.match_state("holdout-2") == MatchLedgerState.FAILED
+
+
+def test_tc05_no_completed_member_rejected_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("no completed member")
+
+    with pytest.raises(RuntimeError, match="no completed member"):
+        run_multi_match(base, "holdout-1", loader=failing_loader)
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    with pytest.raises(PolicyError, match="completed holdout match"):
+        mark_holdout_used_for_tuning(
+            base["ledger_dir"],
+            provider="skillcorner",
+            match_ids=("holdout-1", "holdout-2"),
+            prediction_sha256="f" * 64,
+            reason="invalid contamination",
+        )
+    assert ledger_path.read_bytes() == before
+
+
+def test_tc06_prediction_mismatch_rejected_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    with pytest.raises(PolicyError, match="does not match"):
+        mark_holdout_used_for_tuning(
+            base["ledger_dir"],
+            provider="skillcorner",
+            match_ids=("holdout-1", "holdout-2"),
+            prediction_sha256="f" * 64,
+            reason="unknown prediction",
+        )
+    assert ledger_path.read_bytes() == before
+
+
+def test_tc07_prediction_from_other_holdout_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_a = prepare_multi_source_promotion(tmp_path / "a")
+    base_b = prepare_multi_source_promotion(tmp_path / "b")
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base_a, "holdout-1")
+
+    def alternate_evaluator(_match, _config, *, authorization, split: str):
+        assert authorization.freeze_hashes is not None
+        target = np.asarray(list("HHAA"), dtype="<U1")
+        prediction = np.asarray(list("AAHH"), dtype="<U1")
+        metrics = evaluate_predictions(
+            target,
+            prediction,
+            fps=10,
+            transition_tolerance_frames=0,
+        )
+        candidate = ExternalCandidateResult(
+            name="alternate",
+            labels=prediction,
+            sources=np.asarray(["alternate"] * 4),
+            metrics=metrics,
+        )
+        proxy = ProxyTarget(
+            labels=target,
+            sources=np.asarray(["alternate"] * 4),
+            counts={"H": 2, "A": 2, "D": 0, "X": 0},
+            source_counts={"alternate": 4},
+        )
+        return ExternalMatchEvaluation(
+            match_id=getattr(_match, "match_id", "holdout-1"),
+            split=split,
+            proxy=proxy,
+            candidates={"alternate": candidate},
+            source_checksums={"tracking": "fixture"},
+            external_aggregate={},
+        )
+
+    monkeypatch.setattr(runner_module, "evaluate_external_match", alternate_evaluator)
+    run_multi_match(base_b, "holdout-1")
+    ledger_a_path = next(base_a["ledger_dir"].glob("*.jsonl"))
+    before = ledger_a_path.read_bytes()
+    with pytest.raises(PolicyError, match="does not match"):
+        mark_holdout_used_for_tuning(
+            base_a["ledger_dir"],
+            provider="skillcorner",
+            match_ids=("holdout-1", "holdout-2"),
+            prediction_sha256=_completed_prediction(base_b, "holdout-1"),
+            reason="prediction from another holdout",
+        )
+    assert ledger_a_path.read_bytes() == before
+
+
+def test_tc08_manifest_change_cannot_clear_compromised_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    mark_holdout_used_for_tuning(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
+        prediction_sha256=_completed_prediction(base, "holdout-1"),
+        reason="partial contamination",
+    )
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    manifest = json.loads(base["holdout_path"].read_text(encoding="utf-8"))
+    manifest["unseal_log"] = ["attempted-reseal-after-compromise"]
+    base["holdout_path"].write_text(json.dumps(manifest), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="permanently COMPROMISED"):
+        run_multi_match(base, "holdout-2", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+    assert load_multi_match_ledger(base).state == HoldoutLedgerState.COMPROMISED
+
+
+def test_tc09_concurrent_contamination_and_next_start_linearize_safely(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compromised_first = prepare_multi_source_promotion(tmp_path / "compromised-first")
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(compromised_first, "holdout-1")
+    first_ledger = load_multi_match_ledger(compromised_first)
+    prediction = _completed_prediction(compromised_first, "holdout-1")
+    original_lock = ledger_module._ledger_lock
+    injected = False
+
+    @contextmanager
+    def inject_compromised_before_start(path):
+        nonlocal injected
+        if not injected and Path(path) == first_ledger.path:
+            injected = True
+            load_multi_match_ledger(compromised_first).mark_used_for_tuning(
+                prediction_sha256=prediction,
+                reason="concurrent contamination won linearization",
+            )
+        with original_lock(path):
+            yield
+
+    monkeypatch.setattr(ledger_module, "_ledger_lock", inject_compromised_before_start)
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="events after COMPROMISED"):
+        run_multi_match(compromised_first, "holdout-2", loader=forbidden_loader)
+    assert calls == 0
+    events = [(record["event_type"], record["match_id"]) for record in first_ledger.records()]
+    assert events[-1] == ("COMPROMISED", None)
+    assert not any(
+        event == "EVALUATION_STARTED" and match_id == "holdout-2" for event, match_id in events
+    )
+
+    monkeypatch.setattr(ledger_module, "_ledger_lock", original_lock)
+    started_first = prepare_multi_source_promotion(tmp_path / "started-first")
+    run_multi_match(started_first, "holdout-1")
+    started_prediction = _completed_prediction(started_first, "holdout-1")
+    loader_calls = 0
+
+    def contaminating_evaluator(*args, **kwargs):
+        if loader_calls == 1:
+            mark_holdout_used_for_tuning(
+                started_first["ledger_dir"],
+                provider="skillcorner",
+                match_ids=("holdout-1", "holdout-2"),
+                prediction_sha256=started_prediction,
+                reason="contamination after next start linearized",
+            )
+        return fake_evaluator(*args, **kwargs)
+
+    def counting_loader(match_id):
+        def loader(*_args, **_kwargs):
+            nonlocal loader_calls
+            loader_calls += 1
+            return SimpleNamespace(
+                match_id=match_id,
+                fps=10,
+                source_checksums={"tracking": "fixture"},
+                source_metadata={"tracking_aggregate": {}},
+            )
+
+        return loader
+
+    monkeypatch.setattr(runner_module, "evaluate_external_match", contaminating_evaluator)
+    with pytest.raises(PolicyError, match="events after COMPROMISED"):
+        run_multi_match(
+            started_first,
+            "holdout-2",
+            loader=counting_loader("holdout-2"),
+        )
+    assert loader_calls == 1
+    events = [
+        (record["event_type"], record["match_id"])
+        for record in load_multi_match_ledger(started_first).records()
+    ]
+    assert events[-2:] == [
+        ("EVALUATION_STARTED", "holdout-2"),
+        ("COMPROMISED", None),
+    ]
+    assert events.count(("EVALUATION_COMPLETED", "holdout-2")) == 0
+    assert load_multi_match_ledger(started_first).state == HoldoutLedgerState.COMPROMISED
+
+
+def test_tc10_single_match_tuning_contamination_remains_compatible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_prepared_promotion(fixture)
+    completed = _ledger_records(fixture["ledger_dir"])[-1]
+    mark_holdout_used_for_tuning(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1",),
+        prediction_sha256=completed["prediction_sha256"],
+        reason="single holdout tuning contamination",
+    )
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1",),
+    )
+    assert ledger.state == HoldoutLedgerState.COMPROMISED
+
+
+def test_tc11_repeated_contamination_request_is_rejected_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    prediction = _completed_prediction(base, "holdout-1")
+    mark_holdout_used_for_tuning(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
+        prediction_sha256=prediction,
+        reason="first contamination",
+    )
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    with pytest.raises(PolicyError, match="permanently COMPROMISED"):
+        mark_holdout_used_for_tuning(
+            base["ledger_dir"],
+            provider="skillcorner",
+            match_ids=("holdout-1", "holdout-2"),
+            prediction_sha256=prediction,
+            reason="second contamination",
+        )
+    assert ledger_path.read_bytes() == before
+
+
+def test_tc12_candidate_validation_failure_does_not_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    prediction = _completed_prediction(base, "holdout-1")
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    original_validate = ledger_module._validate_candidate
+
+    def reject_compromised(records, record):
+        if record["event_type"] == "COMPROMISED":
+            raise PolicyError("candidate contamination validation failed")
+        original_validate(records, record)
+
+    monkeypatch.setattr(ledger_module, "_validate_candidate", reject_compromised)
+    with pytest.raises(PolicyError, match="candidate contamination"):
+        mark_holdout_used_for_tuning(
+            base["ledger_dir"],
+            provider="skillcorner",
+            match_ids=("holdout-1", "holdout-2"),
+            prediction_sha256=prediction,
+            reason="candidate rejected",
+        )
+    assert ledger_path.read_bytes() == before
+
+
 def _migrate_fixture(
     fixture: dict,
     *,
