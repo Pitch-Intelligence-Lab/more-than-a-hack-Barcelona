@@ -184,6 +184,28 @@ implementation PASS.
 This is an engineer candidate only. Final Assurance, REPAIR-007, merge and
 Policy implementation PASS remain not authorized.
 
+## DP-006-POLICY-REMEDIATION-006-TUNING-CONTAMINATION-CLOSURE
+
+**Date:** 2026-11-09
+
+**Status:** tuning-contamination candidate for Independent REPAIR-006 Re-review
+
+### Fixed
+
+- allow tuning contamination from any matching completed Holdout member without
+  requiring aggregate completion;
+- reread and validate the ledger inside the per-ledger lock;
+- append a collection-level, permanent `COMPROMISED` event atomically;
+- reject unknown, cross-Holdout and non-completed predictions without mutation;
+- make runner START, contamination and all lifecycle writes share the same lock
+  linearization point;
+- prevent a post-contamination completion from becoming a usable result.
+
+### Not claimed
+
+Final Assurance, REPAIR-007, merge and Policy implementation PASS remain not
+authorized.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08

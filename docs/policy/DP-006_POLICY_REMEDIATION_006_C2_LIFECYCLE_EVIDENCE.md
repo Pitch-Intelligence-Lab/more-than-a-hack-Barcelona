@@ -1,5 +1,10 @@
 # DP-006 Policy Remediation 006 C2 Lifecycle Closure Evidence
 
+> Tuning-contamination notice: this file records the lifecycle candidate in
+> which same-ledger execution and member lifecycle passed review but partial
+> completion contamination remained open. Current evidence is in
+> `DP-006_POLICY_REMEDIATION_006_TUNING_CONTAMINATION_EVIDENCE.md`.
+
 **Task:** `DP-006-POLICY-REMEDIATION-006-C2-LIFECYCLE-CLOSURE`
 
 **Review baseline:** `0aaac62b04b8ba0aae4c6dfda55451f971cdf4a7`

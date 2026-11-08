@@ -1,19 +1,18 @@
 # DP-006 Policy Remediation 006 Closure Handoff
 
-> C2 lifecycle notice: the closure correction passed C1 atomicity, the
-> SourceIdentitySet data model and C3 separation, but independent review found
-> multi-match production lifecycle incomplete. The current gate is
-> **Independent REPAIR-006 Re-review**. See
-> `DP-006_POLICY_REMEDIATION_006_C2_LIFECYCLE_EVIDENCE.md` and the filled
-> `06_工程师交付回执.md`.
+> Tuning-contamination notice: one-ledger multi-match execution and lifecycle
+> now pass review, but partial-completion contamination remained open. The
+> current gate is **Independent REPAIR-006 Re-review**. See
+> `DP-006_POLICY_REMEDIATION_006_TUNING_CONTAMINATION_EVIDENCE.md` and the
+> filled `06_工程师交付回执.md`.
 
 ```text
-Task ID: DP-006-POLICY-REMEDIATION-006-C2-LIFECYCLE-CLOSURE
-Base commit: 0aaac62b04b8ba0aae4c6dfda55451f971cdf4a7
+Task ID: DP-006-POLICY-REMEDIATION-006-TUNING-CONTAMINATION-CLOSURE
+Base commit: 9f0558b1eac4472b30963427781b68d8e79598ef
 Branch: feature/DP-006-POLICY-v2
-Implementation commit: 3d4683de74e12e50304455f108a70a9796a6e216
-Documentation commit: 81dd36feef5e10a9c780c09e303a89303b31bdd9
-Final HEAD at documentation submission: 81dd36feef5e10a9c780c09e303a89303b31bdd9
+Implementation commit: b8a93cc955ec80c549489c00f2ad1737663abba0
+Documentation commit: resolved by the tuning evidence commit
+Final HEAD at documentation submission: resolved by the tuning evidence commit
 Remote HEAD at documentation submission: resolved after push
 PR: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 PR visibility/status: verified; OPEN, UNMERGED, HOLD
@@ -29,17 +28,19 @@ R6.7 Existing repairs: PASS
 R6.8 Final Assurance readiness: HOLD pending Independent REPAIR-006 Re-review
 C1 Migration atomicity: PASS, PRESERVED
 C2 SourceIdentitySet data model: PASS, PRESERVED
-C2 multi-match production integration: FIX CANDIDATE
-C2 match-level lifecycle: FIX CANDIDATE
+C2 multi-match production integration: PASS, PRESERVED
+C2 match-level lifecycle: PASS, PRESERVED
+C2 partial-completion contamination: FIX CANDIDATE
+C2 contamination/start linearization: FIX CANDIDATE
 C3 Governance/Source separation: PASS, PRESERVED
 
 R6-01 through R6-12: PASS
 RP5-01 through RP5-09: PASS
-Tests: 239 passed
-Warning-free: 239 passed with -W error
+Tests: 251 passed
+Warning-free: 251 passed with -W error
 Ruff: check passed
 Format: format check passed
-Invalid external-root: 239 passed
+Invalid external-root: 251 passed
 
 External data accessed: no
 Real evaluation run: no
@@ -52,9 +53,11 @@ PR merged: no
 ## Final review status
 
 ```text
-Source Identity set member selection: FIX CANDIDATE
-Match-level lifecycle: FIX CANDIDATE
-Aggregate Holdout completion: FIX CANDIDATE
+Source Identity set member selection: PRESERVED
+Match-level lifecycle: PRESERVED
+Aggregate Holdout completion: PRESERVED
+Partial-completion tuning contamination: FIX CANDIDATE
+Contamination/start linearization: FIX CANDIDATE
 C1 migration atomicity: PRESERVED
 C3 Governance/Source separation: PRESERVED
 Existing authorization/lifecycle controls: PRESERVED
@@ -70,7 +73,7 @@ PR #9.
 
 ## Evidence
 
-- `docs/policy/DP-006_POLICY_REMEDIATION_006_C2_LIFECYCLE_EVIDENCE.md`
+- `docs/policy/DP-006_POLICY_REMEDIATION_006_TUNING_CONTAMINATION_EVIDENCE.md`
 - `docs/policy/06_工程师交付回执.md`
 - `docs/policy/SOURCE_IDENTITY_EXAMPLE.json`
 - `docs/policy/SOURCE_IDENTITY_SET_EXAMPLE.json`

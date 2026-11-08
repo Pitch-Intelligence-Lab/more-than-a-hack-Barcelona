@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** C2 lifecycle candidate for Independent REPAIR-006 Re-review
+**Status:** tuning-contamination candidate for Independent REPAIR-006 Re-review
 
 ## Scope
 
@@ -63,6 +63,8 @@ R3 Migration atomicity: FIX CANDIDATE, Re-review required
 R3 Multi-match SourceIdentitySet: FIX CANDIDATE, Re-review required
 R3 Governance/Source separation: FIX CANDIDATE, Re-review required
 R3 Multi-match production lifecycle: FIX CANDIDATE, Re-review required
+R3 Partial-completion tuning contamination: FIX CANDIDATE, Re-review required
+R3 Contamination/start linearization: FIX CANDIDATE, Re-review required
 R5 Temporal integration: FIX CANDIDATE, PM/QA review required
 Policy implementation final acceptance: HOLD
 PR #9: open, unmerged, PM/QA review required
