@@ -206,6 +206,26 @@ Policy implementation PASS remain not authorized.
 Final Assurance, REPAIR-007, merge and Policy implementation PASS remain not
 authorized.
 
+## DP-006-FINAL-ASSURANCE-REVIEW-HANDOFF
+
+**Date:** 2026-11-09
+
+**Status:** frozen evidence handoff for Independent Final Assurance Review
+
+### Added
+
+- Final Assurance evidence index tied to Review HEAD
+  `4a8a96aba8f9ec547e8950db55e998605b9c86bc`;
+- known P1 for collection-level contamination source-identity readability;
+- explicit TOCTOU review item between source validation and loader re-read;
+- corrected Remote HEAD records from the completed tuning-contamination handoff.
+
+### Boundary
+
+No implementation, algorithm, Ledger, SourceIdentitySet, authorization or
+DP-005/frozen-data behavior is changed. Final Assurance, Policy implementation
+acceptance, PR merge and real-data research remain separate decisions.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08

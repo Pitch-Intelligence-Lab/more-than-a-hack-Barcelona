@@ -1,10 +1,9 @@
 # DP-006 Policy Remediation 006 Closure Handoff
 
-> Tuning-contamination notice: one-ledger multi-match execution and lifecycle
-> now pass review, but partial-completion contamination remained open. The
-> current gate is **Independent REPAIR-006 Re-review**. See
-> `DP-006_POLICY_REMEDIATION_006_TUNING_CONTAMINATION_EVIDENCE.md` and the
-> filled `06_工程师交付回执.md`.
+> Final Assurance notice: REPAIR-006 Re-review is PASS. The current gate is
+> **Independent DP-006 Final Assurance Review**. See
+> `DP-006_FINAL_ASSURANCE_HANDOFF.md`. Policy implementation acceptance, PR
+> merge and real-data research remain HOLD.
 
 ```text
 Task ID: DP-006-POLICY-REMEDIATION-006-TUNING-CONTAMINATION-CLOSURE
@@ -12,8 +11,8 @@ Base commit: 9f0558b1eac4472b30963427781b68d8e79598ef
 Branch: feature/DP-006-POLICY-v2
 Implementation commit: b8a93cc955ec80c549489c00f2ad1737663abba0
 Documentation commit: 19279e864939bd872f4e52562e777fc319bdef71
-Final HEAD at documentation submission: 19279e864939bd872f4e52562e777fc319bdef71
-Remote HEAD at documentation submission: resolved after push
+Final HEAD at documentation submission: 4a8a96aba8f9ec547e8950db55e998605b9c86bc
+Remote HEAD at documentation submission: 4a8a96aba8f9ec547e8950db55e998605b9c86bc
 PR: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 PR visibility/status: verified; OPEN, UNMERGED, HOLD
 PR base: feature/DP-006A-leakage-promotion-gate
