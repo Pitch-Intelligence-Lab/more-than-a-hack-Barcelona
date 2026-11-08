@@ -18,8 +18,12 @@ from mtah_possession.governance.holdout import FreezeHashes
 from mtah_possession.governance.policy import PolicyError
 from mtah_possession.governance.source import (
     SourceIdentity,
+    SourceIdentitySet,
+    build_single_source_identity_set,
     build_source_identity,
+    build_source_identity_set,
     source_identity_from_dict,
+    source_identity_set_from_dict,
 )
 
 MIGRATION_TOOL_PATH = "scripts/migrate_holdout_ledger.py"
@@ -49,6 +53,7 @@ MIGRATION_RECEIPT_FIELDS = frozenset(
         "target_split_manifest_sha256",
         "target_holdout_manifest_sha256",
         "target_source_identity",
+        "target_source_identity_set",
         "governance_identity_digest",
         "approver",
         "approval_evidence_ids",
@@ -63,6 +68,7 @@ class VerifiedMigration:
     receipt: dict[str, Any]
     model_freeze: FreezeHashes
     source_identity: SourceIdentity
+    source_identity_set: SourceIdentitySet
 
 
 def validate_migration_receipt(receipt: Any) -> dict[str, Any]:
@@ -81,6 +87,7 @@ def load_verified_migration_receipt(
     holdout_manifest_path: str | os.PathLike[str],
     policy_path: str | os.PathLike[str],
     source_config_path: str | os.PathLike[str],
+    source_set_path: str | os.PathLike[str] | None,
     expected: dict[str, Any],
 ) -> VerifiedMigration:
     root = Path(repo_root).resolve(strict=True)
@@ -154,6 +161,7 @@ def load_verified_migration_receipt(
         holdout_manifest_path=holdout_manifest_path,
         policy_path=policy_path,
         source_config_path=source_config_path,
+        source_set_path=source_set_path,
     )
     for key, value in expected.items():
         if receipt.get(key) != value:
@@ -171,6 +179,7 @@ def _verify_git_targets(
     holdout_manifest_path: str | os.PathLike[str],
     policy_path: str | os.PathLike[str],
     source_config_path: str | os.PathLike[str],
+    source_set_path: str | os.PathLike[str] | None,
 ) -> VerifiedMigration:
     freeze_spec = _relative_path(freeze_spec_path)
     split_manifest = _relative_path(split_manifest_path)
@@ -194,6 +203,27 @@ def _verify_git_targets(
         if not git_source_config.is_file():
             raise PolicyError("migration commit is missing source config")
         git_source_identity = build_source_identity(git_source_config)
+        git_holdout_path = archive_root / holdout_manifest
+        try:
+            holdout_values = json.loads(git_holdout_path.read_text(encoding="utf-8"))
+            holdout_matches = tuple(str(item) for item in holdout_values["matches"])
+        except (KeyError, TypeError, OSError, json.JSONDecodeError) as error:
+            raise PolicyError("migration target Holdout Manifest is invalid") from error
+        if source_set_path is not None:
+            git_source_set = build_source_identity_set(
+                archive_root / _relative_path(source_set_path),
+                provider=git_source_identity.provider,
+                holdout_matches=holdout_matches,
+                source_root=archive_root,
+            )
+        else:
+            if len(holdout_matches) != 1:
+                raise PolicyError("multi-match migration requires a source-set descriptor")
+            git_source_set = build_single_source_identity_set(
+                provider=git_source_identity.provider,
+                match_id=git_source_identity.match_id,
+                source_config=git_source_config,
+            )
         git_split_sha = _sha256_committed_file(archive_root, split_manifest)
         git_holdout_sha = _sha256_committed_file(archive_root, holdout_manifest)
         git_policy_sha = _sha256_committed_file(archive_root, policy)
@@ -202,6 +232,7 @@ def _verify_git_targets(
             receipt=receipt,
             model_freeze=git_model_freeze,
             source_identity=git_source_identity,
+            source_set=git_source_set,
             split_sha=git_split_sha,
             holdout_sha=git_holdout_sha,
             policy_sha=git_policy_sha,
@@ -212,12 +243,28 @@ def _verify_git_targets(
     try:
         current_model_freeze = compute_freeze_hashes(current_freeze_spec)
         current_source_identity = build_source_identity(root / source_config)
+        current_source_set = (
+            build_source_identity_set(
+                root / _relative_path(source_set_path),
+                provider=current_source_identity.provider,
+                holdout_matches=holdout_matches,
+                source_root=root,
+            )
+            if source_set_path is not None
+            else build_single_source_identity_set(
+                provider=current_source_identity.provider,
+                match_id=current_source_identity.match_id,
+                source_config=root / source_config,
+            )
+        )
     except (OSError, ValueError) as error:
         raise PolicyError("could not recompute current target identities") from error
     if current_model_freeze != git_model_freeze:
         raise PolicyError("current worktree artifacts differ from migration commit")
     if current_source_identity != git_source_identity:
         raise PolicyError("current Source Identity differs from migration commit")
+    if current_source_set != git_source_set:
+        raise PolicyError("current SourceIdentitySet differs from migration commit")
     current_split_sha = _sha256_file(root / split_manifest)
     current_holdout_sha = _sha256_file(root / holdout_manifest)
     current_policy_sha = _sha256_file(root / policy)
@@ -232,6 +279,7 @@ def _verify_git_targets(
         receipt=receipt,
         model_freeze=git_model_freeze,
         source_identity=git_source_identity,
+        source_identity_set=git_source_set,
     )
 
 
@@ -240,6 +288,7 @@ def _compare_receipt_targets(
     receipt: dict[str, Any],
     model_freeze: FreezeHashes,
     source_identity: SourceIdentity,
+    source_set: SourceIdentitySet,
     split_sha: str,
     holdout_sha: str,
     policy_sha: str,
@@ -259,6 +308,7 @@ def _compare_receipt_targets(
         "target_model_identity": expected_model,
         "target_evaluation_identity": expected_evaluation,
         "target_source_identity": source_identity.to_dict(),
+        "target_source_identity_set": source_set.to_dict(),
         "target_split_manifest_sha256": split_sha,
         "target_holdout_manifest_sha256": holdout_sha,
         "policy_sha256": policy_sha,
@@ -385,6 +435,16 @@ def _validate_receipt_shape(receipt: Any) -> None:
     source_identity = source_identity_from_dict(receipt["target_source_identity"])
     if source_identity.source_config_sha256 != receipt["source_config_sha256"]:
         raise PolicyError("migration source identity does not match source config")
+    source_set = source_identity_set_from_dict(receipt["target_source_identity_set"])
+    if source_set.provider != source_identity.provider:
+        raise PolicyError("migration SourceIdentitySet provider is invalid")
+    if source_identity.match_id not in source_set.identity_digests:
+        raise PolicyError("migration Source Identity is not in SourceIdentitySet")
+    if (
+        source_set.identity_digests[source_identity.match_id]
+        != source_identity.source_identity_sha256
+    ):
+        raise PolicyError("migration Source Identity map does not match source identity")
     legacy_freeze = receipt["legacy_combined_freeze"]
     if not isinstance(legacy_freeze, dict) or not all(
         isinstance(value, str) and value for value in legacy_freeze.values()

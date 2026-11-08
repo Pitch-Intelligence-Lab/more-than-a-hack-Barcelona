@@ -24,7 +24,7 @@
   "provider": "skillcorner",
   "readme_sha256": "c09886c6359e5f7ff3bfd71a653510caf2f674d238ca79219aa1ec9ebe6f4428",
   "schema_version": "1.0",
-  "source_config_sha256": "4e9a396caaec128fcb586983bf97d8ba45f436119dc7fbd6b2bfe110dc11d929",
-  "source_identity_sha256": "e7c435682d7920647017bf05d8c6804d2714032f9a452480cf73f6b30213a3e1",
+  "source_config_sha256": "ce49db2aca9e066b80a4245cbfff82964e60d04f6b51b9387fb61cb5a6e09cf2",
+  "source_identity_sha256": "12254db9c834c7b85a55056611474a63ffd93173184d3e375e0f87684d73a5c2",
   "source_revision": "4340d274572876239c154c90bc507a9b3250a656"
 }

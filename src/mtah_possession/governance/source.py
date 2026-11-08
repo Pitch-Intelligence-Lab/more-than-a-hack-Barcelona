@@ -54,9 +54,27 @@ class SourceIdentity:
         }
 
 
+@dataclass(frozen=True)
+class SourceIdentitySet:
+    schema_version: str
+    provider: str
+    members: tuple[dict[str, str], ...]
+    identities: dict[str, SourceIdentity]
+    identity_digests: dict[str, str]
+    source_set_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "provider": self.provider,
+            "members": list(self.members),
+            "source_identity_map": dict(sorted(self.identity_digests.items())),
+            "source_set_sha256": self.source_set_sha256,
+        }
+
+
 def build_source_identity(config_path: str | os.PathLike[str]) -> SourceIdentity:
     manifest = load_skillcorner_manifest(config_path)
-    source_config_sha256 = _sha256_file(config_path)
     files = {
         role: {
             "path": _logical_path(manifest["files"][role]["path"]),
@@ -86,7 +104,7 @@ def build_source_identity(config_path: str | os.PathLike[str]) -> SourceIdentity
     ):
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
             raise PolicyError(f"source {label} must be positive")
-    payload = {
+    source_projection = {
         "schema_version": SOURCE_IDENTITY_SCHEMA_VERSION,
         "provider": str(manifest["provider"]),
         "source_revision": _required_commit(manifest["commit"]),
@@ -109,6 +127,10 @@ def build_source_identity(config_path: str | os.PathLike[str]) -> SourceIdentity
             "README SHA-256",
         ),
         "files": files,
+    }
+    source_config_sha256 = hashlib.sha256(_canonical_json(source_projection)).hexdigest()
+    payload = {
+        **source_projection,
         "source_config_sha256": source_config_sha256,
     }
     return SourceIdentity(
@@ -188,6 +210,14 @@ def source_identity_from_dict(values: Any) -> SourceIdentity:
             "source config SHA-256",
         ),
     }
+    source_projection = {
+        key: value for key, value in payload.items() if key != "source_config_sha256"
+    }
+    if (
+        payload["source_config_sha256"]
+        != hashlib.sha256(_canonical_json(source_projection)).hexdigest()
+    ):
+        raise PolicyError("source config SHA does not match source-only projection")
     digest = _required_sha256(
         values["source_identity_sha256"],
         "source identity SHA-256",
@@ -216,6 +246,162 @@ def source_identity_from_dict(values: Any) -> SourceIdentity:
     )
 
 
+def build_source_identity_set(
+    descriptor_path: str | os.PathLike[str],
+    *,
+    provider: str,
+    holdout_matches: tuple[str, ...],
+    source_root: str | os.PathLike[str] | None = None,
+) -> SourceIdentitySet:
+    path = Path(descriptor_path)
+    repository_root = Path(source_root) if source_root is not None else path.parent
+    try:
+        values = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PolicyError("could not read source-set descriptor") from error
+    required = {"schema_version", "provider", "members", "source_set_sha256"}
+    if not isinstance(values, dict) or set(values) != required:
+        raise PolicyError("source-set descriptor has missing or unknown fields")
+    if values["schema_version"] != "1.0":
+        raise PolicyError("source-set descriptor schema version is unsupported")
+    if values["provider"] != provider:
+        raise PolicyError("source-set provider does not match source config")
+    members = values["members"]
+    if not isinstance(members, list) or not members:
+        raise PolicyError("source-set members must be a non-empty list")
+    parsed_members: list[dict[str, str]] = []
+    seen: set[str] = set()
+    identities: dict[str, SourceIdentity] = {}
+    for member in members:
+        if not isinstance(member, dict) or set(member) != {"match_id", "source_config"}:
+            raise PolicyError("source-set member is invalid")
+        match_id = _required_text(member["match_id"], "source-set match ID")
+        if match_id in seen:
+            raise PolicyError("source-set contains a duplicate match ID")
+        seen.add(match_id)
+        source_config = _logical_path(member["source_config"])
+        config_path = repository_root / source_config
+        identity = build_source_identity(config_path)
+        if identity.provider != provider or identity.match_id != match_id:
+            raise PolicyError("source-set member identity does not match its match ID")
+        parsed_members.append({"match_id": match_id, "source_config": source_config})
+        identities[match_id] = identity
+    parsed_members.sort(key=lambda member: member["match_id"])
+    if set(identities) != set(holdout_matches):
+        raise PolicyError("source-set members do not equal Holdout Manifest matches")
+    expected_digest = _source_set_digest(provider, parsed_members)
+    if values["source_set_sha256"] != expected_digest:
+        raise PolicyError("source-set descriptor digest does not match")
+    return SourceIdentitySet(
+        schema_version="1.0",
+        provider=provider,
+        members=tuple(parsed_members),
+        identities=identities,
+        identity_digests={
+            match_id: identity.source_identity_sha256 for match_id, identity in identities.items()
+        },
+        source_set_sha256=expected_digest,
+    )
+
+
+def build_single_source_identity_set(
+    *,
+    provider: str,
+    match_id: str,
+    source_config: str | os.PathLike[str],
+) -> SourceIdentitySet:
+    identity = build_source_identity(source_config)
+    if identity.provider != provider or identity.match_id != match_id:
+        raise PolicyError("single source identity does not match current match")
+    source_config_name = Path(source_config).name
+    members = ({"match_id": match_id, "source_config": source_config_name},)
+    digest = _source_set_digest(provider, list(members))
+    return SourceIdentitySet(
+        schema_version="1.0",
+        provider=provider,
+        members=members,
+        identities={match_id: identity},
+        identity_digests={match_id: identity.source_identity_sha256},
+        source_set_sha256=digest,
+    )
+
+
+def current_source_identity(
+    source_set: SourceIdentitySet,
+    *,
+    match_id: str,
+    source_config: str | os.PathLike[str],
+    source_root: str | os.PathLike[str] | None,
+) -> SourceIdentity:
+    identity = build_source_identity(source_config)
+    if match_id not in source_set.identity_digests:
+        raise PolicyError("current match is not registered in SourceIdentitySet")
+    if source_root is not None:
+        member = next(member for member in source_set.members if member["match_id"] == match_id)
+        expected_config = (Path(source_root) / member["source_config"]).resolve(strict=True)
+        if Path(source_config).resolve(strict=True) != expected_config:
+            raise PolicyError("current source config does not match SourceIdentitySet")
+    if identity.source_identity_sha256 != source_set.identity_digests[match_id]:
+        raise PolicyError("current source identity does not match sealed SourceIdentitySet")
+    return identity
+
+
+def source_identity_set_from_dict(values: Any) -> SourceIdentitySet:
+    required = {
+        "schema_version",
+        "provider",
+        "members",
+        "source_identity_map",
+        "source_set_sha256",
+    }
+    if not isinstance(values, dict) or set(values) != required:
+        raise PolicyError("SourceIdentitySet has missing or unknown fields")
+    if values["schema_version"] != "1.0":
+        raise PolicyError("SourceIdentitySet schema version is unsupported")
+    provider = _required_text(values["provider"], "source-set provider")
+    raw_members = values["members"]
+    if not isinstance(raw_members, list) or not raw_members:
+        raise PolicyError("SourceIdentitySet members are empty")
+    members: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for member in raw_members:
+        if not isinstance(member, dict) or set(member) != {"match_id", "source_config"}:
+            raise PolicyError("SourceIdentitySet member is invalid")
+        match_id = _required_text(member["match_id"], "source-set match ID")
+        if match_id in seen:
+            raise PolicyError("SourceIdentitySet contains a duplicate match ID")
+        seen.add(match_id)
+        members.append(
+            {
+                "match_id": match_id,
+                "source_config": _logical_path(member["source_config"]),
+            }
+        )
+    members.sort(key=lambda member: member["match_id"])
+    if len(members) != len(raw_members) or any(
+        left != right for left, right in zip(raw_members, members, strict=True)
+    ):
+        raise PolicyError("SourceIdentitySet members are not canonically sorted")
+    identity_map = values["source_identity_map"]
+    if not isinstance(identity_map, dict) or set(identity_map) != seen:
+        raise PolicyError("SourceIdentitySet identity map does not match members")
+    identity_digests = {
+        match_id: _required_sha256(digest, f"source identity {match_id}")
+        for match_id, digest in identity_map.items()
+    }
+    expected_digest = _source_set_digest(provider, members)
+    if values["source_set_sha256"] != expected_digest:
+        raise PolicyError("SourceIdentitySet descriptor digest does not match")
+    return SourceIdentitySet(
+        schema_version="1.0",
+        provider=provider,
+        members=tuple(members),
+        identities={},
+        identity_digests=identity_digests,
+        source_set_sha256=expected_digest,
+    )
+
+
 def source_identity_payload(identity: SourceIdentity) -> dict[str, Any]:
     values = identity.to_dict()
     values.pop("source_identity_sha256")
@@ -226,15 +412,13 @@ def _canonical_json(values: dict[str, Any]) -> bytes:
     return json.dumps(values, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def _sha256_file(path: str | os.PathLike[str]) -> str:
-    digest = hashlib.sha256()
-    try:
-        with Path(path).open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-    except OSError as error:
-        raise PolicyError(f"could not hash source config: {path}") from error
-    return digest.hexdigest()
+def _source_set_digest(provider: str, members: list[dict[str, str]]) -> str:
+    payload = {
+        "schema_version": "1.0",
+        "provider": provider,
+        "members": members,
+    }
+    return hashlib.sha256(_canonical_json(payload)).hexdigest()
 
 
 def _logical_path(value: Any) -> str:

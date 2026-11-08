@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         default=str(ROOT / "outputs" / "holdout"),
     )
     parser.add_argument("--external-root", default=None)
+    parser.add_argument("--source-set", default=None)
     parser.add_argument(
         "--split",
         required=True,
@@ -89,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
             holdout_manifest_path=args.holdout_manifest,
             freeze_spec_path=args.freeze_spec,
             ledger_dir=args.holdout_ledger_dir,
+            source_set_path=args.source_set,
         )
         _write_json_atomic(Path(args.output), result.report)
     except (OSError, ValueError) as error:

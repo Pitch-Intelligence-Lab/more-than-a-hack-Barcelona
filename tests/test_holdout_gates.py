@@ -2,6 +2,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import numpy as np
 import pytest
 
 import mtah_possession.evaluation.runner as runner_module
+import mtah_possession.governance.ledger as ledger_module
 from mtah_possession.algorithm_config import load_algorithm_config
 from mtah_possession.data.neutral import ProxyTarget
 from mtah_possession.evaluation.external import (
@@ -31,7 +33,11 @@ from mtah_possession.governance.ledger import (
     stable_holdout_identity,
 )
 from mtah_possession.governance.policy import PolicyError
-from mtah_possession.governance.source import build_source_identity
+from mtah_possession.governance.source import (
+    build_single_source_identity_set,
+    build_source_identity,
+    build_source_identity_set,
+)
 from mtah_possession.validation.submission import sha256_file
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,8 +102,12 @@ def artifact_spec(tmp_path: Path) -> tuple[Path, dict[str, Path]]:
     return spec_path, paths
 
 
-def external_config(tmp_path: Path, match_id: str = "holdout-1") -> Path:
-    path = tmp_path / "external.json"
+def external_config(
+    tmp_path: Path,
+    match_id: str = "holdout-1",
+    filename: str = "external.json",
+) -> Path:
+    path = tmp_path / filename
     path.write_text(
         json.dumps(
             {
@@ -215,7 +225,7 @@ def fake_evaluator(_match, _config, *, authorization, split: str):
         source_counts={"fixture": 4},
     )
     return ExternalMatchEvaluation(
-        match_id="holdout-1",
+        match_id=getattr(_match, "match_id", "holdout-1"),
         split=split,
         proxy=proxy,
         candidates={"fixture": candidate},
@@ -257,7 +267,7 @@ def prepare_promotion(
 
 def run_prepared_promotion(fixture: dict, *, loader=None):
     match = SimpleNamespace(
-        match_id="holdout-1",
+        match_id=fixture.get("match_id", "holdout-1"),
         fps=10,
         source_checksums={"tracking": "fixture"},
         source_metadata={"tracking_aggregate": {}},
@@ -274,6 +284,7 @@ def run_prepared_promotion(fixture: dict, *, loader=None):
         holdout_manifest_path=fixture["holdout_path"],
         freeze_spec_path=fixture["freeze_spec_path"],
         ledger_dir=fixture["ledger_dir"],
+        source_set_path=fixture.get("source_set_path"),
         match_loader=loader or (lambda *_args: match),
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
@@ -911,8 +922,6 @@ def test_migration_cli_appends_explicit_protocol_event(tmp_path: Path) -> None:
             SOURCE_REVISION,
             "--source-config",
             str(fixture["config_path"]),
-            "--holdout-manifest",
-            str(fixture["holdout_path"]),
             "--target-holdout-manifest",
             str(fixture["holdout_path"]),
             "--split-manifest",
@@ -1120,7 +1129,7 @@ def test_rp5_08_split_manifest_change_invalidates_seal(
         calls += 1
         raise AssertionError("loader must not run")
 
-    with pytest.raises(PolicyError, match="sealed split manifest"):
+    with pytest.raises(PolicyError, match="changed sealed split"):
         run_prepared_promotion(fixture, loader=forbidden_loader)
     assert calls == 0
     assert ledger_path.read_bytes() == before
@@ -1147,7 +1156,7 @@ def test_rp5_09_compromised_match_set_cannot_be_recovered(
         calls += 1
         raise AssertionError("loader must not run")
 
-    with pytest.raises(PolicyError, match="different match identity"):
+    with pytest.raises(PolicyError, match="do not equal split"):
         run_prepared_promotion(fixture, loader=forbidden_loader)
     assert calls == 0
     provider, matches, holdout_id = stable_holdout_identity(
@@ -1389,6 +1398,382 @@ def test_r6_12_audit_only_migration_never_promotes(
     assert calls == 0
 
 
+def test_rc01_wrong_old_manifest_sha_leaves_ledger_unchanged(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    receipt_path = fixture["repo_root"] / fixture["approval_receipt_path"]
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["old_holdout_manifest_sha256"] = "0" * 64
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    approval_commit = _commit_current_receipt(fixture, fixture["migration_commit"])
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    with pytest.raises(PolicyError, match="old_holdout_manifest"):
+        _migrate_fixture(fixture, approval_commit=approval_commit)
+    assert ledger_path.read_bytes() == before
+
+
+def test_rc02_protocol_order_failure_does_not_write(tmp_path: Path) -> None:
+    fixture = prepare_promotion(tmp_path)
+    ledger = _new_ledger(fixture)
+    ledger.append(LedgerEvent.SEALED_VERIFIED)
+    head = ledger_module._record_sha256(ledger.records()[-1])
+    before = ledger.path.read_bytes()
+    receipt_fixture = prepare_legacy_migration(tmp_path / "receipt")
+    receipt = json.loads(
+        (receipt_fixture["repo_root"] / receipt_fixture["approval_receipt_path"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    with pytest.raises(PolicyError, match="newer freeze protocol"):
+        ledger.append_freeze_migration(
+            migration_receipt=receipt,
+            expected_head_sha256=head,
+        )
+    assert ledger.path.read_bytes() == before
+
+
+def test_rc03_illegal_state_failure_does_not_write(tmp_path: Path) -> None:
+    fixture = prepare_legacy_migration(tmp_path, compromised=True)
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    with pytest.raises(PolicyError, match="COMPROMISED"):
+        _migrate_fixture(fixture)
+    assert ledger_path.read_bytes() == before
+
+
+def test_rc04_candidate_seal_invariant_failure_does_not_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+
+    def reject_candidate(_records):
+        raise PolicyError("candidate seal invariant violation")
+
+    monkeypatch.setattr(ledger_module, "_validate_seal_immutability", reject_candidate)
+    with pytest.raises(PolicyError, match="candidate seal"):
+        _migrate_fixture(fixture)
+    assert ledger_path.read_bytes() == before
+
+
+def test_rc05_stale_ledger_head_does_not_overwrite_concurrent_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    existing = json.loads(ledger_path.read_text(encoding="utf-8"))
+    concurrent = {
+        **existing,
+        "recorded_at": "2026-11-08T00:01:00+00:00",
+        "event_type": "AUTHORIZATION_DENIED",
+        "prediction_sha256": None,
+        "previous_record_sha256": _test_record_sha256(existing),
+        "reason": "concurrent authorization denial",
+    }
+    original_lock = ledger_module._ledger_lock
+    injected = False
+
+    @contextmanager
+    def racing_lock(path):
+        nonlocal injected
+        if not injected and Path(path) == ledger_path:
+            with ledger_path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps(concurrent, sort_keys=True, separators=(",", ":")) + "\n")
+            injected = True
+        with original_lock(path):
+            yield
+
+    monkeypatch.setattr(ledger_module, "_ledger_lock", racing_lock)
+    with pytest.raises(PolicyError, match="head changed"):
+        _migrate_fixture(fixture)
+    records = _ledger_records(fixture["ledger_dir"])
+    assert [record["event_type"] for record in records] == [
+        "SEALED_VERIFIED",
+        "AUTHORIZATION_DENIED",
+    ]
+    assert records[-1]["reason"] == "concurrent authorization denial"
+
+
+def test_rc06_atomic_write_failure_leaves_no_partial_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+
+    def fail_replace(_path, _payload):
+        raise PolicyError("simulated atomic replace failure")
+
+    monkeypatch.setattr(ledger_module, "_atomic_replace", fail_replace)
+    with pytest.raises(PolicyError, match="atomic replace"):
+        _migrate_fixture(fixture)
+    assert ledger_path.read_bytes() == before
+    assert len(ledger_path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_rc07_two_match_source_set_allows_both_matches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    first = {
+        **base,
+        "config_path": base["source_1"],
+        "match_id": "holdout-1",
+        "ledger_dir": tmp_path / "ledger-1",
+    }
+    second = {
+        **base,
+        "config_path": base["source_2"],
+        "match_id": "holdout-2",
+        "ledger_dir": tmp_path / "ledger-2",
+    }
+    run_prepared_promotion(first)
+    run_prepared_promotion(second)
+    source_set = build_source_identity_set(
+        base["source_set_path"],
+        provider="skillcorner",
+        holdout_matches=("holdout-1", "holdout-2"),
+    )
+    assert set(source_set.identity_digests) == {"holdout-1", "holdout-2"}
+    nested = tmp_path / "nested-descriptor"
+    nested.mkdir()
+    repository_relative = write_source_set_descriptor(
+        tmp_path,
+        json.loads(base["source_set_path"].read_text(encoding="utf-8"))["members"],
+        filename="nested-descriptor/source-set.json",
+    )
+    assert (
+        build_source_identity_set(
+            repository_relative,
+            provider="skillcorner",
+            holdout_matches=("holdout-1", "holdout-2"),
+            source_root=tmp_path,
+        )
+        == source_set
+    )
+    assert len(_ledger_records(first["ledger_dir"])) == 4
+    assert len(_ledger_records(second["ledger_dir"])) == 4
+
+
+def test_rc08_unknown_match_is_rejected_without_loader(
+    tmp_path: Path,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    unknown_config = external_config(tmp_path, "holdout-3", "source-3.json")
+    fixture = {
+        **base,
+        "config_path": unknown_config,
+        "match_id": "holdout-3",
+        "ledger_dir": tmp_path / "ledger-unknown",
+    }
+    split_values = json.loads(fixture["splits_path"].read_text(encoding="utf-8"))
+    split_values["holdout"].append("holdout-3")
+    fixture["splits_path"].write_text(json.dumps(split_values), encoding="utf-8")
+    holdout_values = json.loads(fixture["holdout_path"].read_text(encoding="utf-8"))
+    holdout_values["matches"].append("holdout-3")
+    fixture["holdout_path"].write_text(json.dumps(holdout_values), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+
+
+def test_rc09_member_add_or_remove_is_rejected(tmp_path: Path) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    source_3 = external_config(tmp_path, "holdout-3", "source-3.json")
+    original = json.loads(base["source_set_path"].read_text(encoding="utf-8"))
+    for members, filename in (
+        (original["members"][:1], "source-set-removed.json"),
+        (
+            original["members"] + [{"match_id": "holdout-3", "source_config": source_3.name}],
+            "source-set-added.json",
+        ),
+    ):
+        path = write_source_set_descriptor(tmp_path, members, filename=filename)
+        with pytest.raises(PolicyError, match="do not equal"):
+            build_source_identity_set(
+                path,
+                provider="skillcorner",
+                holdout_matches=("holdout-1", "holdout-2"),
+            )
+
+
+def test_rc10_swapped_match_identity_mapping_is_rejected(tmp_path: Path) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    swapped = write_source_set_descriptor(
+        tmp_path,
+        [
+            {"match_id": "holdout-1", "source_config": base["source_2"].name},
+            {"match_id": "holdout-2", "source_config": base["source_1"].name},
+        ],
+        filename="source-set-swapped.json",
+    )
+    with pytest.raises(PolicyError, match="identity does not match"):
+        build_source_identity_set(
+            swapped,
+            provider="skillcorner",
+            holdout_matches=("holdout-1", "holdout-2"),
+        )
+
+
+def test_rc11_duplicate_match_id_is_rejected(tmp_path: Path) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    duplicate = write_source_set_descriptor(
+        tmp_path,
+        [
+            {"match_id": "holdout-1", "source_config": base["source_1"].name},
+            {"match_id": "holdout-1", "source_config": base["source_2"].name},
+        ],
+        filename="source-set-duplicate.json",
+    )
+    with pytest.raises(PolicyError, match="duplicate"):
+        build_source_identity_set(
+            duplicate,
+            provider="skillcorner",
+            holdout_matches=("holdout-1", "holdout-2"),
+        )
+
+
+def test_rc12_post_seal_member_addition_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("seal established")
+
+    with pytest.raises(RuntimeError, match="seal established"):
+        run_prepared_promotion(fixture, loader=failing_loader)
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    source_3 = external_config(tmp_path, "holdout-3", "source-3.json")
+    members = json.loads(fixture["source_set_path"].read_text(encoding="utf-8"))["members"]
+    fixture["source_set_path"] = write_source_set_descriptor(
+        tmp_path,
+        members + [{"match_id": "holdout-3", "source_config": source_3.name}],
+        filename="source-set-appended.json",
+    )
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="do not equal"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["data_license_status", "data_license_evidence"],
+)
+def test_rc14_rc15_governance_fields_do_not_change_source_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    source_before = build_source_identity(fixture["config_path"])
+    values = json.loads(fixture["config_path"].read_text(encoding="utf-8"))
+    if field == "data_license_status":
+        values[field] = "PASS"
+    else:
+        values[field] = ["EV-GOVERNANCE-ONLY"]
+    fixture["config_path"].write_text(json.dumps(values), encoding="utf-8")
+    source_after = build_source_identity(fixture["config_path"])
+    assert source_after == source_before
+
+
+def test_rc16_governance_reauthorizes_after_permission_restore(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    values = json.loads(fixture["policy_path"].read_text(encoding="utf-8"))
+    values["providers"][0]["statuses"]["HOLDOUT_SEAL_VERIFIED"] = "HOLD"
+    fixture["policy_path"].write_text(json.dumps(values), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="HOLDOUT_SEAL_VERIFIED=HOLD"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+    values["providers"][0]["statuses"]["HOLDOUT_SEAL_VERIFIED"] = "PASS"
+    fixture["policy_path"].write_text(json.dumps(values), encoding="utf-8")
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_prepared_promotion(fixture)
+    records = _ledger_records(fixture["ledger_dir"])
+    assert records[0]["event_type"] == "AUTHORIZATION_DENIED"
+    assert records[-1]["event_type"] == "EVALUATION_COMPLETED"
+
+
+def test_rc17_real_source_change_changes_identity_and_blocks_loader(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("seal established")
+
+    with pytest.raises(RuntimeError, match="seal established"):
+        run_prepared_promotion(fixture, loader=failing_loader)
+    before = build_source_identity(fixture["config_path"])
+    values = json.loads(fixture["config_path"].read_text(encoding="utf-8"))
+    values["files"]["phases"]["sha256"] = "7" * 64
+    fixture["config_path"].write_text(json.dumps(values), encoding="utf-8")
+    after = build_source_identity(fixture["config_path"])
+    assert after.source_identity_sha256 != before.source_identity_sha256
+    ledger_path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    ledger_before = ledger_path.read_bytes()
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="Source Identity"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == ledger_before
+
+
+def test_rc13_single_match_source_set_remains_compatible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_prepared_promotion(fixture)
+    record = _ledger_records(fixture["ledger_dir"])[0]
+    assert set(record["source_identity_set"]["source_identity_map"]) == {"holdout-1"}
+    assert record["event_type"] == "SEALED_VERIFIED"
+
+
 def _migrate_fixture(
     fixture: dict,
     *,
@@ -1396,6 +1781,7 @@ def _migrate_fixture(
     migration_commit: str | None = None,
     approval_receipt_path: str | None = None,
     repo_root: Path | None = None,
+    source_set_path: Path | None = None,
 ):
     return migrate_legacy_ledger(
         fixture["ledger_dir"],
@@ -1403,13 +1789,17 @@ def _migrate_fixture(
         provider="skillcorner",
         match_ids=("holdout-1",),
         governance_identity=fixture["governance_identity"],
-        holdout_manifest_sha256=sha256_file(fixture["holdout_path"]),
         holdout_manifest_path_sha256=sha256_path_identity(fixture["holdout_path"]),
         freeze_spec_path=_fixture_relative(fixture, fixture["freeze_spec_path"]),
         split_manifest_path=_fixture_relative(fixture, fixture["splits_path"]),
         target_holdout_manifest_path=_fixture_relative(fixture, fixture["holdout_path"]),
         policy_path=_fixture_relative(fixture, fixture["policy_path"]),
         source_config_path=_fixture_relative(fixture, fixture["config_path"]),
+        source_set_path=(
+            _fixture_relative(fixture, source_set_path or fixture["source_set_path"])
+            if source_set_path is not None or fixture.get("source_set_path")
+            else None
+        ),
         approval_receipt_path=approval_receipt_path or fixture["approval_receipt_path"],
         approval_commit=approval_commit or fixture["approval_commit"],
         migration_commit=migration_commit or fixture["migration_commit"],
@@ -1427,6 +1817,11 @@ def _new_ledger(fixture: dict):
         provider="skillcorner",
         source_revision=SOURCE_REVISION,
     )
+    source_identity_set = build_single_source_identity_set(
+        provider="skillcorner",
+        match_id="holdout-1",
+        source_config=fixture["config_path"],
+    )
     return create_ledger(
         fixture["ledger_dir"],
         provider="skillcorner",
@@ -1437,7 +1832,8 @@ def _new_ledger(fixture: dict):
         split_manifest_sha256=sha256_file(fixture["splits_path"]),
         code_commit=fixture["code_commit"],
         governance_identity=governance_identity,
-        source_identity=build_source_identity(fixture["config_path"]),
+        source_identity=source_identity_set.identities["holdout-1"],
+        source_identity_set=source_identity_set,
     )
 
 
@@ -1530,6 +1926,81 @@ def prepare_separated_promotion(tmp_path: Path) -> dict:
     }
 
 
+def prepare_multi_source_promotion(tmp_path: Path) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    spec_path, artifact_paths, governance_file = separated_artifact_spec(tmp_path)
+    freeze = compute_freeze_hashes(spec_path)
+    source_1 = external_config(tmp_path, "holdout-1", "source-1.json")
+    source_2 = external_config(tmp_path, "holdout-2", "source-2.json")
+    members = [
+        {"match_id": "holdout-1", "source_config": source_1.name},
+        {"match_id": "holdout-2", "source_config": source_2.name},
+    ]
+    source_set_path = write_source_set_descriptor(tmp_path, members)
+    holdout_path = holdout_manifest(
+        tmp_path,
+        freeze,
+        ["holdout-1", "holdout-2"],
+    )
+    split_path = tmp_path / "splits-multi.json"
+    split_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "split_unit": "match",
+                "development": ["dev-1"],
+                "validation": ["val-1"],
+                "holdout": ["holdout-1", "holdout-2"],
+                "status": "ready_for_promotion_review",
+                "reason": "synthetic multi-match promotion",
+            }
+        ),
+        encoding="utf-8",
+    )
+    policy_path = allowed_policy(tmp_path)
+    return {
+        "config_path": source_1,
+        "splits_path": split_path,
+        "policy_path": policy_path,
+        "holdout_path": holdout_path,
+        "freeze_spec_path": spec_path,
+        "ledger_dir": tmp_path / "ledger",
+        "code_commit": "abcdef0123456789abcdef0123456789abcdef01",
+        "artifact_paths": artifact_paths,
+        "governance_file": governance_file,
+        "freeze": freeze,
+        "source_set_path": source_set_path,
+        "source_1": source_1,
+        "source_2": source_2,
+    }
+
+
+def write_source_set_descriptor(
+    tmp_path: Path,
+    members: list[dict[str, str]],
+    *,
+    filename: str = "source-set.json",
+) -> Path:
+    payload = {
+        "schema_version": "1.0",
+        "provider": "skillcorner",
+        "members": members,
+    }
+    path = tmp_path / filename
+    path.write_text(
+        json.dumps(
+            {
+                **payload,
+                "source_set_sha256": hashlib.sha256(
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def prepare_legacy_migration(
     tmp_path: Path,
     *,
@@ -1599,6 +2070,11 @@ def prepare_legacy_migration(
         source_revision=SOURCE_REVISION,
     )
     source_identity = build_source_identity(config_path)
+    source_identity_set = build_single_source_identity_set(
+        provider=provider,
+        match_id=match_ids[0],
+        source_config=config_path,
+    )
     script_path = tmp_path / "scripts" / "migrate_holdout_ledger.py"
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(
@@ -1649,6 +2125,7 @@ def prepare_legacy_migration(
         "target_split_manifest_sha256": sha256_file(tmp_path / "splits.json"),
         "target_holdout_manifest_sha256": sha256_file(holdout_path),
         "target_source_identity": source_identity.to_dict(),
+        "target_source_identity_set": source_identity_set.to_dict(),
         "governance_identity_digest": governance_identity.authorization_status_digest,
         "approver": "qa-lead",
         "approval_evidence_ids": ["PM-QA-APPROVAL-005"],

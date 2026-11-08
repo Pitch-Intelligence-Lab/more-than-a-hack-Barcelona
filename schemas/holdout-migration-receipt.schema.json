@@ -29,6 +29,7 @@
     "target_split_manifest_sha256",
     "target_holdout_manifest_sha256",
     "target_source_identity",
+    "target_source_identity_set",
     "governance_identity_digest",
     "approver",
     "approval_evidence_ids",
@@ -87,6 +88,9 @@
     "target_holdout_manifest_sha256": {"$ref": "#/$defs/sha256"},
     "target_source_identity": {
       "$ref": "source-identity.schema.json"
+    },
+    "target_source_identity_set": {
+      "$ref": "source-identity-set.schema.json"
     },
     "governance_identity_digest": {"$ref": "#/$defs/sha256"},
     "approver": {"type": "string", "minLength": 1},

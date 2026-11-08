@@ -114,6 +114,9 @@
     "source_identity": {
       "$ref": "source-identity.schema.json"
     },
+    "source_identity_set": {
+      "$ref": "source-identity-set.schema.json"
+    },
     "migration_receipt": {
       "$ref": "holdout-migration-receipt.schema.json"
     },

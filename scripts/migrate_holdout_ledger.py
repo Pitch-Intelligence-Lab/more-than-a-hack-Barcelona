@@ -17,7 +17,6 @@ from mtah_possession.governance.ledger import (  # noqa: E402
     migrate_legacy_ledger,
     sha256_path_identity,
 )
-from mtah_possession.validation.submission import sha256_file  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--source-config", required=True)
-    parser.add_argument("--holdout-manifest", required=True)
+    parser.add_argument("--source-set", default=None)
     parser.add_argument("--target-holdout-manifest", required=True)
     parser.add_argument(
         "--split-manifest",
@@ -68,7 +67,6 @@ def main(argv: list[str] | None = None) -> int:
             provider=args.provider,
             match_ids=tuple(args.match_ids),
             governance_identity=governance_identity,
-            holdout_manifest_sha256=sha256_file(args.holdout_manifest),
             holdout_manifest_path_sha256=sha256_path_identity(args.target_holdout_manifest),
             freeze_spec_path=_relative_to_root(args.freeze_spec, args.repo_root),
             split_manifest_path=_relative_to_root(args.split_manifest, args.repo_root),
@@ -78,6 +76,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             policy_path=_relative_to_root(args.policy, args.repo_root),
             source_config_path=_relative_to_root(args.source_config, args.repo_root),
+            source_set_path=(
+                _relative_to_root(args.source_set, args.repo_root) if args.source_set else None
+            ),
             approval_receipt_path=args.approval_receipt,
             approval_commit=args.approval_commit,
             migration_commit=args.migration_commit,

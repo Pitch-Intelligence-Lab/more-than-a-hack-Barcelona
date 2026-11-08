@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "provider": "skillcorner",
+  "members": [
+    {
+      "match_id": "2017461",
+      "source_config": "configs/external-skillcorner.json"
+    }
+  ],
+  "source_identity_map": {
+    "2017461": "12254db9c834c7b85a55056611474a63ffd93173184d3e375e0f87684d73a5c2"
+  },
+  "source_set_sha256": "e6b8765badc136c99f91e64693273e54a1a4b8020321a3552c9c5e44161af37f"
+}

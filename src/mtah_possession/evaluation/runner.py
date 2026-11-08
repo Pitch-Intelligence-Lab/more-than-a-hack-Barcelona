@@ -51,7 +51,11 @@ from mtah_possession.governance.policy import (
     DataUse,
     PolicyError,
 )
-from mtah_possession.governance.source import build_source_identity
+from mtah_possession.governance.source import (
+    build_single_source_identity_set,
+    build_source_identity_set,
+    current_source_identity,
+)
 from mtah_possession.validation.submission import sha256_file
 
 DEFAULT_POLICY_PATH = (
@@ -88,6 +92,7 @@ def run_external_evaluation(
     holdout_manifest_path: str | os.PathLike[str] = DEFAULT_HOLDOUT_MANIFEST_PATH,
     freeze_spec_path: str | os.PathLike[str] = DEFAULT_FREEZE_SPEC_PATH,
     ledger_dir: str | os.PathLike[str] = DEFAULT_LEDGER_DIR,
+    source_set_path: str | os.PathLike[str] | None = None,
     state_config_loader: Callable[[str | os.PathLike[str]], StateEngineConfig] = (
         load_algorithm_config
     ),
@@ -97,7 +102,6 @@ def run_external_evaluation(
     manifest = load_skillcorner_manifest(config_path)
     provider_name = str(manifest["provider"])
     source_revision = str(manifest["commit"])
-    source_identity = build_source_identity(config_path)
     holdout_manifest: HoldoutManifest | None = None
     freeze_hashes: FreezeHashes | None = None
     ledger: HoldoutLedger | None = None
@@ -106,13 +110,50 @@ def run_external_evaluation(
         freeze_hashes = compute_freeze_hashes(freeze_spec_path)
         holdout_manifest_sha256 = sha256_file(holdout_manifest_path)
         holdout_manifest_path_sha256 = sha256_path_identity(holdout_manifest_path)
-        if manifest_path_has_conflicting_identity(
-            ledger_dir,
-            provider=provider_name,
-            match_ids=holdout_manifest.matches,
-            manifest_path_sha256=holdout_manifest_path_sha256,
-        ):
-            raise PolicyError("sealed Holdout Manifest path is bound to a different match identity")
+        holdout_matches_are_valid = (
+            bool(holdout_manifest.matches)
+            and set(holdout_manifest.matches) == set(splits.holdout)
+            and str(manifest["match_id"]) in holdout_manifest.matches
+        )
+        source_set = None
+        source_identity = None
+        source_error: PolicyError | None = None
+        if holdout_matches_are_valid:
+            try:
+                if source_set_path is not None:
+                    source_root = _source_set_root(source_set_path)
+                    source_set = build_source_identity_set(
+                        source_set_path,
+                        provider=provider_name,
+                        holdout_matches=holdout_manifest.matches,
+                        source_root=source_root,
+                    )
+                    source_identity = current_source_identity(
+                        source_set,
+                        match_id=str(manifest["match_id"]),
+                        source_config=config_path,
+                        source_root=source_root,
+                    )
+                else:
+                    if len(holdout_manifest.matches) != 1:
+                        raise PolicyError("multi-match Holdout requires a source-set descriptor")
+                    source_set = build_single_source_identity_set(
+                        provider=provider_name,
+                        match_id=str(manifest["match_id"]),
+                        source_config=config_path,
+                    )
+                    source_identity = source_set.identities[str(manifest["match_id"])]
+            except PolicyError as error:
+                source_error = error
+            if manifest_path_has_conflicting_identity(
+                ledger_dir,
+                provider=provider_name,
+                match_ids=holdout_manifest.matches,
+                manifest_path_sha256=holdout_manifest_path_sha256,
+            ):
+                raise PolicyError(
+                    "sealed Holdout Manifest path is bound to a different match identity"
+                )
         ledger = create_ledger(
             ledger_dir,
             provider=provider_name,
@@ -123,6 +164,7 @@ def run_external_evaluation(
             split_manifest_sha256=split_manifest_sha256,
             code_commit=code_commit,
             source_identity=source_identity,
+            source_identity_set=source_set,
         )
         ledger_state = ledger.state
         if ledger_state == HoldoutLedgerState.COMPROMISED:
@@ -152,16 +194,39 @@ def run_external_evaluation(
         ):
             raise PolicyError("sealed Holdout Manifest path has changed")
         sealed_source_identity = ledger.sealed_source_identity()
-        if sealed_source_identity is not None and sealed_source_identity != source_identity:
+        if (
+            source_identity is not None
+            and sealed_source_identity is not None
+            and sealed_source_identity != source_identity
+        ):
             raise PolicyError("sealed Source Identity has changed")
+        sealed_source_set = ledger.sealed_source_identity_set()
+        if (
+            source_set is not None
+            and sealed_source_set is not None
+            and (
+                sealed_source_set.provider != source_set.provider
+                or sealed_source_set.members != source_set.members
+                or sealed_source_set.source_set_sha256 != source_set.source_set_sha256
+                or sealed_source_set.identity_digests != source_set.identity_digests
+            )
+        ):
+            raise PolicyError("sealed SourceIdentitySet has changed")
         prior_freeze = ledger.model_freeze_hashes()
         if prior_freeze is not None and prior_freeze != freeze_hashes:
+            if source_identity is None or source_set is None:
+                raise source_error or PolicyError("holdout Source Identity is unavailable")
             identity = build_governance_identity(
                 policy_path=policy_path,
                 provider=provider_name,
                 source_revision=source_revision,
             )
-            ledger = replace(ledger, governance_identity=identity)
+            ledger = replace(
+                ledger,
+                governance_identity=identity,
+                source_identity=source_identity,
+                source_identity_set=source_set,
+            )
             _append_compromised(
                 ledger,
                 reason="freeze identity changed after holdout verification",
@@ -172,6 +237,13 @@ def run_external_evaluation(
         provider=provider_name,
         source_revision=source_revision,
     )
+    if mode != EvaluationMode.PROMOTION:
+        source_set = build_single_source_identity_set(
+            provider=provider_name,
+            match_id=str(manifest["match_id"]),
+            source_config=config_path,
+        )
+        source_identity = source_set.identities[str(manifest["match_id"])]
     if ledger is not None:
         ledger = replace(ledger, governance_identity=governance_identity)
     try:
@@ -203,13 +275,26 @@ def run_external_evaluation(
             _append_compromised(ledger, reason=str(error))
         raise
     except (PolicyError, SplitManifestError) as error:
-        if ledger is not None and code_commit.strip():
+        if (
+            ledger is not None
+            and code_commit.strip()
+            and source_identity is not None
+            and source_set is not None
+        ):
+            ledger = replace(
+                ledger,
+                governance_identity=governance_identity,
+                source_identity=source_identity,
+                source_identity_set=source_set,
+            )
             ledger.append(LedgerEvent.AUTHORIZATION_DENIED, reason=str(error))
         raise
     if not code_commit.strip():
         raise ValueError("code commit is required")
     if not external_root:
         raise ValueError("MTAH_EXTERNAL_DATA_DIR is not set")
+    if source_identity is None or source_set is None:
+        raise source_error or PolicyError("holdout Source Identity is unavailable")
     if ledger is not None:
         if not ledger.has_event(LedgerEvent.SEALED_VERIFIED):
             ledger.append(LedgerEvent.SEALED_VERIFIED)
@@ -273,3 +358,11 @@ def _append_compromised(
     reason: str,
 ) -> None:
     ledger.append(LedgerEvent.COMPROMISED, reason=reason)
+
+
+def _source_set_root(descriptor_path: str | os.PathLike[str]) -> Path:
+    path = Path(descriptor_path).resolve(strict=True)
+    for parent in path.parents:
+        if (parent / ".git").exists():
+            return parent
+    return path.parent
