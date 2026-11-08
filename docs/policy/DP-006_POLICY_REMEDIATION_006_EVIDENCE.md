@@ -1,5 +1,11 @@
 # DP-006 Policy Remediation 006 Closure Evidence
 
+> Correction notice: this file records the superseded closure candidate at
+> review baseline `9fffc4f4363e478ac8edba1edbb2e25867894ec3`. The current
+> result is in `DP-006_POLICY_REMEDIATION_006_CORRECTION_EVIDENCE.md`. Final
+> Assurance has not been started; the next gate is Independent REPAIR-006
+> Re-review.
+
 **Task:** DP-006-POLICY-REMEDIATION-006
 
 **Base commit:** `d924f7fafd8b63f653dea6966ea127e61c87e460`

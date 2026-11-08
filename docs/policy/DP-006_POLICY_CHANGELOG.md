@@ -135,6 +135,31 @@ authorization remain `HOLD` for PM/QA.
 Policy implementation final acceptance remains `HOLD`.
 No automatic REPAIR-007 is authorized.
 
+## DP-006-POLICY-REMEDIATION-006-CLOSURE-CORRECTION
+
+**Date:** 2026-11-08
+
+**Status:** closure-correction candidate for Independent REPAIR-006 Re-review
+
+### Fixed
+
+- derive the legacy Holdout Manifest SHA from the original sealed ledger;
+- serialize ledger appends and migrations, then reread and verify the expected
+  head under the lock;
+- validate the complete candidate ledger before an atomic replacement;
+- seal the complete Holdout `SourceIdentitySet`, including its descriptor and
+  sorted per-match source identities;
+- resolve source-set member configs as repository-relative paths;
+- use a source-only canonical projection so governance permission fields do not
+  enter Source Identity;
+- re-run Governance Authorization after permission restoration.
+
+### Not claimed
+
+This is an engineer correction candidate only. It does not start Final
+Assurance, authorize REPAIR-007 or merge PR #9, and it does not declare Policy
+implementation PASS.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08

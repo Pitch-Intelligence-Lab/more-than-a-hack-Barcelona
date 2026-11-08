@@ -1,5 +1,11 @@
 # DP-006 Policy Remediation 006 Closure Handoff
 
+> Correction notice: the reviewed closure result was returned for the bounded
+> C1/C2/C3 correction. The current gate is **Independent REPAIR-006 Re-review**.
+> Final Assurance has not been started. See
+> `DP-006_POLICY_REMEDIATION_006_CORRECTION_EVIDENCE.md` and the filled
+> `08_工程师交付回执.md`.
+
 ```text
 Task ID: DP-006-POLICY-REMEDIATION-006
 Base commit: d924f7fafd8b63f653dea6966ea127e61c87e460
@@ -18,15 +24,15 @@ R6.4 Migration targets from Git objects: PASS candidate
 R6.5 Migration ancestry: PASS candidate
 R6.6 No worktree self-report: PASS candidate
 R6.7 Existing repairs: PASS
-R6.8 Final Assurance readiness: READY FOR INDEPENDENT REVIEW
+R6.8 Final Assurance readiness: HOLD pending Independent REPAIR-006 Re-review
 
 R6-01 through R6-12: PASS
 RP5-01 through RP5-09: PASS
-Tests: 206 passed
-Warning-free: 206 passed with -W error
+Tests: 223 passed
+Warning-free: 223 passed with -W error
 Ruff: check passed
 Format: format check passed
-Invalid external-root: 206 passed
+Invalid external-root: 223 passed
 
 External data accessed: no
 Real evaluation run: no
