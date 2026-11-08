@@ -14,7 +14,7 @@
 
 **Audit snapshot implementation commit:** `748c4dbe6cd189e0a5f815e1127155ff45c9a85d`
 
-**Final docs-only evidence commit:** recorded in PR #9 after the audit evidence commit
+**Final docs-only evidence commit:** `86c1cd4c246c8ac14ec53d33e8c830476debca98`
 
 ## Status
 
