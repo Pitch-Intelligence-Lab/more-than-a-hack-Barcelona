@@ -16,13 +16,21 @@
 
 **Final docs-only evidence commit:** `86c1cd4c246c8ac14ec53d33e8c830476debca98`
 
+**Remote HEAD at Final Assurance:** `ee86017b5fdaa6c380fe1d8ad3562779399b085d`
+
 ## Status
 
 ```text
 Main Runner A2 Source Integrity TOCTOU: PASS
-Audit production A2 Source Integrity TOCTOU: FIX CANDIDATE
-P1 compromised trigger identity: FIX CANDIDATE
-P1 match-event identity binding: FIX CANDIDATE
+Audit production A2 Source Integrity TOCTOU: PASS
+P1 compromised trigger identity: PASS
+P1 match-event identity binding: PASS
+
+Final Assurance A1 Authorization: PASS
+Final Assurance A2 Source Integrity: PASS
+Final Assurance A3 Identity Integrity: PASS
+Final Assurance A4 Lifecycle Integrity: PASS
+Final Assurance A5 Reproducibility: PASS
 
 TA-01 through TA-08: PASS
 TO-01 through TO-12: PASS
@@ -33,14 +41,14 @@ R6-01 through R6-12: PASS
 RP5-01 through RP5-09: PASS
 
 Policy implementation final acceptance: HOLD
-Final Assurance: MUST RERUN
+Final Assurance: PASS
 PR #9: OPEN, UNMERGED, HOLD
 Real-data research: HOLD
 REPAIR-007: NOT APPROVED
 ```
 
-This document is an engineer handoff only. It does not issue Final Assurance
-PASS, Policy implementation PASS, merge approval or real-data authorization.
+This archive records independent Final Assurance PASS. It does not issue PM
+Policy implementation signature, merge approval or real-data authorization.
 
 ## Immutable source path
 
@@ -159,16 +167,23 @@ No DP-005, R5, frozen data package, stable tag or research tag is changed. No
 real external data was read, no real evaluation was run, and no training or
 tuning was performed.
 
-## Full Assurance rerun
+## Final Assurance archive
 
-The previous Final Assurance A2 result is superseded. The independent reviewer
-must rerun A1-A5 against the final docs-only HEAD and independently reproduce:
+Independent Final Assurance completed against the Audit Snapshot candidate:
 
-- TOCTOU normal and mismatch probes;
-- loader actual identity/checksum comparison;
-- P1 trigger identity binding;
-- ledger transition and hash-chain behavior;
-- all historical matrices.
+```text
+A1 Authorization: PASS
+A2 Source Integrity: PASS
+A3 Identity Integrity: PASS
+A4 Lifecycle Integrity: PASS
+A5 Reproducibility: PASS
+```
+
+The final archive index is `DP-006_FINAL_ARCHIVE_INDEX.md`. This docs-only
+archive does not change code or rerun code Assurance.
+
+`snapshot_digest` is deterministically derived from the verified immutable
+snapshot and actual checksums.
 
 ## Dormant limitations
 
@@ -179,6 +194,7 @@ Real temporal/phase verification: HOLD
 Cross-provider mappings: HOLD
 Active independent holdout: HOLD
 PR merge approval: HOLD
+REPAIR-007: NOT AUTHORIZED
 ```
 
 ## Reviewer commands

@@ -271,6 +271,31 @@ approval or real-data authorization.
 This does not declare Final Assurance PASS, Policy implementation PASS, merge
 approval or real-data authorization.
 
+## DP-006-FINAL-ARCHIVE
+
+**Date:** 2026-11-09
+
+**Status:** independent Final Assurance PASS archived; PM signature pending
+
+### Recorded
+
+- Final implementation commit `748c4dbe6cd189e0a5f815e1127155ff45c9a85d`;
+- Final documentation evidence commit
+  `86c1cd4c246c8ac14ec53d33e8c830476debca98`;
+- Remote HEAD at Final Assurance
+  `ee86017b5fdaa6c380fe1d8ad3562779399b085d`;
+- A1 Authorization, A2 Source Integrity, A3 Identity Integrity, A4 Lifecycle
+  Integrity and A5 Reproducibility all PASS;
+- 271 tests, invalid external-root, Ruff and format checks pass;
+- stable/research tags and frozen objects unchanged;
+- no real data access, training, tuning or real evaluation.
+
+### Boundary
+
+This is a docs-only archive. Policy implementation signature, PR merge and
+real-data research authorization remain PM decisions. No REPAIR-007 is
+authorized.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08

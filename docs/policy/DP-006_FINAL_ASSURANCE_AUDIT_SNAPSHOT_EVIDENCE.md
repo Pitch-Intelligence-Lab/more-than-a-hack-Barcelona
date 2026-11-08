@@ -13,10 +13,10 @@
 ## Status
 
 ```text
-Audit immutable snapshot: FIX CANDIDATE
-Audit authorization identity: FIX CANDIDATE
-Audit actual identity gate: FIX CANDIDATE
-Audit output provenance: FIX CANDIDATE
+Audit immutable snapshot: PASS
+Audit authorization identity: PASS
+Audit actual identity gate: PASS
+Audit output provenance: PASS
 Production mutable-path loader scan: PASS
 
 TA-01 through TA-08: PASS
@@ -28,14 +28,14 @@ R6-01 through R6-12: PASS
 RP5-01 through RP5-09: PASS
 
 Policy implementation final acceptance: HOLD
-Final Assurance: MUST RERUN
+Final Assurance A1-A5: PASS
 PR #9: OPEN, UNMERGED, HOLD
 Real-data research: HOLD
 REPAIR-007: NOT APPROVED
 ```
 
-This is engineer evidence only. It does not declare Final Assurance PASS,
-Policy implementation PASS, merge approval or real-data authorization.
+This evidence supports independent Final Assurance PASS. It does not issue PM
+Policy implementation signature, merge approval or real-data authorization.
 
 ## Before remediation
 
@@ -153,5 +153,6 @@ Research commit: cdfeaf3d1f06914a255c291859315f766eb8a945
 Frozen data package expected SHA-256: 8b053decd116b0f7913c6bc234cc82c48eb03a4ac93241ed632f975c9fe896b4
 ```
 
-No DP-005, R5, frozen data package, stable tag or research tag is changed. The
-prior Final Assurance result remains superseded and must be rerun in full.
+No DP-005, R5, frozen data package, stable tag or research tag is changed.
+The final docs-only archive records independent Final Assurance PASS without
+rerunning code Assurance or modifying implementation code.

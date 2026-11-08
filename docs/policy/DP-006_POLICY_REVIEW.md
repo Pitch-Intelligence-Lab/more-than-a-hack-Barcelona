@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** Audit snapshot remediation candidate; full Final Assurance rerun required
+**Status:** DP-006 Final Assurance PASS; PM Policy signature pending
 
 ## Scope
 
@@ -54,27 +54,31 @@ Official permission does not substitute for provider rights or internal authoriz
 
 ```text
 Policy design: PASS
-R3 model/governance identity separation: FIX CANDIDATE, PM/QA review required
-R3 audit-only legacy migration: FIX CANDIDATE, PM/QA review required
-R3 Holdout Manifest immutability: FIX CANDIDATE, PM/QA review required
-R3 Source Identity seal coverage: FIX CANDIDATE, Final Assurance review required
-R3 Migration Git-object verification: FIX CANDIDATE, Final Assurance review required
+R3 model/governance identity separation: PASS
+R3 audit-only legacy migration: PASS
+R3 Holdout Manifest immutability: PASS
+R3 Source Identity seal coverage: PASS
+R3 Migration Git-object verification: PASS
 R3 Migration atomicity: PASS
 R3 Multi-match SourceIdentitySet: PASS
 R3 Governance/Source separation: PASS
 R3 Multi-match production lifecycle: PASS
 R3 Partial-completion tuning contamination: PASS
 R3 Contamination/start linearization: PASS
-R5 Temporal integration: FIX CANDIDATE, PM/QA review required
+R5 Temporal integration: PASS within Final Assurance scope
 REPAIR-006 Re-review: PASS
-Final Assurance A2 TOCTOU: FIX CANDIDATE
-Audit production snapshot gate: FIX CANDIDATE
-P1 compromised trigger identity: FIX CANDIDATE
-P1 match-event identity binding: FIX CANDIDATE
+Final Assurance A1 Authorization: PASS
+Final Assurance A2 Source Integrity: PASS
+Final Assurance A3 Identity Integrity: PASS
+Final Assurance A4 Lifecycle Integrity: PASS
+Final Assurance A5 Reproducibility: PASS
+Audit production snapshot gate: PASS
+P1 compromised trigger identity: PASS
+P1 match-event identity binding: PASS
 Policy implementation final acceptance: HOLD
 PR #9: open, unmerged, PM/QA review required
-Final Assurance: prior result superseded; full rerun required
-REPAIR-007: not started
+Final Assurance: PASS
+REPAIR-007: not authorized
 Official rule traceability: PASS
 SkillCorner rights: HOLD
 Metrica rights: HOLD

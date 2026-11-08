@@ -1,9 +1,8 @@
 # DP-006 Policy Remediation 006 Closure Handoff
 
-> Audit snapshot notice: Final Assurance found a second A2 P0 in the Audit
-> production entry. The Audit snapshot remediation is an engineer candidate; the
-> prior Final Assurance result is superseded and a full rerun is required. See
-> `DP-006_FINAL_ASSURANCE_AUDIT_SNAPSHOT_EVIDENCE.md`,
+> Final archive notice: independent DP-006 Final Assurance A1-A5 is PASS.
+> Policy implementation signature, PR merge and real-data research remain
+> separate decisions. See `DP-006_FINAL_ARCHIVE_INDEX.md`,
 > `07_工程师交付回执.md` and `DP-006_FINAL_ASSURANCE_HANDOFF.md`.
 
 ```text
