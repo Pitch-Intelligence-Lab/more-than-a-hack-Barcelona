@@ -32,6 +32,7 @@ from mtah_possession.governance.authorization import (
     EVALUATION_PHASE_PROFILE,
     EVALUATION_POSSESSION_PROFILE,
     AuthorizedExternalRun,
+    build_governance_identity,
 )
 from mtah_possession.governance.policy import (
     DataUse,
@@ -84,6 +85,11 @@ def authorized_run() -> AuthorizedExternalRun:
         use_permissions=permissions,
         label_profiles=selected_profiles,
         freeze_hashes=None,
+        governance_identity=build_governance_identity(
+            policy_path=ROOT / "configs" / "policy" / "external-data-policy-v2.json",
+            provider="skillcorner",
+            source_revision=provider.source_revision,
+        ),
     )
 
 

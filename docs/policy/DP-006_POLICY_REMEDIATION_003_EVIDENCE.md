@@ -1,5 +1,9 @@
 # DP-006 Policy Remediation 003 Evidence
 
+> Historical third-round evidence. R3 was subsequently refined by
+> DP-006-POLICY-REMEDIATION-004 to separate model freeze from governance
+> authorization identity. See `DP-006_POLICY_REMEDIATION_004_EVIDENCE.md`.
+
 **Task:** DP-006-POLICY-REMEDIATION-003
 
 **Base commit:** `9c883b031c0496ed9053f794494322dca8d10201`

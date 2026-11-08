@@ -18,12 +18,15 @@ from mtah_possession.evaluation.external import (
 from mtah_possession.evaluation.runner import run_external_evaluation
 from mtah_possession.evaluation.splits import EvaluationMode
 from mtah_possession.governance.artifacts import compute_freeze_hashes
+from mtah_possession.governance.authorization import build_governance_identity
 from mtah_possession.governance.ledger import (
     HoldoutLedgerState,
     LedgerEvent,
     create_ledger,
     load_existing_ledger,
+    migrate_legacy_ledger,
     reduce_holdout_state,
+    stable_holdout_identity,
 )
 from mtah_possession.governance.policy import PolicyError
 from mtah_possession.validation.submission import sha256_file
@@ -627,8 +630,328 @@ def test_sm08_indeterminate_event_order_fails_closed(
         reduce_holdout_state(({"event_type": LedgerEvent.UNSEALED.value},))
 
 
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (("status", "HOLDOUT_SEAL_VERIFIED"), "HOLDOUT_SEAL_VERIFIED=HOLD"),
+        (("use", "evaluation_reference"), "evaluation_reference"),
+    ],
+)
+def test_fr01_fr02_permission_revocation_preserves_model_freeze(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    change: tuple[str, str],
+    message: str,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    freeze_before = compute_freeze_hashes(fixture["freeze_spec_path"])
+    identity_before = build_governance_identity(
+        policy_path=fixture["policy_path"],
+        provider="skillcorner",
+        source_revision=SOURCE_REVISION,
+    )
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("first attempt stops after ledger start")
+
+    with pytest.raises(RuntimeError, match="first attempt"):
+        run_prepared_promotion(fixture, loader=failing_loader)
+    state_before_denial = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1",),
+    ).state
+
+    values = json.loads(fixture["policy_path"].read_text(encoding="utf-8"))
+    if change[0] == "status":
+        values["providers"][0]["statuses"][change[1]] = "HOLD"
+    else:
+        values["providers"][0]["uses"][change[1]]["status"] = "HOLD"
+    fixture["policy_path"].write_text(json.dumps(values), encoding="utf-8")
+
+    freeze_after = compute_freeze_hashes(fixture["freeze_spec_path"])
+    identity_after = build_governance_identity(
+        policy_path=fixture["policy_path"],
+        provider="skillcorner",
+        source_revision=SOURCE_REVISION,
+    )
+    assert freeze_after == freeze_before
+    assert identity_after.authorization_status_digest != (
+        identity_before.authorization_status_digest
+    )
+
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match=message):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+    records = _ledger_records(fixture["ledger_dir"])
+    assert records[-1]["event_type"] == "AUTHORIZATION_DENIED"
+    assert "COMPROMISED" not in {record["event_type"] for record in records}
+    state_after_denial = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1",),
+    ).state
+    assert state_after_denial == state_before_denial
+    assert records[-1]["governance_identity"]["authorization_status_digest"] == (
+        identity_after.authorization_status_digest
+    )
+
+
+def test_fr03_permission_restoration_reuses_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    values = json.loads(fixture["policy_path"].read_text(encoding="utf-8"))
+    values["providers"][0]["statuses"]["HOLDOUT_SEAL_VERIFIED"] = "HOLD"
+    fixture["policy_path"].write_text(json.dumps(values), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="HOLDOUT_SEAL_VERIFIED=HOLD"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+    path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    assert _ledger_records(fixture["ledger_dir"])[0]["event_type"] == "AUTHORIZATION_DENIED"
+
+    values = json.loads(fixture["policy_path"].read_text(encoding="utf-8"))
+    values["providers"][0]["statuses"]["HOLDOUT_SEAL_VERIFIED"] = "PASS"
+    fixture["policy_path"].write_text(json.dumps(values), encoding="utf-8")
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_prepared_promotion(fixture)
+
+    assert list(fixture["ledger_dir"].glob("*.jsonl")) == [path]
+    records = _ledger_records(fixture["ledger_dir"])
+    assert records[0]["event_type"] == "AUTHORIZATION_DENIED"
+    assert [record["event_type"] for record in records[1:]] == [
+        "SEALED_VERIFIED",
+        "UNSEALED",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+    ]
+    assert "COMPROMISED" not in {record["event_type"] for record in records}
+
+
+def test_fr04_predictive_artifact_change_changes_freeze_and_compromises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    freeze_before = compute_freeze_hashes(fixture["freeze_spec_path"])
+    artifact_paths = fixture["artifact_paths"]
+    artifact_paths["prediction_code"].write_text("prediction=2\n", encoding="utf-8")
+    freeze_after = compute_freeze_hashes(fixture["freeze_spec_path"])
+    assert freeze_after.model != freeze_before.model
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="does not match"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+    records = _ledger_records(fixture["ledger_dir"])
+    assert [record["event_type"] for record in records] == ["COMPROMISED"]
+
+
+def test_fr05_governance_code_change_does_not_change_model_freeze(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    freeze_before = compute_freeze_hashes(fixture["freeze_spec_path"])
+    governance_file: Path = fixture["governance_file"]
+    governance_file.write_text("decision='changed'\n", encoding="utf-8")
+    freeze_after = compute_freeze_hashes(fixture["freeze_spec_path"])
+    assert freeze_after == freeze_before
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_prepared_promotion(fixture)
+    records = _ledger_records(fixture["ledger_dir"])
+    assert "COMPROMISED" not in {record["event_type"] for record in records}
+
+    real_spec = json.loads(
+        (ROOT / "configs" / "policy" / "artifact-freeze-v2.json").read_text(encoding="utf-8")
+    )
+    paths = [path for category_paths in real_spec["artifacts"].values() for path in category_paths]
+    assert not any("governance" in path for path in paths)
+    assert "configs/policy/external-data-policy-v2.json" not in paths
+
+
+def test_mg01_legacy_clean_ledger_is_migrated_in_place(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    records_before = _ledger_records(fixture["ledger_dir"])
+    path_before = next(fixture["ledger_dir"].glob("*.jsonl"))
+    holdout_id_before = records_before[0]["holdout_id"]
+    ledger = migrate_legacy_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1",),
+        model_freeze=fixture["model_freeze"],
+        governance_identity=fixture["governance_identity"],
+        holdout_manifest_sha256=sha256_file(fixture["holdout_path"]),
+        migration_commit=fixture["migration_commit"],
+        approver="qa-lead",
+        reason="separate legacy combined freeze from model and governance identities",
+    )
+    records = ledger.records()
+    assert ledger.path == path_before
+    assert ledger.holdout_id == holdout_id_before
+    assert records[0] == records_before[0]
+    migration = records[1]
+    assert migration["event_type"] == "FREEZE_PROTOCOL_MIGRATED"
+    assert migration["legacy_combined_freeze"] == records_before[0]["freeze_hashes"]
+    assert migration["new_model_freeze"]["model"] == fixture["model_freeze"].model
+    assert migration["governance_identity_digest"] == (
+        fixture["governance_identity"].authorization_status_digest
+    )
+    assert migration["old_code_commit"] == fixture["code_commit"]
+    assert migration["migration_commit"] == fixture["migration_commit"]
+    assert migration["approver"] == "qa-lead"
+
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_prepared_promotion(fixture)
+    assert ledger.state == HoldoutLedgerState.EVALUATION_COMPLETED
+
+
+def test_mg02_legacy_compromised_ledger_cannot_be_migrated_clean(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_legacy_migration(tmp_path, compromised=True)
+    path = next(fixture["ledger_dir"].glob("*.jsonl"))
+    before = path.read_text(encoding="utf-8")
+    with pytest.raises(PolicyError, match="COMPROMISED"):
+        migrate_legacy_ledger(
+            fixture["ledger_dir"],
+            provider="skillcorner",
+            match_ids=("holdout-1",),
+            model_freeze=fixture["model_freeze"],
+            governance_identity=fixture["governance_identity"],
+            holdout_manifest_sha256=sha256_file(fixture["holdout_path"]),
+            migration_commit=fixture["migration_commit"],
+            approver="qa-lead",
+            reason="attempted migration",
+        )
+    assert path.read_text(encoding="utf-8") == before
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="permanently COMPROMISED"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+
+
+def test_mg03_missing_or_tampered_migration_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing = prepare_legacy_migration(tmp_path / "missing")
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="requires explicit freeze migration"):
+        run_prepared_promotion(missing, loader=forbidden_loader)
+    assert calls == 0
+
+    tampered = prepare_legacy_migration(tmp_path / "tampered")
+    migrate_legacy_ledger(
+        tampered["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1",),
+        model_freeze=tampered["model_freeze"],
+        governance_identity=tampered["governance_identity"],
+        holdout_manifest_sha256=sha256_file(tampered["holdout_path"]),
+        migration_commit=tampered["migration_commit"],
+        approver="qa-lead",
+        reason="approved migration",
+    )
+    path = next(tampered["ledger_dir"].glob("*.jsonl"))
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    records[1]["governance_identity_digest"] = "0" * 64
+    path.write_text(
+        "".join(
+            json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n" for record in records
+        ),
+        encoding="utf-8",
+    )
+    calls = 0
+    with pytest.raises(PolicyError, match="governance identity digest"):
+        run_prepared_promotion(tampered, loader=forbidden_loader)
+    assert calls == 0
+
+
+def test_migration_cli_appends_explicit_protocol_event(tmp_path: Path) -> None:
+    fixture = prepare_legacy_migration(tmp_path)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "migrate_holdout_ledger.py"),
+            "--ledger-dir",
+            str(fixture["ledger_dir"]),
+            "--provider",
+            "skillcorner",
+            "--match-id",
+            "holdout-1",
+            "--freeze-spec",
+            str(fixture["freeze_spec_path"]),
+            "--policy",
+            str(fixture["policy_path"]),
+            "--source-revision",
+            SOURCE_REVISION,
+            "--holdout-manifest",
+            str(fixture["holdout_path"]),
+            "--migration-commit",
+            fixture["migration_commit"],
+            "--approver",
+            "qa-lead",
+            "--reason",
+            "approved protocol split",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    records = _ledger_records(fixture["ledger_dir"])
+    assert records[-1]["event_type"] == "FREEZE_PROTOCOL_MIGRATED"
+    assert records[-1]["approver"] == "qa-lead"
+
+
 def _new_ledger(fixture: dict):
     freeze = compute_freeze_hashes(fixture["freeze_spec_path"])
+    governance_identity = build_governance_identity(
+        policy_path=fixture["policy_path"],
+        provider="skillcorner",
+        source_revision=SOURCE_REVISION,
+    )
     return create_ledger(
         fixture["ledger_dir"],
         provider="skillcorner",
@@ -636,6 +959,7 @@ def _new_ledger(fixture: dict):
         freeze_hashes=freeze,
         holdout_manifest_sha256=sha256_file(fixture["holdout_path"]),
         code_commit=fixture["code_commit"],
+        governance_identity=governance_identity,
     )
 
 
@@ -647,3 +971,124 @@ def _ledger_records(ledger_dir: Path) -> list[dict]:
         for line in paths[0].read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def separated_artifact_spec(
+    tmp_path: Path,
+) -> tuple[Path, dict[str, Path], Path]:
+    artifact_root = tmp_path / "model-artifacts"
+    paths = {
+        "prediction_code": artifact_root / "prediction" / "model.py",
+        "feature_set": artifact_root / "features" / "features.py",
+        "data_transform": artifact_root / "data" / "transform.py",
+        "algorithm_configuration": artifact_root / "config" / "state.json",
+        "hyperparameters": artifact_root / "config" / "hyperparameters.json",
+        "evaluation_script": artifact_root / "evaluation" / "evaluate.py",
+        "metric_contract": artifact_root / "metrics" / "contract.md",
+    }
+    for name, path in paths.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{name}=1\n", encoding="utf-8")
+    governance_file = artifact_root / "governance" / "policy.py"
+    governance_file.parent.mkdir(parents=True, exist_ok=True)
+    governance_file.write_text("decision='original'\n", encoding="utf-8")
+    spec = {
+        "schema_version": "2.0",
+        "artifact_root": "model-artifacts",
+        "artifacts": {
+            name: [path.relative_to(artifact_root).as_posix()] for name, path in paths.items()
+        },
+        "category_reasons": {name: f"synthetic {name} reason" for name in paths},
+        "metric_contract_version": "1.1.0",
+    }
+    spec_path = tmp_path / "separated-freeze.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    return spec_path, paths, governance_file
+
+
+def prepare_separated_promotion(tmp_path: Path) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    spec_path, artifact_paths, governance_file = separated_artifact_spec(tmp_path)
+    freeze = compute_freeze_hashes(spec_path)
+    holdout_path = holdout_manifest(tmp_path, freeze, ["holdout-1"])
+    policy_path = allowed_policy(tmp_path)
+    code_commit = "abcdef0123456789abcdef0123456789abcdef01"
+    return {
+        "config_path": external_config(tmp_path),
+        "splits_path": split_manifest(tmp_path),
+        "policy_path": policy_path,
+        "holdout_path": holdout_path,
+        "freeze_spec_path": spec_path,
+        "ledger_dir": tmp_path / "ledger",
+        "code_commit": code_commit,
+        "artifact_paths": artifact_paths,
+        "governance_file": governance_file,
+        "freeze": freeze,
+    }
+
+
+def prepare_legacy_migration(
+    tmp_path: Path,
+    *,
+    compromised: bool = False,
+) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    legacy_spec_path, _legacy_paths = artifact_spec(tmp_path)
+    legacy_freeze = compute_freeze_hashes(legacy_spec_path)
+    holdout_path = holdout_manifest(tmp_path, legacy_freeze, ["holdout-1"])
+    policy_path = allowed_policy(tmp_path)
+    code_commit = "a" * 40
+    migration_commit = "b" * 40
+    provider, match_ids, holdout_id = stable_holdout_identity(
+        "skillcorner",
+        ("holdout-1",),
+    )
+    ledger_dir = tmp_path / "ledger"
+    ledger_dir.mkdir()
+    ledger_path = ledger_dir / f"{holdout_id}.jsonl"
+    record = {
+        "recorded_at": "2026-11-08T00:00:00+00:00",
+        "event_type": "COMPROMISED" if compromised else "SEALED_VERIFIED",
+        "provider": provider,
+        "holdout_id": holdout_id,
+        "match_ids": list(match_ids),
+        "freeze_hashes": {
+            "model": legacy_freeze.model,
+            "feature_set": legacy_freeze.feature_set,
+            "configuration": legacy_freeze.configuration,
+            "hyperparameters": legacy_freeze.hyperparameters,
+            "evaluation_script": legacy_freeze.evaluation_script,
+            "metric_contract_version": legacy_freeze.metric_contract_version,
+        },
+        "holdout_manifest_sha256": sha256_file(holdout_path),
+        "code_commit": code_commit,
+        "prediction_sha256": None,
+        "previous_record_sha256": None,
+        "reason": "legacy contamination" if compromised else None,
+    }
+    ledger_path.write_text(
+        json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    new_spec_path, artifact_paths, governance_file = separated_artifact_spec(tmp_path)
+    model_freeze = compute_freeze_hashes(new_spec_path)
+    governance_identity = build_governance_identity(
+        policy_path=policy_path,
+        provider="skillcorner",
+        source_revision=SOURCE_REVISION,
+    )
+    return {
+        "config_path": external_config(tmp_path),
+        "splits_path": split_manifest(tmp_path),
+        "policy_path": policy_path,
+        "holdout_path": holdout_path,
+        "freeze_spec_path": new_spec_path,
+        "ledger_dir": ledger_dir,
+        "code_commit": code_commit,
+        "migration_commit": migration_commit,
+        "model_freeze": model_freeze,
+        "governance_identity": governance_identity,
+        "artifact_paths": artifact_paths,
+        "governance_file": governance_file,
+    }

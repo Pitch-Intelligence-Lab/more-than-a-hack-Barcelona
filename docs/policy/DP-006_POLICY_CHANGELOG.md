@@ -116,3 +116,27 @@ merge and real-data research authorization remain `HOLD` for PM/QA.
 Policy implementation final acceptance, merge and real-data research
 authorization remain `HOLD` for PM/QA.
 
+## DP-006-POLICY-REMEDIATION-004
+
+**Date:** 2026-11-08
+
+**Status:** model/governance identity separation candidate for PM/QA review
+
+### Fixed
+
+- remove the external-data policy from the model freeze;
+- replace the all-source model path with explicit prediction, feature, data
+  transform, configuration, hyperparameter, evaluation and metric categories;
+- exclude policy files and governance-only code from model freeze comparison;
+- record a separate governance authorization identity on new ledger events;
+- preserve `AUTHORIZATION_DENIED` semantics when permissions change;
+- append `FREEZE_PROTOCOL_MIGRATED` to legacy ledgers without deleting or
+  rebuilding original events;
+- prevent a compromised legacy ledger from being migrated to a clean state;
+- add a production migration CLI with approval, rule and commit evidence.
+
+### Not claimed
+
+Policy implementation final acceptance, merge and real-data research
+authorization remain `HOLD` for PM/QA.
+

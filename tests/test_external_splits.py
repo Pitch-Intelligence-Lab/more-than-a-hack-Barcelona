@@ -84,6 +84,8 @@ def test_promotion_cli_rejects_single_match_before_external_access(tmp_path: Pat
             "holdout",
             "--output",
             str(tmp_path / "should-not-exist.json"),
+            "--holdout-ledger-dir",
+            str(tmp_path / "ledger"),
         ],
         capture_output=True,
         text=True,

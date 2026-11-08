@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,7 @@ from mtah_possession.governance.authorization import (
     EVALUATION_PHASE_PROFILE,
     EVALUATION_POSSESSION_PROFILE,
     authorize_external_run,
+    build_governance_identity,
 )
 from mtah_possession.governance.holdout import (
     FreezeHashes,
@@ -113,21 +114,28 @@ def run_external_evaluation(
             raise PolicyError("holdout evaluation is already completed and cannot be reused")
         if ledger_state == HoldoutLedgerState.EVALUATION_RUNNING:
             raise PolicyError("holdout evaluation is already running or indeterminate")
-        prior_freeze = ledger.lifecycle_freeze_hashes()
+        if ledger.requires_freeze_migration:
+            raise PolicyError("legacy holdout ledger requires explicit freeze migration")
+        prior_freeze = ledger.model_freeze_hashes()
         if prior_freeze is not None and prior_freeze != freeze_hashes:
+            identity = build_governance_identity(
+                policy_path=policy_path,
+                provider=provider_name,
+                source_revision=source_revision,
+            )
+            ledger = replace(ledger, governance_identity=identity)
             _append_compromised(
                 ledger,
                 reason="freeze identity changed after holdout verification",
             )
             raise PolicyError("holdout freeze identity changed after verification")
-        try:
-            holdout_manifest.require_frozen(freeze_hashes)
-        except HoldoutCompromisedError as error:
-            _append_compromised(ledger, reason=str(error))
-            raise
-        except PolicyError:
-            # Non-sealed or incomplete manifests remain authorization failures.
-            pass
+    governance_identity = build_governance_identity(
+        policy_path=policy_path,
+        provider=provider_name,
+        source_revision=source_revision,
+    )
+    if ledger is not None:
+        ledger = replace(ledger, governance_identity=governance_identity)
     try:
         authorized = authorize_external_run(
             policy_path=policy_path,
@@ -149,6 +157,8 @@ def run_external_evaluation(
             mode=mode,
             holdout_manifest=holdout_manifest,
             freeze_hashes=freeze_hashes,
+            governance_identity=governance_identity,
+            verify_holdout_freeze=not (ledger is not None and ledger.has_migration_event()),
         )
     except HoldoutCompromisedError as error:
         if ledger is not None:
@@ -198,6 +208,7 @@ def run_external_evaluation(
         "official_rule_revision": authorized.policy.official_rule_revision,
         "provider": provider_name,
         "source_revision": source_revision,
+        "governance_identity_digest": (authorized.governance_identity.authorization_status_digest),
         "evaluation_reference_status": authorized.use_permissions[
             DataUse.EVALUATION_REFERENCE
         ].status.value,

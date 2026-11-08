@@ -68,6 +68,7 @@ def test_promotion_precheck_fails_closed_before_external_loader(tmp_path: Path) 
             mode=EvaluationMode.PROMOTION,
             code_commit="fixture",
             policy_path=write_allowed_policy(tmp_path),
+            ledger_dir=tmp_path / "ledger",
             match_loader=forbidden_loader,
         )
     assert calls == 0
@@ -176,6 +177,8 @@ def test_2017461_in_holdout_fails_before_external_loader(tmp_path: Path) -> None
             mode=EvaluationMode.PROMOTION,
             code_commit="fixture",
             policy_path=write_allowed_policy(tmp_path),
+            holdout_manifest_path=ROOT / "configs" / "policy" / "holdout-manifest-v2.json",
+            ledger_dir=tmp_path / "ledger",
             match_loader=forbidden_loader,
         )
     assert calls == 0
