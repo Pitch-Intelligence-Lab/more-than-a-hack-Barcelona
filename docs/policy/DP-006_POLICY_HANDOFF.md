@@ -1,77 +1,49 @@
-# DP-006 Policy Remediation 004 Engineering Handoff
+# DP-006 Policy Remediation 005 Engineering Handoff
 
 ```text
-Task ID: DP-006-POLICY-REMEDIATION-004
-Base commit: d83cb9e0096a852e9245b8734111746403b0d337
+Task ID: DP-006-POLICY-REMEDIATION-005
+Base commit: c8c0661943008e0b73b6e0ab506ad589a3642144
 Branch: feature/DP-006-POLICY-v2
-Implementation commit: e3778fb96f9177cc6a92222299c4eb1bb0409faa
-Final HEAD at implementation submission: e3778fb96f9177cc6a92222299c4eb1bb0409faa
-Remote HEAD at implementation submission: e3778fb96f9177cc6a92222299c4eb1bb0409faa
+Implementation commit: 68ac7b2844a328db7e2f59781529cbb6e5ad0e26
+Final HEAD at implementation submission: 68ac7b2844a328db7e2f59781529cbb6e5ad0e26
+Remote HEAD at implementation submission: 68ac7b2844a328db7e2f59781529cbb6e5ad0e26
 PR: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 PR visibility/status: verified; OPEN, UNMERGED, HOLD
 PR base: feature/DP-006A-leakage-promotion-gate
 
-Model freeze categories:
-  prediction_code
-  feature_set
-  data_transform
-  algorithm_configuration
-  hyperparameters
-  evaluation_script
-  metric_contract
+R5.1 Migration audit-only: PASS candidate
+R5.2 No implicit Promotion or model replacement: PASS candidate
+R5.3 Verified migration provenance: PASS candidate
+R5.4 Manifest immutability: PASS candidate
+R5.5 Evaluation Identity coverage: PASS candidate
+R5.6 Split Identity coverage: PASS candidate
+R5.7 Compromised remains terminal: PASS candidate
+R5.8 Existing authorization/state-machine repairs: PASS
 
-Governance identity fields:
-  provider
-  source_revision
-  policy_version
-  policy_sha256
-  license_status
-  internal_research_authorization
-  evaluation_authorization
-  temporal_authorization
-  phase_authorization
-  holdout_seal_authorization
-  authorization_status_digest
-  evidence_ids
-
-Policy file removed from model freeze: yes
-Governance code excluded from model freeze: yes
-
-FR-01: PASS
-FR-02: PASS
-FR-03: PASS
-FR-04: PASS
-FR-05: PASS
-MG-01: PASS
-MG-02: PASS
-MG-03: PASS
-
-Existing state-machine regression: PASS
-Tests: 174 passed
-Warning-free: 174 passed with -W error
+RP5-01 through RP5-09: PASS
+Tests: 187 passed
+Warning-free: 187 passed with -W error
 Ruff: check passed
 Format: format check passed
-Invalid external-root: 174 passed
+Invalid external-root: 187 passed
 
 External data accessed: no
 Real evaluation run: no
 Training or tuning run: no
 Stable foundation changed: no
 Frozen data package changed: no
+PR merged: no
 ```
 
 ## Final review status
 
 ```text
-Model freeze category purity: FIX CANDIDATE
-Governance authorization identity separation: FIX CANDIDATE
-Legacy ledger freeze migration: FIX CANDIDATE
+Audit-only legacy migration: FIX CANDIDATE
+Immutable Holdout Manifest seal: FIX CANDIDATE
+Evaluation/Split freeze coverage: FIX CANDIDATE
 Policy implementation final acceptance: HOLD
 R5 synthetic Temporal integration: PASS and unchanged
 R5 real-data Temporal verification: HOLD
-SkillCorner rights: HOLD
-Metrica rights: HOLD
-SoccerTrack access: HOLD
 Real-data research activation: HOLD
 Merge: DENIED
 ```
@@ -81,20 +53,16 @@ PR #9.
 
 ## Evidence
 
-- `docs/policy/DP-006_POLICY_REMEDIATION_004_EVIDENCE.md` records before/after
-  model freeze values, governance digest changes, loader counts, and migration
-  event-chain evidence.
-- `configs/policy/artifact-freeze-v2.json` contains explicit schema-2 categories
-  and reasons.
-- `schemas/governance-authorization-identity.schema.json` defines the independent
-  governance identity.
-- `scripts/migrate_holdout_ledger.py` is the reviewed production migration entry.
-- `tests/test_holdout_gates.py` contains FR-01 through FR-05, MG-01 through MG-03
-  and all retained state-machine tests.
+- `docs/policy/DP-006_POLICY_REMEDIATION_005_EVIDENCE.md`
+- `docs/policy/06_工程师交付回执.md`
+- `schemas/holdout-migration-receipt.schema.json`
+- `src/mtah_possession/governance/migration.py`
+- `tests/test_holdout_gates.py`
 
 ## Remaining HOLD items
 
-- PM/QA final review of dual identities and legacy migration.
+- PM/QA acceptance of audit-only migration and seal binding.
+- Independently approved creation/activation of any replacement v2 seal.
 - Real provider rights and internal authorization.
 - Real field-level temporal verification.
 - Real phase-boundary verification.
