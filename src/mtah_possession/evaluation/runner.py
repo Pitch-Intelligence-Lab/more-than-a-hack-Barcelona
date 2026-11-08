@@ -43,6 +43,7 @@ from mtah_possession.governance.ledger import (
     HoldoutLedger,
     HoldoutLedgerState,
     LedgerEvent,
+    MatchLedgerState,
     create_ledger,
     manifest_path_has_conflicting_identity,
     sha256_path_identity,
@@ -107,6 +108,7 @@ def run_external_evaluation(
     ledger: HoldoutLedger | None = None
     if mode == EvaluationMode.PROMOTION:
         holdout_manifest = load_holdout_manifest(holdout_manifest_path)
+        current_match_id = str(manifest["match_id"])
         freeze_hashes = compute_freeze_hashes(freeze_spec_path)
         holdout_manifest_sha256 = sha256_file(holdout_manifest_path)
         holdout_manifest_path_sha256 = sha256_path_identity(holdout_manifest_path)
@@ -171,35 +173,26 @@ def run_external_evaluation(
             raise PolicyError("holdout ledger is permanently COMPROMISED")
         if ledger_state == HoldoutLedgerState.MIGRATED_AUDIT_ONLY:
             raise PolicyError("migrated holdout ledger is audit-only and cannot promote")
-        if ledger_state == HoldoutLedgerState.EVALUATION_COMPLETED:
-            raise PolicyError("holdout evaluation is already completed and cannot be reused")
-        if ledger_state == HoldoutLedgerState.EVALUATION_RUNNING:
-            raise PolicyError("holdout evaluation is already running or indeterminate")
         if ledger.requires_freeze_migration:
             raise PolicyError("legacy holdout ledger requires explicit freeze migration")
         if ledger.requires_split_protocol_reseal:
             raise PolicyError("pre-split holdout ledger requires a new approved seal")
         if ledger.requires_source_protocol_reseal:
             raise PolicyError("pre-source holdout ledger requires a new approved seal")
+        if ledger_state == HoldoutLedgerState.COMPLETED:
+            raise PolicyError("holdout evaluation is already completed and cannot be reused")
         sealed_manifest_sha256 = ledger.sealed_manifest_sha256()
         if sealed_manifest_sha256 is not None and sealed_manifest_sha256 != holdout_manifest_sha256:
             raise PolicyError("sealed Holdout Manifest SHA-256 has changed")
         sealed_split_sha256 = ledger.sealed_split_manifest_sha256()
         if sealed_split_sha256 is not None and sealed_split_sha256 != split_manifest_sha256:
-            raise PolicyError("sealed split manifest SHA-256 has changed")
+            raise PolicyError("changed sealed split manifest SHA-256")
         sealed_manifest_path_sha256 = ledger.sealed_manifest_path_sha256()
         if (
             sealed_manifest_path_sha256 is not None
             and sealed_manifest_path_sha256 != holdout_manifest_path_sha256
         ):
             raise PolicyError("sealed Holdout Manifest path has changed")
-        sealed_source_identity = ledger.sealed_source_identity()
-        if (
-            source_identity is not None
-            and sealed_source_identity is not None
-            and sealed_source_identity != source_identity
-        ):
-            raise PolicyError("sealed Source Identity has changed")
         sealed_source_set = ledger.sealed_source_identity_set()
         if (
             source_set is not None
@@ -211,7 +204,7 @@ def run_external_evaluation(
                 or sealed_source_set.identity_digests != source_set.identity_digests
             )
         ):
-            raise PolicyError("sealed SourceIdentitySet has changed")
+            raise PolicyError("sealed Source Identity set has changed")
         prior_freeze = ledger.model_freeze_hashes()
         if prior_freeze is not None and prior_freeze != freeze_hashes:
             if source_identity is None or source_set is None:
@@ -287,7 +280,11 @@ def run_external_evaluation(
                 source_identity=source_identity,
                 source_identity_set=source_set,
             )
-            ledger.append(LedgerEvent.AUTHORIZATION_DENIED, reason=str(error))
+            ledger.append(
+                LedgerEvent.AUTHORIZATION_DENIED,
+                match_id=str(manifest["match_id"]),
+                reason=str(error),
+            )
         raise
     if not code_commit.strip():
         raise ValueError("code commit is required")
@@ -296,11 +293,20 @@ def run_external_evaluation(
     if source_identity is None or source_set is None:
         raise source_error or PolicyError("holdout Source Identity is unavailable")
     if ledger is not None:
+        member_state = ledger.match_state(current_match_id)
+        if member_state == MatchLedgerState.RUNNING:
+            raise PolicyError(f"match {current_match_id} evaluation is already running")
+        if member_state == MatchLedgerState.COMPLETED:
+            raise PolicyError(f"match {current_match_id} evaluation is already completed")
+    if ledger is not None:
         if not ledger.has_event(LedgerEvent.SEALED_VERIFIED):
             ledger.append(LedgerEvent.SEALED_VERIFIED)
         if not ledger.has_event(LedgerEvent.UNSEALED):
             ledger.append(LedgerEvent.UNSEALED)
-        ledger.append(LedgerEvent.EVALUATION_STARTED)
+        ledger.append(
+            LedgerEvent.EVALUATION_STARTED,
+            match_id=str(manifest["match_id"]),
+        )
     try:
         match = match_loader(config_path, external_root)
         state_config = state_config_loader(state_config_path)
@@ -314,7 +320,11 @@ def run_external_evaluation(
         )
     except Exception as error:
         if ledger is not None:
-            ledger.append(LedgerEvent.EVALUATION_FAILED, reason=type(error).__name__)
+            ledger.append(
+                LedgerEvent.EVALUATION_FAILED,
+                match_id=str(manifest["match_id"]),
+                reason=type(error).__name__,
+            )
         raise
     if ledger is not None:
         prediction_hashes = ":".join(
@@ -322,6 +332,7 @@ def run_external_evaluation(
         )
         ledger.append(
             LedgerEvent.EVALUATION_COMPLETED,
+            match_id=str(manifest["match_id"]),
             prediction_sha256=hashlib.sha256(prediction_hashes.encode()).hexdigest(),
         )
     report = evaluation.to_dict()

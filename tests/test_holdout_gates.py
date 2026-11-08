@@ -19,14 +19,16 @@ from mtah_possession.evaluation.external import (
     evaluate_predictions,
 )
 from mtah_possession.evaluation.runner import run_external_evaluation
-from mtah_possession.evaluation.splits import EvaluationMode
+from mtah_possession.evaluation.splits import EvaluationMode, SplitManifestError
 from mtah_possession.governance.artifacts import compute_freeze_hashes
 from mtah_possession.governance.authorization import build_governance_identity
 from mtah_possession.governance.ledger import (
     HoldoutLedgerState,
     LedgerEvent,
+    MatchLedgerState,
     create_ledger,
     load_existing_ledger,
+    mark_holdout_used_for_tuning,
     migrate_legacy_ledger,
     reduce_holdout_state,
     sha256_path_identity,
@@ -289,6 +291,27 @@ def run_prepared_promotion(fixture: dict, *, loader=None):
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
         ),
+    )
+
+
+def run_multi_match(base: dict, match_id: str, *, loader=None):
+    index = {"holdout-1": "source_1", "holdout-2": "source_2"}[match_id]
+    return run_prepared_promotion(
+        {
+            **base,
+            "config_path": base[index],
+            "match_id": match_id,
+            "ledger_dir": base["ledger_dir"],
+        },
+        loader=loader,
+    )
+
+
+def load_multi_match_ledger(base: dict):
+    return load_existing_ledger(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
     )
 
 
@@ -1527,13 +1550,11 @@ def test_rc07_two_match_source_set_allows_both_matches(
         **base,
         "config_path": base["source_1"],
         "match_id": "holdout-1",
-        "ledger_dir": tmp_path / "ledger-1",
     }
     second = {
         **base,
         "config_path": base["source_2"],
         "match_id": "holdout-2",
-        "ledger_dir": tmp_path / "ledger-2",
     }
     run_prepared_promotion(first)
     run_prepared_promotion(second)
@@ -1559,8 +1580,14 @@ def test_rc07_two_match_source_set_allows_both_matches(
         )
         == source_set
     )
-    assert len(_ledger_records(first["ledger_dir"])) == 4
-    assert len(_ledger_records(second["ledger_dir"])) == 4
+    assert [record["event_type"] for record in _ledger_records(first["ledger_dir"])] == [
+        "SEALED_VERIFIED",
+        "UNSEALED",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+    ]
 
 
 def test_rc08_unknown_match_is_rejected_without_loader(
@@ -1772,6 +1799,385 @@ def test_rc13_single_match_source_set_remains_compatible(
     record = _ledger_records(fixture["ledger_dir"])[0]
     assert set(record["source_identity_set"]["source_identity_map"]) == {"holdout-1"}
     assert record["event_type"] == "SEALED_VERIFIED"
+
+
+def test_cl01_same_ledger_sequential_multi_match_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    run_multi_match(base, "holdout-2")
+    ledger = load_multi_match_ledger(base)
+    assert ledger.state == HoldoutLedgerState.COMPLETED
+    assert ledger.match_states == {
+        "holdout-1": MatchLedgerState.COMPLETED,
+        "holdout-2": MatchLedgerState.COMPLETED,
+    }
+    assert [record["event_type"] for record in ledger.records()] == [
+        "SEALED_VERIFIED",
+        "UNSEALED",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+    ]
+    lifecycle_matches = [
+        record["match_id"]
+        for record in ledger.records()
+        if record["event_type"].startswith("EVALUATION_")
+    ]
+    assert lifecycle_matches == [
+        "holdout-1",
+        "holdout-1",
+        "holdout-2",
+        "holdout-2",
+    ]
+
+
+def test_cl02_second_match_runs_after_first_completed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    after_first = load_multi_match_ledger(base)
+    assert after_first.match_state("holdout-1") == MatchLedgerState.COMPLETED
+    assert after_first.match_state("holdout-2") == MatchLedgerState.NOT_STARTED
+    run_multi_match(base, "holdout-2")
+    after_second = load_multi_match_ledger(base)
+    assert after_second.match_state("holdout-2") == MatchLedgerState.COMPLETED
+
+
+def test_cl03_completed_match_cannot_run_again(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="already completed"):
+        run_multi_match(base, "holdout-1", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+def test_cl04_failed_match_retries_independently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("synthetic first-match failure")
+
+    with pytest.raises(RuntimeError, match="synthetic first-match failure"):
+        run_multi_match(base, "holdout-1", loader=failing_loader)
+    failed = load_multi_match_ledger(base)
+    assert failed.match_state("holdout-1") == MatchLedgerState.FAILED
+    assert failed.match_state("holdout-2") == MatchLedgerState.NOT_STARTED
+    run_multi_match(base, "holdout-1")
+    retried = load_multi_match_ledger(base)
+    assert retried.match_state("holdout-1") == MatchLedgerState.COMPLETED
+    assert retried.match_state("holdout-2") == MatchLedgerState.NOT_STARTED
+
+
+def test_cl05_second_match_runs_after_first_match_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("synthetic first-match failure")
+
+    with pytest.raises(RuntimeError, match="synthetic first-match failure"):
+        run_multi_match(base, "holdout-1", loader=failing_loader)
+    run_multi_match(base, "holdout-2")
+    ledger = load_multi_match_ledger(base)
+    assert ledger.match_state("holdout-1") == MatchLedgerState.FAILED
+    assert ledger.match_state("holdout-2") == MatchLedgerState.COMPLETED
+    assert ledger.state == HoldoutLedgerState.IN_PROGRESS
+
+
+def test_cl06_partial_completion_is_not_holdout_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    ledger = load_multi_match_ledger(base)
+    assert ledger.match_state("holdout-1") == MatchLedgerState.COMPLETED
+    assert ledger.match_state("holdout-2") == MatchLedgerState.NOT_STARTED
+    assert ledger.state == HoldoutLedgerState.IN_PROGRESS
+    assert ledger.state != HoldoutLedgerState.COMPLETED
+
+
+def test_cl07_all_members_must_complete_for_holdout_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-2")
+    assert load_multi_match_ledger(base).state == HoldoutLedgerState.IN_PROGRESS
+    run_multi_match(base, "holdout-1")
+    ledger = load_multi_match_ledger(base)
+    assert all(state == MatchLedgerState.COMPLETED for state in ledger.match_states.values())
+    assert ledger.state == HoldoutLedgerState.COMPLETED
+
+
+def test_cl08_unknown_match_is_rejected_before_loader(tmp_path: Path) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    unknown = external_config(tmp_path, "holdout-3", "source-3.json")
+    fixture = {**base, "config_path": unknown, "match_id": "holdout-3"}
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises((PolicyError, SplitManifestError)):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+
+
+def test_cl09_swapped_source_identity_mapping_is_rejected(
+    tmp_path: Path,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    swapped = write_source_set_descriptor(
+        tmp_path,
+        [
+            {"match_id": "holdout-1", "source_config": base["source_2"].name},
+            {"match_id": "holdout-2", "source_config": base["source_1"].name},
+        ],
+        filename="source-set-swapped-cl09.json",
+    )
+    fixture = {**base, "source_set_path": swapped}
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="identity does not match"):
+        run_prepared_promotion(fixture, loader=forbidden_loader)
+    assert calls == 0
+
+
+def test_cl10_source_file_change_blocks_other_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("seal established")
+
+    with pytest.raises(RuntimeError, match="seal established"):
+        run_multi_match(base, "holdout-1", loader=failing_loader)
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    values = json.loads(base["source_2"].read_text(encoding="utf-8"))
+    values["files"]["tracking"]["sha256"] = "8" * 64
+    base["source_2"].write_text(json.dumps(values), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="Source Identity"):
+        run_multi_match(base, "holdout-2", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+def test_cl11_source_set_member_change_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("seal established")
+
+    with pytest.raises(RuntimeError, match="seal established"):
+        run_multi_match(base, "holdout-1", loader=failing_loader)
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    members = json.loads(base["source_set_path"].read_text(encoding="utf-8"))["members"]
+    base["source_set_path"] = write_source_set_descriptor(
+        tmp_path,
+        members[:1],
+        filename="source-set-removed-cl11.json",
+    )
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="do not equal"):
+        run_multi_match(base, "holdout-1", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+def test_cl12_independent_ledgers_cannot_form_completed_holdout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_a = prepare_multi_source_promotion(tmp_path / "a")
+    base_b = prepare_multi_source_promotion(tmp_path / "b")
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base_a, "holdout-1")
+    run_multi_match(base_b, "holdout-1")
+    ledger_a = load_multi_match_ledger(base_a)
+    ledger_b = load_multi_match_ledger(base_b)
+    assert ledger_a.path != ledger_b.path
+    assert ledger_a.state == HoldoutLedgerState.IN_PROGRESS
+    assert ledger_b.state == HoldoutLedgerState.IN_PROGRESS
+    assert ledger_a.state != HoldoutLedgerState.COMPLETED
+    assert ledger_b.state != HoldoutLedgerState.COMPLETED
+
+
+def test_cl13_single_match_lifecycle_remains_compatible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_separated_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_prepared_promotion(fixture)
+    ledger = load_existing_ledger(
+        fixture["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1",),
+    )
+    assert ledger.match_state("holdout-1") == MatchLedgerState.COMPLETED
+    assert ledger.state == HoldoutLedgerState.COMPLETED
+
+
+def test_cl14_compromised_holdout_rejects_every_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+    run_multi_match(base, "holdout-1")
+    run_multi_match(base, "holdout-2")
+    completed = [
+        record
+        for record in load_multi_match_ledger(base).records()
+        if record["event_type"] == "EVALUATION_COMPLETED" and record["match_id"] == "holdout-1"
+    ][-1]
+    mark_holdout_used_for_tuning(
+        base["ledger_dir"],
+        provider="skillcorner",
+        match_ids=("holdout-1", "holdout-2"),
+        prediction_sha256=completed["prediction_sha256"],
+        reason="synthetic tuning contamination",
+    )
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    for match_id in ("holdout-1", "holdout-2"):
+        with pytest.raises(PolicyError, match="permanently COMPROMISED"):
+            run_multi_match(base, match_id, loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+    assert load_multi_match_ledger(base).state == HoldoutLedgerState.COMPROMISED
+
+
+def test_cl15_identity_failure_does_not_mutate_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("seal established")
+
+    with pytest.raises(RuntimeError, match="seal established"):
+        run_multi_match(base, "holdout-1", loader=failing_loader)
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    values = json.loads(base["source_1"].read_text(encoding="utf-8"))
+    values["fps"] = 20
+    base["source_1"].write_text(json.dumps(values), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="Source Identity"):
+        run_multi_match(base, "holdout-1", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+
+
+def test_cl16_running_match_blocks_only_that_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = prepare_multi_source_promotion(tmp_path)
+    monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
+
+    def failing_loader(*_args, **_kwargs):
+        raise RuntimeError("synthetic first-match failure")
+
+    with pytest.raises(RuntimeError, match="synthetic first-match failure"):
+        run_multi_match(base, "holdout-1", loader=failing_loader)
+    ledger = load_multi_match_ledger(base)
+    ledger.append(LedgerEvent.EVALUATION_STARTED, match_id="holdout-1")
+    assert load_multi_match_ledger(base).match_state("holdout-1") == MatchLedgerState.RUNNING
+    ledger_path = next(base["ledger_dir"].glob("*.jsonl"))
+    before = ledger_path.read_bytes()
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="already running"):
+        run_multi_match(base, "holdout-1", loader=forbidden_loader)
+    assert calls == 0
+    assert ledger_path.read_bytes() == before
+    run_multi_match(base, "holdout-2")
+    states = load_multi_match_ledger(base).match_states
+    assert states["holdout-1"] == MatchLedgerState.RUNNING
+    assert states["holdout-2"] == MatchLedgerState.COMPLETED
 
 
 def _migrate_fixture(

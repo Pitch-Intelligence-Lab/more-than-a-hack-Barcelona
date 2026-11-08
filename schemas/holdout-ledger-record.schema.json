@@ -18,6 +18,7 @@
     "reason"
   ],
   "properties": {
+    "schema_version": {"const": "6.0"},
     "recorded_at": {"type": "string", "minLength": 1},
     "event_type": {
       "type": "string",
@@ -35,6 +36,7 @@
     "provider": {"type": "string", "minLength": 1},
     "holdout_id": {"type": "string", "minLength": 1},
     "match_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "match_id": {"type": ["string", "null"], "minLength": 1},
     "freeze_hashes": {
       "type": "object",
       "additionalProperties": false,
@@ -129,5 +131,34 @@
     "migration_commit": {"type": "string", "minLength": 40},
     "migration_rule_version": {"type": "string", "minLength": 1},
     "approver": {"type": "string", "minLength": 1}
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "freeze_protocol_version": {"const": "source-set-match-lifecycle-v6"}
+        },
+        "required": ["freeze_protocol_version"]
+      },
+      "then": {
+        "required": ["schema_version", "match_id"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": ["EVALUATION_STARTED", "EVALUATION_FAILED", "EVALUATION_COMPLETED"]
+          }
+        },
+        "required": ["event_type"]
+      },
+      "then": {
+        "required": ["match_id"],
+        "properties": {
+          "match_id": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  ]
 }

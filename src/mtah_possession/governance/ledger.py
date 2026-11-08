@@ -49,14 +49,23 @@ class LedgerEvent(StrEnum):
     FREEZE_PROTOCOL_MIGRATED = "FREEZE_PROTOCOL_MIGRATED"
 
 
+class MatchLedgerState(StrEnum):
+    NOT_STARTED = "NOT_STARTED"
+    RUNNING = "RUNNING"
+    FAILED = "FAILED"
+    COMPLETED = "COMPLETED"
+
+
 class HoldoutLedgerState(StrEnum):
     SEALED = "SEALED"
     UNSEALED = "UNSEALED"
-    EVALUATION_RUNNING = "EVALUATION_RUNNING"
-    EVALUATION_COMPLETED = "EVALUATION_COMPLETED"
-    EVALUATION_FAILED = "EVALUATION_FAILED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
     COMPROMISED = "COMPROMISED"
     MIGRATED_AUDIT_ONLY = "MIGRATED_AUDIT_ONLY"
+    EVALUATION_RUNNING = "IN_PROGRESS"
+    EVALUATION_COMPLETED = "COMPLETED"
+    EVALUATION_FAILED = "IN_PROGRESS"
 
 
 LEGACY_RECORD_FIELDS = frozenset(
@@ -85,12 +94,15 @@ V4_RECORD_FIELDS = V3_RECORD_FIELDS | {
     "source_identity",
 }
 V5_RECORD_FIELDS = V4_RECORD_FIELDS | {"source_identity_set"}
+V6_RECORD_FIELDS = V5_RECORD_FIELDS | {"schema_version", "match_id"}
 MIGRATION_RECORD_FIELDS = V5_RECORD_FIELDS | {"migration_receipt"}
 LEGACY_FREEZE_PROTOCOL_VERSION = "combined-policy-model-v1"
 PRE_SPLIT_FREEZE_PROTOCOL_VERSION = "model-governance-separated-v2"
 SEAL_BOUND_FREEZE_PROTOCOL_VERSION = "seal-bound-evaluation-v3"
 SOURCE_SEALED_PROTOCOL_VERSION = "source-sealed-evaluation-v4"
 SOURCE_SET_SEALED_PROTOCOL_VERSION = "source-set-sealed-v5"
+MATCH_LIFECYCLE_PROTOCOL_VERSION = "source-set-match-lifecycle-v6"
+V6_RECORD_SCHEMA_VERSION = "6.0"
 MIGRATION_RULE_VERSION = "1.0"
 _LIFECYCLE_FREEZE_EVENTS = {
     LedgerEvent.SEALED_VERIFIED.value,
@@ -98,6 +110,11 @@ _LIFECYCLE_FREEZE_EVENTS = {
     LedgerEvent.EVALUATION_STARTED.value,
     LedgerEvent.EVALUATION_COMPLETED.value,
     LedgerEvent.EVALUATION_FAILED.value,
+}
+_MATCH_EVENTS = {
+    LedgerEvent.EVALUATION_STARTED,
+    LedgerEvent.EVALUATION_FAILED,
+    LedgerEvent.EVALUATION_COMPLETED,
 }
 
 
@@ -120,6 +137,7 @@ class HoldoutLedger:
         self,
         event_type: LedgerEvent,
         *,
+        match_id: str | None = None,
         prediction_sha256: str | None = None,
         reason: str | None = None,
     ) -> dict[str, Any]:
@@ -133,15 +151,22 @@ class HoldoutLedger:
             raise PolicyError("holdout ledger append requires a Source Identity")
         if self.source_identity_set is None:
             raise PolicyError("holdout ledger append requires a SourceIdentitySet")
+        effective_match_id = match_id
+        if event_type in _MATCH_EVENTS and effective_match_id is None:
+            if len(self.match_ids) != 1:
+                raise PolicyError(f"holdout ledger {event_type.value} requires a match ID")
+            effective_match_id = self.match_ids[0]
         with _ledger_lock(self.path):
             existing = self.records()
             previous = _record_sha256(existing[-1]) if existing else None
             record = {
+                "schema_version": V6_RECORD_SCHEMA_VERSION,
                 "recorded_at": datetime.now(UTC).isoformat(),
                 "event_type": event_type.value,
                 "provider": self.provider,
                 "holdout_id": self.holdout_id,
                 "match_ids": list(self.match_ids),
+                "match_id": effective_match_id,
                 "freeze_hashes": _freeze_dict(self.freeze_hashes),
                 "holdout_manifest_sha256": self.holdout_manifest_sha256,
                 "code_commit": self.code_commit,
@@ -149,7 +174,7 @@ class HoldoutLedger:
                 "previous_record_sha256": previous,
                 "reason": reason,
                 "governance_identity": self.governance_identity.to_dict(),
-                "freeze_protocol_version": SOURCE_SET_SEALED_PROTOCOL_VERSION,
+                "freeze_protocol_version": MATCH_LIFECYCLE_PROTOCOL_VERSION,
                 "holdout_manifest_path_sha256": self.holdout_manifest_path_sha256,
                 "split_manifest_sha256": self.split_manifest_sha256,
                 "source_config_sha256": self.source_identity.source_config_sha256,
@@ -260,6 +285,15 @@ class HoldoutLedger:
         return reduce_holdout_state(self.records())
 
     @property
+    def match_states(self) -> dict[str, MatchLedgerState]:
+        return reduce_match_states(self.records(), match_ids=self.match_ids)
+
+    def match_state(self, match_id: str) -> MatchLedgerState:
+        if match_id not in self.match_ids:
+            raise PolicyError("match is not registered in the Holdout set")
+        return self.match_states[match_id]
+
+    @property
     def status(self) -> str:
         return self.state.value
 
@@ -286,7 +320,7 @@ class HoldoutLedger:
     @property
     def requires_source_protocol_reseal(self) -> bool:
         records = self.records()
-        return bool(records) and _ledger_record_kind(records[0]) in {"v3", "v4"}
+        return bool(records) and _ledger_record_kind(records[0]) in {"v3", "v4", "v5"}
 
     def sealed_manifest_sha256(self) -> str | None:
         for record in self.records():
@@ -298,7 +332,7 @@ class HoldoutLedger:
         for record in self.records():
             if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value and _ledger_record_kind(
                 record
-            ) in {"v3", "v4"}:
+            ) in {"v3", "v4", "v5", "v6"}:
                 return str(record["split_manifest_sha256"])
         return None
 
@@ -306,24 +340,24 @@ class HoldoutLedger:
         for record in self.records():
             if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value and _ledger_record_kind(
                 record
-            ) in {"v3", "v4"}:
+            ) in {"v3", "v4", "v5", "v6"}:
                 return str(record["holdout_manifest_path_sha256"])
         return None
 
     def sealed_source_identity(self) -> SourceIdentity | None:
         for record in self.records():
-            if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value and _ledger_record_kind(
-                record
-            ) in {"v4", "v5"}:
+            if (
+                record["event_type"] == LedgerEvent.SEALED_VERIFIED.value
+                and _ledger_record_kind(record) == "v4"
+            ):
                 return source_identity_from_dict(record["source_identity"])
         return None
 
     def sealed_source_identity_set(self) -> SourceIdentitySet | None:
         for record in self.records():
-            if (
-                record["event_type"] == LedgerEvent.SEALED_VERIFIED.value
-                and _ledger_record_kind(record) == "v5"
-            ):
+            if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value and _ledger_record_kind(
+                record
+            ) in {"v5", "v6"}:
                 return source_identity_set_from_dict(record["source_identity_set"])
         return None
 
@@ -344,7 +378,7 @@ class HoldoutLedger:
         for record in reversed(records):
             if record["event_type"] == LedgerEvent.FREEZE_PROTOCOL_MIGRATED.value:
                 return _freeze_from_record(record)
-            if _ledger_record_kind(record) in {"v3", "v4", "v5"}:
+            if _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}:
                 return _freeze_from_record(record)
         return None
 
@@ -352,7 +386,106 @@ class HoldoutLedger:
 def reduce_holdout_state(
     records: Sequence[Mapping[str, Any]],
 ) -> HoldoutLedgerState:
-    """Derive lifecycle state from validated event order."""
+    """Derive the aggregate state for legacy or V6 member-level lifecycles."""
+    if any(_ledger_record_kind(record) == "v6" for record in records):
+        return _reduce_v6_holdout_state(records)
+    return _reduce_legacy_holdout_state(records)
+
+
+def reduce_match_states(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    match_ids: Sequence[str] | None = None,
+) -> dict[str, MatchLedgerState]:
+    """Derive each registered match state from a validated V6 ledger."""
+    registered: set[str] = set(match_ids or ())
+    for record in records:
+        values = record.get("match_ids")
+        if isinstance(values, list):
+            registered.update(str(value) for value in values)
+    if not registered:
+        return {}
+    states = {match_id: MatchLedgerState.NOT_STARTED for match_id in sorted(registered)}
+    sealed = False
+    unsealed = False
+    compromised = False
+    for record in records:
+        if _ledger_record_kind(record) != "v6":
+            continue
+        event = LedgerEvent(record["event_type"])
+        match_id = record["match_id"]
+        if compromised:
+            raise PolicyError("holdout ledger has events after COMPROMISED")
+        if event == LedgerEvent.SEALED_VERIFIED:
+            if sealed or unsealed or match_id is not None:
+                raise PolicyError("holdout ledger has an invalid collection seal")
+            sealed = True
+            continue
+        if event == LedgerEvent.UNSEALED:
+            if not sealed or unsealed or match_id is not None:
+                raise PolicyError("holdout ledger has an invalid UNSEALED transition")
+            if any(state != MatchLedgerState.NOT_STARTED for state in states.values()):
+                raise PolicyError("holdout ledger unsealed after match execution started")
+            unsealed = True
+            continue
+        if event == LedgerEvent.COMPROMISED:
+            if match_id is not None:
+                raise PolicyError("COMPROMISED must be a collection-level event")
+            compromised = True
+            continue
+        if event == LedgerEvent.AUTHORIZATION_DENIED:
+            if sealed and match_id is None:
+                raise PolicyError("authorization denial after seal requires a match ID")
+            if match_id is not None and match_id not in states:
+                raise PolicyError("authorization denial references an unknown match")
+            continue
+        if event not in _MATCH_EVENTS:
+            continue
+        if not sealed or not unsealed:
+            raise PolicyError("match evaluation event occurred before Holdout unseal")
+        if not isinstance(match_id, str) or match_id not in states:
+            raise PolicyError("match evaluation event references an unknown match")
+        current = states[match_id]
+        if event == LedgerEvent.EVALUATION_STARTED:
+            if current not in {MatchLedgerState.NOT_STARTED, MatchLedgerState.FAILED}:
+                raise PolicyError(f"match {match_id} has an invalid EVALUATION_STARTED transition")
+            states[match_id] = MatchLedgerState.RUNNING
+        elif event == LedgerEvent.EVALUATION_FAILED:
+            if current != MatchLedgerState.RUNNING:
+                raise PolicyError(f"match {match_id} has an invalid EVALUATION_FAILED transition")
+            states[match_id] = MatchLedgerState.FAILED
+        elif event == LedgerEvent.EVALUATION_COMPLETED:
+            if current != MatchLedgerState.RUNNING:
+                raise PolicyError(
+                    f"match {match_id} has an invalid EVALUATION_COMPLETED transition"
+                )
+            states[match_id] = MatchLedgerState.COMPLETED
+    return states
+
+
+def _reduce_v6_holdout_state(
+    records: Sequence[Mapping[str, Any]],
+) -> HoldoutLedgerState:
+    states = reduce_match_states(records)
+    if any(record["event_type"] == LedgerEvent.COMPROMISED.value for record in records):
+        return HoldoutLedgerState.COMPROMISED
+    sealed = any(record["event_type"] == LedgerEvent.SEALED_VERIFIED.value for record in records)
+    if not sealed:
+        return HoldoutLedgerState.SEALED
+    unsealed = any(record["event_type"] == LedgerEvent.UNSEALED.value for record in records)
+    if not unsealed:
+        return HoldoutLedgerState.SEALED
+    if states and all(state == MatchLedgerState.COMPLETED for state in states.values()):
+        return HoldoutLedgerState.COMPLETED
+    if all(state == MatchLedgerState.NOT_STARTED for state in states.values()):
+        return HoldoutLedgerState.UNSEALED
+    return HoldoutLedgerState.IN_PROGRESS
+
+
+def _reduce_legacy_holdout_state(
+    records: Sequence[Mapping[str, Any]],
+) -> HoldoutLedgerState:
+    """Derive lifecycle state for legacy collection-level records."""
     state = HoldoutLedgerState.SEALED
     sealed_verified = False
     for record in records:
@@ -486,12 +619,12 @@ def load_existing_ledger(
     )
     source_identity = (
         source_identity_from_dict(last["source_identity"])
-        if _ledger_record_kind(last) in {"v4", "v5", "migration"}
+        if _ledger_record_kind(last) in {"v4", "v5", "v6", "migration"}
         else None
     )
     source_identity_set = (
         source_identity_set_from_dict(last["source_identity_set"])
-        if _ledger_record_kind(last) in {"v5", "migration"}
+        if _ledger_record_kind(last) in {"v5", "v6", "migration"}
         else None
     )
     return HoldoutLedger(
@@ -503,12 +636,12 @@ def load_existing_ledger(
         holdout_manifest_sha256=str(last["holdout_manifest_sha256"]),
         holdout_manifest_path_sha256=(
             str(last["holdout_manifest_path_sha256"])
-            if _ledger_record_kind(last) in {"v3", "v4", "v5", "migration"}
+            if _ledger_record_kind(last) in {"v3", "v4", "v5", "v6", "migration"}
             else None
         ),
         split_manifest_sha256=(
             str(last["split_manifest_sha256"])
-            if _ledger_record_kind(last) in {"v3", "v4", "v5", "migration"}
+            if _ledger_record_kind(last) in {"v3", "v4", "v5", "v6", "migration"}
             else None
         ),
         code_commit=str(last["code_commit"]),
@@ -630,8 +763,9 @@ def mark_holdout_used_for_tuning(
         record
         for record in ledger.records()
         if record["event_type"] == LedgerEvent.EVALUATION_COMPLETED.value
+        and record["prediction_sha256"] == prediction_sha256
     ]
-    if not completed or completed[-1]["prediction_sha256"] != prediction_sha256:
+    if not completed:
         raise PolicyError("prediction SHA-256 does not match the completed evaluation")
     ledger.append(
         LedgerEvent.COMPROMISED,
@@ -728,9 +862,11 @@ def _validate_record(
         raise PolicyError("source-sealed ledger record has missing or unknown fields")
     if kind == "v5" and set(record) != V5_RECORD_FIELDS:
         raise PolicyError("source-set ledger record has missing or unknown fields")
+    if kind == "v6" and set(record) != V6_RECORD_FIELDS:
+        raise PolicyError("match-lifecycle ledger record has missing or unknown fields")
     if kind == "migration" and set(record) != MIGRATION_RECORD_FIELDS:
         raise PolicyError("holdout migration record has missing or unknown fields")
-    if kind not in {"legacy", "v2", "v3", "v4", "v5", "migration"}:
+    if kind not in {"legacy", "v2", "v3", "v4", "v5", "v6", "migration"}:
         raise PolicyError("holdout ledger record has missing or unknown fields")
     try:
         event = LedgerEvent(record["event_type"])
@@ -764,16 +900,26 @@ def _validate_record(
         raise PolicyError("holdout ledger completed event requires a prediction SHA-256")
     if event == LedgerEvent.FREEZE_PROTOCOL_MIGRATED and kind != "migration":
         raise PolicyError("FREEZE_PROTOCOL_MIGRATED record is incomplete")
-    if kind in {"v3", "v4", "v5", "migration"}:
-        expected_protocol = (
-            SEAL_BOUND_FREEZE_PROTOCOL_VERSION
-            if kind == "v3"
-            else (
-                SOURCE_SEALED_PROTOCOL_VERSION
-                if kind == "v4"
-                else SOURCE_SET_SEALED_PROTOCOL_VERSION
-            )
-        )
+    if kind == "v6":
+        if record["schema_version"] != V6_RECORD_SCHEMA_VERSION:
+            raise PolicyError("match-lifecycle ledger schema version is unsupported")
+        match_id = record["match_id"]
+        if event in _MATCH_EVENTS:
+            if not isinstance(match_id, str) or match_id not in match_ids:
+                raise PolicyError(f"{event.value} must reference a registered Holdout match")
+        elif event == LedgerEvent.AUTHORIZATION_DENIED:
+            if match_id is not None and match_id not in match_ids:
+                raise PolicyError("authorization denial references an unknown match")
+        elif match_id is not None:
+            raise PolicyError(f"{event.value} must be a collection-level event")
+    if kind in {"v3", "v4", "v5", "v6", "migration"}:
+        expected_protocol = {
+            "v3": SEAL_BOUND_FREEZE_PROTOCOL_VERSION,
+            "v4": SOURCE_SEALED_PROTOCOL_VERSION,
+            "v5": SOURCE_SET_SEALED_PROTOCOL_VERSION,
+            "v6": MATCH_LIFECYCLE_PROTOCOL_VERSION,
+            "migration": SOURCE_SET_SEALED_PROTOCOL_VERSION,
+        }[kind]
         if record["freeze_protocol_version"] != expected_protocol:
             raise PolicyError("freeze protocol version is unsupported")
         _validate_sha256(
@@ -781,11 +927,11 @@ def _validate_record(
             "Manifest path SHA-256",
         )
         _validate_sha256(record["split_manifest_sha256"], "split manifest SHA-256")
-    if kind in {"v4", "v5", "migration"}:
+    if kind in {"v4", "v5", "v6", "migration"}:
         source_identity = source_identity_from_dict(record["source_identity"])
         if source_identity.source_config_sha256 != record["source_config_sha256"]:
             raise PolicyError("source config SHA does not match Source Identity")
-    if kind in {"v5", "migration"}:
+    if kind in {"v5", "v6", "migration"}:
         source_set = source_identity_set_from_dict(record["source_identity_set"])
         if source_set.provider != record["provider"]:
             raise PolicyError("SourceIdentitySet provider does not match ledger")
@@ -902,6 +1048,8 @@ def _ledger_record_kind(record: Mapping[str, Any]) -> str:
         return "v4"
     if fields == V5_RECORD_FIELDS:
         return "v5"
+    if fields == V6_RECORD_FIELDS:
+        return "v6"
     if fields == MIGRATION_RECORD_FIELDS:
         return "migration"
     return "invalid"
@@ -928,6 +1076,10 @@ def _validate_protocol_sequence(records: Sequence[Mapping[str, Any]]) -> None:
     if kinds[0] == "v5":
         if any(kind != "v5" for kind in kinds):
             raise PolicyError("source-set holdout ledger has mixed protocol records")
+        return
+    if kinds[0] == "v6":
+        if any(kind != "v6" for kind in kinds):
+            raise PolicyError("match-lifecycle holdout ledger has mixed protocol records")
         return
     if kinds[0] != "legacy":
         raise PolicyError("holdout ledger must begin with a legacy, v2 or v3 record")
@@ -957,7 +1109,7 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
         if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value:
             if sealed_manifest_sha256 is None:
                 sealed_manifest_sha256 = str(record["holdout_manifest_sha256"])
-                if _ledger_record_kind(record) in {"v3", "v4", "v5"}:
+                if _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}:
                     sealed_manifest_path_sha256 = str(record["holdout_manifest_path_sha256"])
                     sealed_split_sha256 = str(record["split_manifest_sha256"])
                 if _ledger_record_kind(record) == "v4":
@@ -965,7 +1117,7 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
                     sealed_source_identity_sha256 = str(
                         record["source_identity"]["source_identity_sha256"]
                     )
-                if _ledger_record_kind(record) == "v5":
+                if _ledger_record_kind(record) in {"v5", "v6"}:
                     source_set = source_identity_set_from_dict(record["source_identity_set"])
                     sealed_source_set_sha256 = source_set.source_set_sha256
                     sealed_source_identity_map = dict(source_set.identity_digests)
@@ -976,13 +1128,13 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
             raise PolicyError("holdout ledger contains a changed sealed Manifest SHA")
         if (
             sealed_manifest_path_sha256 is not None
-            and _ledger_record_kind(record) in {"v3", "v4", "v5"}
+            and _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}
             and record["holdout_manifest_path_sha256"] != sealed_manifest_path_sha256
         ):
             raise PolicyError("holdout ledger contains a changed sealed Manifest path")
         if (
             sealed_split_sha256 is not None
-            and _ledger_record_kind(record) in {"v3", "v4", "v5"}
+            and _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}
             and record["split_manifest_sha256"] != sealed_split_sha256
         ):
             raise PolicyError("holdout ledger contains a changed sealed split SHA")
@@ -996,7 +1148,7 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
             )
         ):
             raise PolicyError("holdout ledger contains a changed sealed Source Identity")
-        if sealed_source_set_sha256 is not None and _ledger_record_kind(record) == "v5":
+        if sealed_source_set_sha256 is not None and _ledger_record_kind(record) in {"v5", "v6"}:
             source_set = source_identity_set_from_dict(record["source_identity_set"])
             if (
                 source_set.source_set_sha256 != sealed_source_set_sha256
