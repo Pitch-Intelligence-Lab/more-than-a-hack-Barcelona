@@ -226,6 +226,28 @@ No implementation, algorithm, Ledger, SourceIdentitySet, authorization or
 DP-005/frozen-data behavior is changed. Final Assurance, Policy implementation
 acceptance, PR merge and real-data research remain separate decisions.
 
+## DP-006-FINAL-ASSURANCE-TOCTOU-001
+
+**Date:** 2026-11-09
+
+**Status:** A2 Source Integrity P0 remediation candidate for full Assurance rerun
+
+### Fixed
+
+- bind the production runner to an immutable SkillCorner manifest snapshot;
+- read each license/readme/tracking/phases/match file once and use the same
+  bytes for checksum and parsing;
+- return loader actual Source Identity, checksums and snapshot digest;
+- compare sealed and actual identities before evaluator;
+- persist mismatch failures without `EVALUATION_COMPLETED`;
+- bind collection-level tuning contamination to the trigger member identity;
+- require match events to share their Source Identity member.
+
+### Boundary
+
+This does not declare Final Assurance PASS, Policy implementation PASS, PR merge
+approval or real-data authorization.
+
 ## DP-006-POLICY-REMEDIATION-005
 
 **Date:** 2026-11-08

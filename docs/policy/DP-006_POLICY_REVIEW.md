@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** frozen candidate for Independent DP-006 Final Assurance Review
+**Status:** TOCTOU remediation candidate; full Final Assurance rerun required
 
 ## Scope
 
@@ -67,9 +67,12 @@ R3 Partial-completion tuning contamination: PASS
 R3 Contamination/start linearization: PASS
 R5 Temporal integration: FIX CANDIDATE, PM/QA review required
 REPAIR-006 Re-review: PASS
+Final Assurance A2 TOCTOU: FIX CANDIDATE
+P1 compromised trigger identity: FIX CANDIDATE
+P1 match-event identity binding: FIX CANDIDATE
 Policy implementation final acceptance: HOLD
 PR #9: open, unmerged, PM/QA review required
-Final Assurance: authorized to start; independent review pending
+Final Assurance: prior result superseded; full rerun required
 REPAIR-007: not started
 Official rule traceability: PASS
 SkillCorner rights: HOLD

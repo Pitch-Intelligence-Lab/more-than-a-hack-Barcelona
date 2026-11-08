@@ -1,9 +1,10 @@
 # DP-006 Policy Remediation 006 Closure Handoff
 
-> Final Assurance notice: REPAIR-006 Re-review is PASS. The current gate is
-> **Independent DP-006 Final Assurance Review**. See
-> `DP-006_FINAL_ASSURANCE_HANDOFF.md`. Policy implementation acceptance, PR
-> merge and real-data research remain HOLD.
+> TOCTOU notice: Final Assurance found an A2 Source Integrity P0. The immutable
+> snapshot remediation is complete as an engineer candidate; the prior Final
+> Assurance result is superseded and a full rerun is required. See
+> `DP-006_FINAL_ASSURANCE_TOCTOU_EVIDENCE.md` and
+> `DP-006_FINAL_ASSURANCE_HANDOFF.md`.
 
 ```text
 Task ID: DP-006-POLICY-REMEDIATION-006-TUNING-CONTAMINATION-CLOSURE
