@@ -26,6 +26,8 @@ Warning-free: 187 passed with -W error
 Ruff: check passed
 Format: format check passed
 Invalid external-root: 187 passed
+Production split manifest SHA-256: 0d971d324f260110905587fc09f434fb3a58892d5890156020f88a88426b9525
+Production Holdout Manifest SHA-256: 0f58b53681e2c6920efa5a34dff9d565fd2f586d38d4d73a5e55a219ae49d708
 
 External data accessed: no
 Real evaluation run: no
