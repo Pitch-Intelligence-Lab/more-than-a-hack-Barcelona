@@ -13,7 +13,7 @@ Branch: feature/DP-006-POLICY-v2
 Implementation commit: 7942bf7a5bd13dace4bbddb01bb5118d3b8e2223
 Documentation commit: 2c4139b9603b57ef3a1bfcecc51f3b0668c99a03
 Final HEAD at documentation submission: 2c4139b9603b57ef3a1bfcecc51f3b0668c99a03
-Remote HEAD at documentation submission: validated after push
+Remote HEAD at documentation submission: 965296a93684631995ec067bf2aed56592cc32be
 PR: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/9
 PR visibility/status: verified; OPEN, UNMERGED, HOLD
 PR base: feature/DP-006A-leakage-promotion-gate
