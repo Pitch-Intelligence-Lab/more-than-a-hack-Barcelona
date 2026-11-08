@@ -175,6 +175,7 @@ def load_skillcorner_match(
     config_path: str | os.PathLike[str],
     external_root: str | os.PathLike[str],
 ) -> NeutralMatch:
+    """Legacy compatibility helper; production entrypoints must use snapshot APIs."""
     snapshot = create_skillcorner_manifest_snapshot(config_path)
     return load_skillcorner_match_from_snapshot(
         snapshot,

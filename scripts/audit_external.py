@@ -15,8 +15,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mtah_possession.data.neutral import map_proxy_target  # noqa: E402
 from mtah_possession.data.skillcorner import (  # noqa: E402
-    load_skillcorner_manifest,
-    load_skillcorner_match,
+    LoadedSkillCornerSource,
+    create_skillcorner_manifest_snapshot,
+    load_skillcorner_match_from_snapshot,
 )
 from mtah_possession.evaluation.splits import (  # noqa: E402
     EvaluationMode,  # noqa: E402
@@ -30,6 +31,9 @@ from mtah_possession.governance.authorization import (  # noqa: E402
 )
 from mtah_possession.governance.policy import (  # noqa: E402
     DataUse,
+)
+from mtah_possession.governance.source import (  # noqa: E402
+    build_source_identity_from_manifest,
 )
 from mtah_possession.states.phase_layer import (  # noqa: E402
     compile_phase_evidence,
@@ -58,6 +62,32 @@ def _atomic_json(path: Path, values: dict) -> None:
         raise
 
 
+def _validate_loaded_source(
+    loaded: LoadedSkillCornerSource,
+    snapshot,
+    expected_source_identity,
+):
+    if not isinstance(loaded, LoadedSkillCornerSource):
+        raise ValueError("audit loader must return an immutable source result")
+    if loaded.manifest_snapshot.snapshot_digest != snapshot.snapshot_digest:
+        raise ValueError("audit loader manifest snapshot digest does not match")
+    if loaded.actual_source_identity != expected_source_identity:
+        raise ValueError("audit loader actual Source Identity does not match")
+    expected_checksums = {
+        "license": expected_source_identity.license_sha256,
+        "readme": expected_source_identity.readme_sha256,
+        **{
+            role: expected_source_identity.files[role]["sha256"]
+            for role in ("tracking", "phases", "match")
+        },
+    }
+    if dict(loaded.actual_checksums) != expected_checksums:
+        raise ValueError("audit loader actual checksums do not match")
+    if loaded.match.match_id != expected_source_identity.match_id:
+        raise ValueError("audit loader match ID does not match")
+    return loaded.match
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=str(ROOT / "configs" / "external-skillcorner.json"))
@@ -75,7 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         print("FAIL  MTAH_EXTERNAL_DATA_DIR is not set", file=sys.stderr)
         return 1
     try:
-        manifest = load_skillcorner_manifest(args.config)
+        snapshot = create_skillcorner_manifest_snapshot(args.config)
+        manifest = snapshot.manifest
+        source_identity = build_source_identity_from_manifest(manifest)
         splits = load_split_manifest(args.splits)
         authorized = authorize_external_run(
             policy_path=args.policy,
@@ -98,7 +130,16 @@ def main(argv: list[str] | None = None) -> int:
             split="development",
             mode=EvaluationMode.DIAGNOSTIC,
         )
-        match = load_skillcorner_match(args.config, root)
+        loaded_source = load_skillcorner_match_from_snapshot(
+            snapshot,
+            root,
+            source_identity,
+        )
+        match = _validate_loaded_source(
+            loaded_source,
+            snapshot,
+            source_identity,
+        )
         proxy = map_proxy_target(
             match,
             possession_profile=authorized.label_profiles[EVALUATION_POSSESSION_PROFILE],
@@ -144,6 +185,11 @@ def main(argv: list[str] | None = None) -> int:
             "proxy_counts": dict(proxy.counts),
             "proxy_sources": dict(proxy.source_counts),
             "source_checksums": dict(match.source_checksums),
+            "source_integrity": {
+                "source_identity_sha256": source_identity.source_identity_sha256,
+                "source_snapshot_digest": loaded_source.snapshot_digest,
+                "actual_checksums": dict(loaded_source.actual_checksums),
+            },
             "split": split_manifest_dict(splits, match.match_id),
             "policy_identity": {
                 "policy_version": authorized.policy.policy_version,
