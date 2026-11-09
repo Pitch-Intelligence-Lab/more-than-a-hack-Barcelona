@@ -4,6 +4,7 @@
 Task: DP-006-POLICY-V2.1-P1-CLOSURE-002
 Baseline: b3d243d2745cb530664aa3dae162cb6dae5bcd6a
 Implementation commit: de79afc532f028dde862ebe088d5d858236fc229
+First documentation evidence commit: df5bd909006a15c2a6bfec5ba7bd6b1966713f48
 Branch: feature/DP-006-POLICY-v2.1-proportional-access
 P1 Closure implementation: FIX CANDIDATE
 Policy v2.1 final acceptance: AWAITING INDEPENDENT REVIEW
@@ -173,6 +174,9 @@ External root existed: no
 Ruff check: PASS
 Ruff format --check: PASS
 git diff --check: PASS
+GitHub Actions run: 42613311527
+GitHub Actions conclusion: success
+GitHub Actions URL: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/actions/runs/42613311527
 ```
 
 ## Frozen and safety checks
