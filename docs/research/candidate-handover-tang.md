@@ -51,9 +51,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 20 passed.
-- Full repository: 84 passed (64 frozen + 20 candidate).
-- `pytest -W error`: 84 passed.
+- Candidate synthetic tests: 21 passed.
+- Full repository: 85 passed (64 frozen + 21 candidate).
+- `pytest -W error`: 85 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
@@ -123,6 +123,8 @@ material contribution to D in this dataset, not accuracy or generalisation.
 - Local pressure advantage (5 m player counts, contested-only) was tested: 402 H/A and 95 D,
   but it increases H/A fragmentation; disabled in the stable config.
 - A lower restart-recovery cost was tested: 399 H/A but 208 D segments; rejected.
+- Tracking-anomaly slot gating was tested: synthetic jump handling passed, but the real output
+  remained 384/96 with only minor label/invalid changes; disabled in the stable config.
 
 ## Interface relationship to frozen base
 

@@ -82,3 +82,10 @@
 - Implementation: restart penalty 1.5, restart boost 2.5.
 - Observed: H/A 399, D 208; D segmentation doubled.
 - Decision: reject; stable restart costs remain.
+
+## ED-12: Tracking-anomaly slot gating
+
+- Hypothesis: removing implausible player slots from the current tracking frame will reduce bad team evidence.
+- Implementation: per-slot speed >15 m/s or acceleration >50 m/s² makes that slot missing for the frame.
+- Observed: synthetic jump test passed; real output remained 384/96 with only small label/invalid changes.
+- Decision: keep experimental; tracking jumps are not the dominant segmentation driver.

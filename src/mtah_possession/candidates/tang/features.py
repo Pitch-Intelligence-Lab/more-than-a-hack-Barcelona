@@ -18,6 +18,7 @@ from mtah_possession.features.evidence import (
 
 from .config import CandidateConfig
 from .pressure import compute_pressure
+from .quality import filter_tracking_anomalies
 from .smart_tagging import SmartEvidence
 from .velocity import compute_time_to_ball
 
@@ -36,6 +37,7 @@ class FrameFeatures:
     time_valid: NDArray[np.bool_]
     pressure_advantage_5m: NDArray[np.float64]
     pressure_valid: NDArray[np.bool_]
+    tracking_anomaly: NDArray[np.bool_]
     out_of_bounds: NDArray[np.bool_]
     contested: NDArray[np.bool_]
     loose_ball: NDArray[np.bool_]
@@ -51,16 +53,26 @@ def build_features(
     smart: SmartEvidence,
     config: CandidateConfig,
 ) -> FrameFeatures:
+    quality = filter_tracking_anomalies(
+        tracking,
+        fps=config.fps,
+        pitch_length_m=config.pitch_length_m,
+        pitch_width_m=config.pitch_width_m,
+        speed_threshold_mps=config.number("tracking_anomaly_speed_mps"),
+        accel_threshold_mps2=config.number("tracking_anomaly_accel_mps2"),
+        enabled=config.enable_tracking_anomaly_gating,
+    )
+    effective_tracking = quality.tracking
     usable = observations.usable_mask
     nearest = nearest_team_evidence(
-        tracking,
+        effective_tracking,
         observations.positions,
         usable,
         pitch_length_m=config.pitch_length_m,
         pitch_width_m=config.pitch_width_m,
     )
     vote = visible_near_player_vote(
-        tracking,
+        effective_tracking,
         observations.positions,
         usable,
         pitch_length_m=config.pitch_length_m,
@@ -97,7 +109,7 @@ def build_features(
         rest_speed_threshold_mps=config.number("ball_rest_speed_mps"),
     )
     timing = compute_time_to_ball(
-        tracking,
+        effective_tracking,
         observations.positions,
         usable,
         fps=config.fps,
@@ -107,7 +119,7 @@ def build_features(
         max_time_s=config.number("max_time_to_ball_s"),
     )
     pressure = compute_pressure(
-        tracking,
+        effective_tracking,
         observations.positions,
         usable,
         pitch_length_m=config.pitch_length_m,
@@ -139,6 +151,7 @@ def build_features(
         time_valid=timing.valid,
         pressure_advantage_5m=pressure.advantage_5m,
         pressure_valid=pressure.valid,
+        tracking_anomaly=quality.anomaly_frames,
         out_of_bounds=out_of_bounds,
         contested=contested,
         loose_ball=loose_ball,

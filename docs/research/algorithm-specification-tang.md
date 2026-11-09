@@ -55,8 +55,8 @@ not create D.
 - Short H/A flicker and low-confidence short segments may be absorbed only when bracketed by the
   same team.
 
-The stable config has `dwell_frames=0`, `hysteresis_gain=0`, `time_to_ball_weight=0` and
-`pressure_weight=0`.
+The stable config has `dwell_frames=0`, `hysteresis_gain=0`, `time_to_ball_weight=0`,
+`pressure_weight=0` and `enable_tracking_anomaly_gating=false`.
 The duration-aware, hysteresis and relative-velocity paths are experiments, not part of the stable
 algorithm.
 

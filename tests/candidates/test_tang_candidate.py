@@ -30,6 +30,7 @@ CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b.json"
 NO_SMART_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-no-smart.json"
 HYSTERESIS_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-hysteresis.json"
 PRESSURE_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-pressure.json"
+QUALITY_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-quality.json"
 
 
 def small_config(tmp_path: Path, frames: int = 40, *, graded_only: bool = False):
@@ -91,6 +92,7 @@ def features_stub(
         time_valid=np.zeros(count, dtype=bool),
         pressure_advantage_5m=np.zeros(count, dtype=np.float64),
         pressure_valid=np.zeros(count, dtype=bool),
+        tracking_anomaly=np.zeros(count, dtype=bool),
         out_of_bounds=np.asarray(out_of_bounds or [False] * count),
         contested=np.zeros(count, dtype=bool),
         loose_ball=np.zeros(count, dtype=bool),
@@ -304,6 +306,35 @@ def test_pressure_advantage_can_resolve_contested_frame() -> None:
     assert features.contested.tolist() == [True]
     assert features.pressure_advantage_5m.tolist() == [1.0]
     assert emission.probabilities[0, HOME] > emission.probabilities[0, AWAY]
+
+
+def test_tracking_anomaly_gating_removes_implausible_slot() -> None:
+    data = tracking(
+        ball=[[0.5, 0.5], [0.5, 0.5]],
+        slots=[
+            [[0.1, 0.5], [0.53, 0.5]],
+            [[0.51, 0.5], [0.53, 0.5]],
+        ],
+        teams=[HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+    smart = SmartEvidence(
+        team_prior=np.full(2, NO_CANDIDATE, dtype=np.int8),
+        restart=np.zeros(2, dtype=bool),
+        dead=np.zeros(2, dtype=bool),
+    )
+
+    main_features = build_features(data, observations, smart, load_candidate_config(CONFIG_PATH))
+    quality_features = build_features(
+        data,
+        observations,
+        smart,
+        load_candidate_config(QUALITY_CONFIG_PATH),
+    )
+
+    assert main_features.tracking_candidate[1] == HOME
+    assert quality_features.tracking_anomaly[1]
+    assert quality_features.tracking_candidate[1] == AWAY
 
 
 def test_decoder_direct_team_switch_and_missing_ball_persistence(tmp_path: Path) -> None:

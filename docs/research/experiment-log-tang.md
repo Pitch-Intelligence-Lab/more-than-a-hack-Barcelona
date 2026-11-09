@@ -12,7 +12,7 @@ Never paste competition rows, video frames or screenshots into this file.
 - Code version: `research/tang/independent-v1` working tree
 - Configuration: `configs/candidates/tang/candidate-b.json` with small synthetic frame counts
 - Run command: `.venv/bin/python -m pytest tests/candidates -q`
-- Result: 20 candidate tests passed
+- Result: 21 candidate tests passed
 - Coverage: tracking-vs-Smart-Tagging conflict, missing ball, out-of-bounds D, split contest, loose-ball control limit, low-confidence segment filtering, high-confidence quick-switch preservation, evidence-strength hysteresis, hysteresis weak-flicker suppression, dwell strong-switch preservation, dwell weak-flicker suppression, dwell dead-ball transition, direct H/A switch, missing-ball persistence, dead/restart, X/forced blocks, Smart Tagging pre-restart/restart separation, adapter determinism
 - Evaluation metric: interface and behavior assertions, not model accuracy
 - Failure types: none in this run
@@ -26,7 +26,7 @@ Never paste competition rows, video frames or screenshots into this file.
 - Data source: frozen repository tests
 - Ground truth: not read
 - Run command: `.venv/bin/python -m pytest && .venv/bin/python -m pytest -W error`
-- Result: 84 passed, including 64 frozen tests and 20 candidate tests
+- Result: 85 passed, including 64 frozen tests and 21 candidate tests
 - Ruff: check and format check passed
 - Frozen DP-005 baseline: reproduced separately with SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
 - Decision: candidate is isolated in new modules; no frozen L0/L4 or stable config changes
@@ -158,3 +158,13 @@ Never paste competition rows, video frames or screenshots into this file.
 - Implementation: `candidate-b-restart.json` lowers D→H/A restart penalty from 2.0 to 1.5 and raises restart boost from 1.0 to 2.5.
 - Real result: H/A=399, D=208, H/A mean 12.9 s, D mean 5.8 s, SHA `ad2e…`.
 - Decision: reject. The lower restart cost creates far more D segments; keep the stable restart costs.
+
+## E-B-014: Tracking-anomaly slot gating
+
+- Date: 2026-11-09
+- Motivation: WP4 found 2,098 frames with at least one player slot moving faster than 15 m/s and 335 frames with extreme acceleration.
+- Implementation: per-slot current-frame gating; an anomalous slot is set to missing only in the tracking evidence, without deleting the frame or repairing the observation.
+- Experiment config: `candidate-b-quality.json`, `enable_tracking_anomaly_gating=true`.
+- Synthetic result: an implausible jumping home slot is excluded and the adjacent away candidate is selected.
+- Real result: H/A=384, D=96 (unchanged segment structure), H/A mean 13.5 s, D mean 12.3 s, SHA `706c…`; invalid frames changed by only 20.
+- Decision: keep experimental. The audit-visible tracking anomalies are not the main driver of the current segmentation; no stable promotion.

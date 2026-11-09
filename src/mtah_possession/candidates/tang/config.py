@@ -30,6 +30,7 @@ class CandidateConfig:
     ungraded_blocks: tuple[tuple[int, int], ...]
     forced_dead_blocks: tuple[tuple[int, int], ...]
     enable_smart_tagging: bool
+    enable_tracking_anomaly_gating: bool
     parameters: dict[str, CandidateParameter]
 
     def number(self, name: str) -> float:
@@ -62,6 +63,8 @@ REQUIRED_PARAMETERS = frozenset(
         "pressure_radius_m",
         "pressure_weight",
         "pressure_min_advantage",
+        "tracking_anomaly_speed_mps",
+        "tracking_anomaly_accel_mps2",
         "ball_rest_weight",
         "ball_rest_speed_mps",
         "ball_rest_min_s",
@@ -206,6 +209,8 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
     pressure_min = parameters["pressure_min_advantage"].value
     if isinstance(pressure_min, bool) or not isinstance(pressure_min, int) or pressure_min < 0:
         raise CandidateConfigError("pressure_min_advantage must be a non-negative integer")
+    _positive(parameters["tracking_anomaly_speed_mps"].value, "tracking_anomaly_speed_mps")
+    _positive(parameters["tracking_anomaly_accel_mps2"].value, "tracking_anomaly_accel_mps2")
     smoothing = parameters["emission_smoothing_half_width_frames"].value
     if isinstance(smoothing, bool) or not isinstance(smoothing, int) or smoothing < 0:
         raise CandidateConfigError(
@@ -243,6 +248,9 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
     enable_smart_tagging = values.get("enable_smart_tagging", True)
     if not isinstance(enable_smart_tagging, bool):
         raise CandidateConfigError("enable_smart_tagging must be boolean")
+    enable_tracking_anomaly_gating = values.get("enable_tracking_anomaly_gating", False)
+    if not isinstance(enable_tracking_anomaly_gating, bool):
+        raise CandidateConfigError("enable_tracking_anomaly_gating must be boolean")
 
     ungraded = _blocks(values.get("ungraded_blocks"), expected_frames, "ungraded_blocks")
     forced = _blocks(values.get("forced_dead_blocks"), expected_frames, "forced_dead_blocks")
@@ -260,5 +268,6 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
         ungraded_blocks=ungraded,
         forced_dead_blocks=forced,
         enable_smart_tagging=enable_smart_tagging,
+        enable_tracking_anomaly_gating=enable_tracking_anomaly_gating,
         parameters=parameters,
     )

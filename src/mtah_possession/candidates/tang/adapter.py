@@ -129,6 +129,7 @@ def _health(
             if features.pressure_valid.any()
             else None
         ),
+        "tracking_anomaly_frames": int(features.tracking_anomaly.sum()),
         "smart_dead_frames": int(features.smart_dead.sum()),
         "smart_restart_frames": int(features.smart_restart.sum()),
         "smart_dead_tracking_overlap": int(
@@ -170,6 +171,7 @@ def _write_decision_log(
                 "time_advantage_s",
                 "time_valid",
                 "pressure_advantage_5m",
+                "tracking_anomaly",
                 "smart_team",
                 "smart_dead",
                 "smart_restart",
@@ -218,6 +220,7 @@ def _write_decision_log(
                         if features.pressure_valid[frame]
                         else ""
                     ),
+                    int(bool(features.tracking_anomaly[frame])),
                     team_names[int(features.smart_team[frame])],
                     int(bool(features.smart_dead[frame])),
                     int(bool(features.smart_restart[frame])),
