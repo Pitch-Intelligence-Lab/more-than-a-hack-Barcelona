@@ -68,3 +68,17 @@
 - Implementation: optional `--decision-log` CSV with derived features, confidence and reason.
 - Observed: 199,320 local lines on the full match; synthetic test passed.
 - Decision: retain as a local diagnostic tool; keep it outside Git and cloud uploads.
+
+## ED-10: Local pressure advantage
+
+- Hypothesis: a five-metre player-count advantage can resolve contested frames.
+- Implementation: use only contested frames, require a strict count advantage.
+- Observed: 402 H/A and 95 D segments at weight 1.0; fragmented versus the 384/96 stable main.
+- Decision: keep as an experiment; do not promote.
+
+## ED-11: Lower restart recovery cost
+
+- Hypothesis: a stronger restart boost and lower D→H/A penalty will reduce restart recovery delay.
+- Implementation: restart penalty 1.5, restart boost 2.5.
+- Observed: H/A 399, D 208; D segmentation doubled.
+- Decision: reject; stable restart costs remain.

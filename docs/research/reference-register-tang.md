@@ -18,6 +18,9 @@ training data were taken from them. No code was copied into Candidate B.
 - **Relative motion (R-01).** The paper records ball displacement and incoming/outgoing direction.
   Candidate B implements an experimental team time-to-ball feature, but does not promote it: in
   the local aggregate it increased H/A segmentation.
+- **Local pressure (R-01).** The possession/duel-zone framing supports counting nearby players.
+  Candidate B tested a contested-only five-metre team-count advantage; it produced 402 H/A and
+  95 D segments and was not promoted.
 - **Segment-level filtering (R-03).** Short H/A or D segments are merged only when their mean
   emission confidence is low and both neighbours have the same team. High-confidence quick
   switches are preserved. This is a post-decoder approximation of segment-level scoring.

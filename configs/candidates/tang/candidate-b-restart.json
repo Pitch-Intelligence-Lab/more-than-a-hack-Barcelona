@@ -1,0 +1,261 @@
+{
+  "schema_version": "candidate-b-1",
+  "match_id": "BAR-ATH",
+  "fps": 25,
+  "expected_frames": 199319,
+  "pitch": {
+    "length_m": 105.3,
+    "width_m": 68.0
+  },
+  "ungraded_blocks": [
+    [0, 11184],
+    [90652, 110807],
+    [190198, 199318]
+  ],
+  "forced_dead_blocks": [
+    [110808, 113741]
+  ],
+  "enable_smart_tagging": true,
+  "parameters": {
+    "ball_interpolation_max_s": {
+      "value": 0.4,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Retain only short internally bracketed ball gaps."
+    },
+    "distance_scale_m": {
+      "value": 8.0,
+      "unit": "m",
+      "source": "engineering-assumption",
+      "rationale": "Scale nearest-player distance into an H/A emission logit."
+    },
+    "vote_weight": {
+      "value": 0.8,
+      "unit": "weight",
+      "source": "general-football-prior",
+      "rationale": "Use visible-player neighbourhood vote as a second team signal."
+    },
+    "tracking_bonus": {
+      "value": 2.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Give a finite tracking candidate priority over weak phase priors."
+    },
+    "smart_team_weight": {
+      "value": 0.7,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Use Smart Tagging team only when tracking has no candidate."
+    },
+    "near_player_vote_k": {
+      "value": 3,
+      "unit": "players",
+      "source": "general-football-prior",
+      "rationale": "Small neighbourhood vote reduces single-slot noise."
+    },
+    "contest_margin_m": {
+      "value": 1.5,
+      "unit": "m",
+      "source": "general-football-prior",
+      "rationale": "If both teams are this close to the ball and the visible vote is split, keep the team unresolved."
+    },
+    "max_control_distance_m": {
+      "value": 5.0,
+      "unit": "m",
+      "source": "literature-based",
+      "rationale": "The FIFA/MIT possession-zone study uses 0.5-1 m control zones with accurate tracking; 5 m is a noise-tolerant upper bound for automatic tactical tracking. Outside it, leave the team unresolved."
+    },
+    "min_closing_speed_mps": {
+      "value": 0.5,
+      "unit": "m/s",
+      "source": "engineering-assumption",
+      "rationale": "A player is considered to be closing on the ball only above this relative speed."
+    },
+    "max_time_to_ball_s": {
+      "value": 5.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Cap time-to-ball when a player is stationary or moving away from the ball."
+    },
+    "time_advantage_cap_s": {
+      "value": 5.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Cap the home-minus-away time advantage before converting it to an emission logit."
+    },
+    "time_to_ball_weight": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; relative velocity is an isolated experiment."
+    },
+    "pressure_radius_m": {
+      "value": 5.0,
+      "unit": "m",
+      "source": "general-football-prior",
+      "rationale": "Local support is measured as the number of each team's players within five metres of the ball."
+    },
+    "pressure_weight": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; pressure is an isolated experiment for contested/loose frames."
+    },
+    "pressure_min_advantage": {
+      "value": 1,
+      "unit": "players",
+      "source": "engineering-assumption",
+      "rationale": "Only a strict count advantage contributes pressure evidence."
+    },
+    "ball_rest_weight": {
+      "value": 1.5,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Sustained visible ball rest contributes to D."
+    },
+    "ball_rest_speed_mps": {
+      "value": 0.5,
+      "unit": "m/s",
+      "source": "engineering-assumption",
+      "rationale": "Tolerance around a stationary ball."
+    },
+    "ball_rest_min_s": {
+      "value": 1.5,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Minimum sustained rest before it contributes to D."
+    },
+    "out_of_bounds_weight": {
+      "value": 1.2,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "A visible ball outside the normalized pitch is geometric D evidence."
+    },
+    "smart_dead_weight": {
+      "value": 1.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "A restart-anchored Smart Tagging dead-ball prior contributes to D."
+    },
+    "restart_suppression": {
+      "value": 0.8,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Restart evidence lowers the D score once the restart window begins."
+    },
+    "emission_smoothing_half_width_frames": {
+      "value": 50,
+      "unit": "frames",
+      "source": "general-football-prior",
+      "rationale": "A two-second centred smoothing window reduces tracking noise before temporal decoding."
+    },
+    "dead_smoothing_half_width_frames": {
+      "value": 5,
+      "unit": "frames",
+      "source": "engineering-assumption",
+      "rationale": "Keep dead-ball boundaries much sharper than H/A while removing sub-second D flicker."
+    },
+    "switch_penalty": {
+      "value": 2.5,
+      "unit": "logit",
+      "source": "general-football-prior",
+      "rationale": "Team changes have a cost but remain possible without a D bridge."
+    },
+    "dead_enter_penalty": {
+      "value": 1.5,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Entering D requires more than a single weak frame."
+    },
+    "restart_penalty": {
+      "value": 1.5,
+      "unit": "logit",
+      "source": "general-football-prior",
+      "rationale": "Experiment: lower the D-to-team transition cost to test restart recovery latency."
+    },
+    "restart_boost": {
+      "value": 2.5,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Experiment: stronger restart evidence should shorten D-to-team recovery."
+    },
+    "hysteresis_gain": {
+      "value": 0.0,
+      "unit": "logit_probability",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; experimental evidence-strength hysteresis is configured separately."
+    },
+    "hysteresis_max_boost": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Maximum transition-cost discount for strong H/A evidence; zero disables the experiment."
+    },
+    "dwell_frames": {
+      "value": 0,
+      "unit": "frames",
+      "source": "general-football-prior",
+      "rationale": "Disabled in the main candidate after 0.6 s and 1.2 s dwell sensitivity tests did not improve segment structure."
+    },
+    "dwell_penalty": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Disabled with the main dwell model; available in candidate-b-dwell15.json for comparison."
+    },
+    "min_flicker_frames": {
+      "value": 3,
+      "unit": "frames",
+      "source": "general-football-prior",
+      "rationale": "Absorb only very short H/A flicker bracketed by the same state."
+    },
+    "short_segment_frames": {
+      "value": 10,
+      "unit": "frames",
+      "source": "engineering-assumption",
+      "rationale": "Candidate H/A segments shorter than 0.4 seconds are filtered only when confidence is low."
+    },
+    "short_segment_confidence": {
+      "value": 0.55,
+      "unit": "probability",
+      "source": "engineering-assumption",
+      "rationale": "Low-confidence short segments may be merged; high-confidence quick switches are preserved."
+    },
+    "short_dead_frames": {
+      "value": 10,
+      "unit": "frames",
+      "source": "engineering-assumption",
+      "rationale": "A sub-second D segment between the same team is treated as flicker only when confidence is low."
+    },
+    "short_dead_confidence": {
+      "value": 0.55,
+      "unit": "probability",
+      "source": "engineering-assumption",
+      "rationale": "High-confidence short dead-ball evidence is preserved."
+    },
+    "smart_restart_offset_s": {
+      "value": 4.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Set-piece tag windows open a few seconds before the restart."
+    },
+    "smart_dead_lookback_s": {
+      "value": 30.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Bound backward dead-ball search before a tagged restart."
+    },
+    "smart_dead_speed_mps": {
+      "value": 1.0,
+      "unit": "m/s",
+      "source": "engineering-assumption",
+      "rationale": "Missing or slow ball can belong to a pre-restart dead-ball run."
+    },
+    "smart_dead_gap_s": {
+      "value": 0.5,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Allow brief tracking blips inside a dead-ball run."
+    }
+  }
+}

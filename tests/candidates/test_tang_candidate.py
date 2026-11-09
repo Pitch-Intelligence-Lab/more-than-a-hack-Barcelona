@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b.json"
 NO_SMART_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-no-smart.json"
 HYSTERESIS_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-hysteresis.json"
+PRESSURE_CONFIG_PATH = ROOT / "configs" / "candidates" / "tang" / "candidate-b-pressure.json"
 
 
 def small_config(tmp_path: Path, frames: int = 40, *, graded_only: bool = False):
@@ -88,6 +89,8 @@ def features_stub(
         ball_rest_s=np.asarray(ball_rest or [0.0] * count),
         time_advantage_s=np.zeros(count, dtype=np.float64),
         time_valid=np.zeros(count, dtype=bool),
+        pressure_advantage_5m=np.zeros(count, dtype=np.float64),
+        pressure_valid=np.zeros(count, dtype=bool),
         out_of_bounds=np.asarray(out_of_bounds or [False] * count),
         contested=np.zeros(count, dtype=bool),
         loose_ball=np.zeros(count, dtype=bool),
@@ -271,6 +274,36 @@ def test_time_to_ball_invalid_when_ball_is_missing() -> None:
     )
 
     assert not timing.valid.any()
+
+
+def test_pressure_advantage_can_resolve_contested_frame() -> None:
+    config = load_candidate_config(PRESSURE_CONFIG_PATH)
+    data = tracking(
+        ball=[[0.5, 0.5]],
+        slots=[
+            [
+                [0.48, 0.5],
+                [0.49, 0.5],
+                [0.51, 0.5],
+                [0.52, 0.5],
+                [0.53, 0.5],
+            ]
+        ],
+        teams=[HOME, HOME, HOME, AWAY, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+    smart = SmartEvidence(
+        team_prior=np.asarray([NO_CANDIDATE], dtype=np.int8),
+        restart=np.zeros(1, dtype=bool),
+        dead=np.zeros(1, dtype=bool),
+    )
+
+    features = build_features(data, observations, smart, config)
+    emission = build_emission(features, config)
+
+    assert features.contested.tolist() == [True]
+    assert features.pressure_advantage_5m.tolist() == [1.0]
+    assert emission.probabilities[0, HOME] > emission.probabilities[0, AWAY]
 
 
 def test_decoder_direct_team_switch_and_missing_ball_persistence(tmp_path: Path) -> None:

@@ -73,6 +73,16 @@ def build_emission(features: FrameFeatures, config: CandidateConfig) -> Emission
     time_advantage = np.clip(features.time_advantage_s, -time_cap, time_cap)
     logits[time_evidence, HOME] += time_weight * time_advantage[time_evidence] / time_cap
     logits[time_evidence, AWAY] -= time_weight * time_advantage[time_evidence] / time_cap
+    pressure_weight = config.number("pressure_weight")
+    pressure_evidence = (
+        features.pressure_valid
+        & (pressure_weight > 0)
+        & features.contested
+        & (np.abs(features.pressure_advantage_5m) >= config.number("pressure_min_advantage"))
+    )
+    pressure_advantage = features.pressure_advantage_5m
+    logits[pressure_evidence, HOME] += pressure_weight * pressure_advantage[pressure_evidence] / 3.0
+    logits[pressure_evidence, AWAY] -= pressure_weight * pressure_advantage[pressure_evidence] / 3.0
 
     rest_min = config.number("ball_rest_min_s")
     rest_fraction = np.clip(features.ball_rest_s / rest_min, 0.0, 1.0)
@@ -82,7 +92,7 @@ def build_emission(features: FrameFeatures, config: CandidateConfig) -> Emission
     logits[:, D] += config.number("smart_dead_weight") * features.smart_dead
     logits[:, D] -= config.number("restart_suppression") * features.smart_restart
 
-    team_valid = base_team_valid | time_evidence
+    team_valid = base_team_valid | time_evidence | pressure_evidence
     dead_valid = features.smart_dead | features.out_of_bounds | (features.ball_rest_s >= rest_min)
     valid = team_valid | dead_valid
     logits[~valid] = 0.0

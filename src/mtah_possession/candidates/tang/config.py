@@ -59,6 +59,9 @@ REQUIRED_PARAMETERS = frozenset(
         "max_time_to_ball_s",
         "time_advantage_cap_s",
         "time_to_ball_weight",
+        "pressure_radius_m",
+        "pressure_weight",
+        "pressure_min_advantage",
         "ball_rest_weight",
         "ball_rest_speed_mps",
         "ball_rest_min_s",
@@ -198,6 +201,11 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
     _positive(parameters["max_time_to_ball_s"].value, "max_time_to_ball_s")
     _positive(parameters["time_advantage_cap_s"].value, "time_advantage_cap_s")
     _non_negative(parameters["time_to_ball_weight"].value, "time_to_ball_weight")
+    _positive(parameters["pressure_radius_m"].value, "pressure_radius_m")
+    _non_negative(parameters["pressure_weight"].value, "pressure_weight")
+    pressure_min = parameters["pressure_min_advantage"].value
+    if isinstance(pressure_min, bool) or not isinstance(pressure_min, int) or pressure_min < 0:
+        raise CandidateConfigError("pressure_min_advantage must be a non-negative integer")
     smoothing = parameters["emission_smoothing_half_width_frames"].value
     if isinstance(smoothing, bool) or not isinstance(smoothing, int) or smoothing < 0:
         raise CandidateConfigError(

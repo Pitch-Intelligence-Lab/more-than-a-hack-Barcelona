@@ -51,9 +51,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 19 passed.
-- Full repository: 83 passed (64 frozen + 19 candidate).
-- `pytest -W error`: 83 passed.
+- Candidate synthetic tests: 20 passed.
+- Full repository: 84 passed (64 frozen + 20 candidate).
+- `pytest -W error`: 84 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
@@ -120,6 +120,9 @@ material contribution to D in this dataset, not accuracy or generalisation.
   config keeps `time_to_ball_weight=0`.
 - Optional `--decision-log` writes a local frame-level diagnostic with derived features and
   confidence. It is not committed or uploaded.
+- Local pressure advantage (5 m player counts, contested-only) was tested: 402 H/A and 95 D,
+  but it increases H/A fragmentation; disabled in the stable config.
+- A lower restart-recovery cost was tested: 399 H/A but 208 D segments; rejected.
 
 ## Interface relationship to frozen base
 

@@ -134,6 +134,8 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 | + evidence hysteresis（实验） | 384 | 96 | 13.5 s | 12.3 s | `8a3f…` |
 | + time-to-ball 0.4（实验） | 401 | 94 | 12.9 s | 12.6 s | `49f8…` |
 | + time-to-ball 1.0（实验） | 419 | 90 | 12.4 s | 12.8 s | `11c0…` |
+| + pressure 1.0（实验） | 402 | 95 | 12.9 s | 12.5 s | `d0db…` |
+| + restart boost（实验） | 399 | 208 | 12.9 s | 5.8 s | `ad2e…` |
 | 关闭 Smart Tagging 消融 | 333 | 72 | 17.6 s | 6.7 s | `8f2a…` |
 
 夺权门控参数为 `contest_margin_m=1.5`：双方离球都近且可见投票分裂时，不强行给 H/A
@@ -151,6 +153,9 @@ Relative time-to-ball 已实现为实验：先用球员/球速度投影计算两
 
 可选 `--decision-log` 会生成本地逐帧诊断 CSV（不进入 Git、不上传云端），记录 label、
 confidence、evidence flags 和 reason；主线输出不受影响。
+
+局部压力实验只在 contested 帧使用 5 米内双方球员人数差；真实数据得到 402/95，结构不如主线。
+Restart recovery 实验降低 D→H/A cost，却产生 208 个 D 段，已拒绝。两者都保留在实验配置中。
 
 ## 文献依据
 

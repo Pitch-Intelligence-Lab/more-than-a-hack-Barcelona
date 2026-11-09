@@ -87,7 +87,25 @@
       "value": 0.4,
       "unit": "logit",
       "source": "engineering-assumption",
-      "rationale": "Sensitivity experiment: a conservative time-to-ball term intended to fill only ambiguous frames."
+      "rationale": "Disabled in the stable candidate; relative velocity is an isolated experiment."
+    },
+    "pressure_radius_m": {
+      "value": 5.0,
+      "unit": "m",
+      "source": "general-football-prior",
+      "rationale": "Local support is measured as the number of each team's players within five metres of the ball."
+    },
+    "pressure_weight": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; pressure is an isolated experiment for contested/loose frames."
+    },
+    "pressure_min_advantage": {
+      "value": 1,
+      "unit": "players",
+      "source": "engineering-assumption",
+      "rationale": "Only a strict count advantage contributes pressure evidence."
     },
     "ball_rest_weight": {
       "value": 1.5,

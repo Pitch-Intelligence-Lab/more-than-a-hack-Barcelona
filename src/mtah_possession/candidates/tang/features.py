@@ -17,6 +17,7 @@ from mtah_possession.features.evidence import (
 )
 
 from .config import CandidateConfig
+from .pressure import compute_pressure
 from .smart_tagging import SmartEvidence
 from .velocity import compute_time_to_ball
 
@@ -33,6 +34,8 @@ class FrameFeatures:
     ball_rest_s: NDArray[np.float64]
     time_advantage_s: NDArray[np.float64]
     time_valid: NDArray[np.bool_]
+    pressure_advantage_5m: NDArray[np.float64]
+    pressure_valid: NDArray[np.bool_]
     out_of_bounds: NDArray[np.bool_]
     contested: NDArray[np.bool_]
     loose_ball: NDArray[np.bool_]
@@ -103,6 +106,14 @@ def build_features(
         min_closing_speed_mps=config.number("min_closing_speed_mps"),
         max_time_s=config.number("max_time_to_ball_s"),
     )
+    pressure = compute_pressure(
+        tracking,
+        observations.positions,
+        usable,
+        pitch_length_m=config.pitch_length_m,
+        pitch_width_m=config.pitch_width_m,
+        radius_m=config.number("pressure_radius_m"),
+    )
     positions = observations.positions
     out_of_bounds = usable & (
         (positions[:, 0] < 0)
@@ -126,6 +137,8 @@ def build_features(
         ball_rest_s=motion.rest_duration_s,
         time_advantage_s=timing.advantage_s,
         time_valid=timing.valid,
+        pressure_advantage_5m=pressure.advantage_5m,
+        pressure_valid=pressure.valid,
         out_of_bounds=out_of_bounds,
         contested=contested,
         loose_ball=loose_ball,

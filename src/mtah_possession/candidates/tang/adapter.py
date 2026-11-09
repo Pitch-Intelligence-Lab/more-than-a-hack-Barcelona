@@ -123,6 +123,12 @@ def _health(
             if features.time_valid.any()
             else None
         ),
+        "pressure_valid_frames": int(features.pressure_valid.sum()),
+        "pressure_mean_advantage_5m": (
+            float(np.mean(features.pressure_advantage_5m[features.pressure_valid]))
+            if features.pressure_valid.any()
+            else None
+        ),
         "smart_dead_frames": int(features.smart_dead.sum()),
         "smart_restart_frames": int(features.smart_restart.sum()),
         "smart_dead_tracking_overlap": int(
@@ -163,6 +169,7 @@ def _write_decision_log(
                 "loose_ball",
                 "time_advantage_s",
                 "time_valid",
+                "pressure_advantage_5m",
                 "smart_team",
                 "smart_dead",
                 "smart_restart",
@@ -206,6 +213,11 @@ def _write_decision_log(
                         else ""
                     ),
                     int(bool(features.time_valid[frame])),
+                    (
+                        f"{features.pressure_advantage_5m[frame]:.0f}"
+                        if features.pressure_valid[frame]
+                        else ""
+                    ),
                     team_names[int(features.smart_team[frame])],
                     int(bool(features.smart_dead[frame])),
                     int(bool(features.smart_restart[frame])),
