@@ -1,5 +1,19 @@
 # DP-006 Policy Changelog
 
+## 2026-11-09 — Policy v2.1 P1 Closure 003
+
+- Classified authorization failures so scoped internal risk only handles
+  external-license, internal-research and use HOLD reasons.
+- Enforced non-empty, registered evidence IDs for every PASS use at load time.
+- Added register, anchor and code-pinned trust-root verification for Exposure.
+- Bound the verified Exposure snapshot to provider, Holdout match set and path
+  identity.
+- Added explicit monotonic reseal history with old/new hashes, approval metadata
+  and historical high-water maps.
+- Removed alternate exposure-register paths from production CLI entrypoints.
+- Real-data research remains HOLD; final acceptance and PR merge remain pending
+  independent re-review.
+
 ## 2026-11-09 — Policy v2.1 P1 Closure 002
 
 - Enforced scored-only Promotion before loader, ledger or lifecycle side effects.
