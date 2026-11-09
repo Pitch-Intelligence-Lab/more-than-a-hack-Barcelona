@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +16,19 @@ from mtah_possession.evaluation.splits import (
     SplitManifest,
     require_split,
 )
+from mtah_possession.governance.exposure import (
+    ExposureRecord,
+    VerifiedExposureSnapshot,
+    load_verified_exposure_snapshot,
+)
 from mtah_possession.governance.holdout import (
     FreezeHashes,
     HoldoutManifest,
     SplitAssignment,
 )
 from mtah_possession.governance.policy import (
+    AuthorizationBasis,
+    AuthorizationDecision,
     DataUse,
     ExternalDataPolicy,
     LabelProfile,
@@ -36,6 +45,21 @@ from mtah_possession.governance.roles import LabelRole
 EVALUATION_POSSESSION_PROFILE = "skillcorner_possession_group_v1"
 EVALUATION_PHASE_PROFILE = "skillcorner_phases_v1"
 GOVERNANCE_IDENTITY_SCHEMA_VERSION = "1.0"
+DEFAULT_EXPOSURE_REGISTER_PATH = (
+    Path(__file__).resolve().parents[3] / "configs" / "policy" / "exposure-register-v1.json"
+)
+DEFAULT_EXPOSURE_ANCHOR_PATH = (
+    Path(__file__).resolve().parents[3] / "configs" / "policy" / "exposure-register-anchor-v1.json"
+)
+DEFAULT_EXPOSURE_TRUST_ROOT_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "configs"
+    / "policy"
+    / "exposure-register-trust-root-v1.json"
+)
+APPROVED_EXPOSURE_TRUST_ROOT_SHA256 = (
+    "584fa741fc0b0b624b96d8758d13b5437b76cadc6608e9ae376be3ab572c0159"
+)
 
 
 @dataclass(frozen=True)
@@ -80,6 +104,40 @@ class AuthorizedExternalRun:
     label_profiles: dict[str, LabelProfile]
     freeze_hashes: FreezeHashes | None
     governance_identity: GovernanceAuthorizationIdentity
+    use_bases: dict[DataUse, AuthorizationBasis] = dataclass_field(default_factory=dict)
+    scope_ids: dict[DataUse, str | None] = dataclass_field(default_factory=dict)
+    exposure_records: tuple[ExposureRecord, ...] = ()
+    exposure_snapshot: VerifiedExposureSnapshot | None = None
+
+    def to_authorization_record(self) -> dict[str, Any]:
+        return {
+            "uses": {
+                use.value: {
+                    "authorization_basis": (
+                        self.use_bases[use].value
+                        if use in self.use_bases
+                        else AuthorizationBasis.EXTERNAL_RIGHT.value
+                    ),
+                    "scope_id": self.scope_ids.get(use),
+                }
+                for use in sorted(self.use_permissions, key=lambda item: item.value)
+            },
+            "exposure_disclosure": [record.to_dict() for record in self.exposure_records],
+            "exposure_integrity": (
+                {
+                    "register_path": self.exposure_snapshot.register_path,
+                    "register_path_identity": self.exposure_snapshot.register_path_identity,
+                    "register_sha256": self.exposure_snapshot.register_sha256,
+                    "anchor_path": self.exposure_snapshot.anchor_path,
+                    "anchor_path_identity": self.exposure_snapshot.anchor_path_identity,
+                    "anchor_sha256": self.exposure_snapshot.anchor_sha256,
+                    "trust_root_sha256": self.exposure_snapshot.trust_root_sha256,
+                    "reseal_id": self.exposure_snapshot.anchor.reseal_id,
+                }
+                if self.exposure_snapshot is not None
+                else None
+            ),
+        }
 
 
 def build_governance_identity(
@@ -239,6 +297,12 @@ def authorize_external_run(
     freeze_hashes: FreezeHashes | None = None,
     governance_identity: GovernanceAuthorizationIdentity | None = None,
     verify_holdout_freeze: bool = True,
+    exposure_register_path: str | os.PathLike[str] | None = DEFAULT_EXPOSURE_REGISTER_PATH,
+    exposure_anchor_path: str | os.PathLike[str] | None = DEFAULT_EXPOSURE_ANCHOR_PATH,
+    exposure_trust_root_path: str | os.PathLike[str] | None = (DEFAULT_EXPOSURE_TRUST_ROOT_PATH),
+    exposure_trust_root_sha256: str | None = APPROVED_EXPOSURE_TRUST_ROOT_SHA256,
+    verified_exposure_snapshot: VerifiedExposureSnapshot | None = None,
+    now: datetime | None = None,
 ) -> AuthorizedExternalRun:
     policy = load_policy(policy_path)
     identity = governance_identity or build_governance_identity(
@@ -251,15 +315,22 @@ def authorize_external_run(
     if identity.policy_sha256 != _sha256_file(policy_path):
         raise PolicyError("governance identity policy SHA-256 is stale")
     require_source_identity(policy, provider, source_revision)
+    decisions: dict[DataUse, AuthorizationDecision] = {}
     for use in requested_uses:
-        require_allowed(
+        decisions[use] = require_allowed(
             policy,
             provider,
             use,
             source_revision=source_revision,
+            match_id=match_id,
+            allow_scoped_internal=True,
+            now=now,
         )
     provider_policy = policy.provider(provider)
-    for axis in ("LABEL_SEMANTICS_ALIGNED", *required_status_axes):
+    status_axes = list(required_status_axes)
+    if label_profile_ids:
+        status_axes.append("LABEL_SEMANTICS_ALIGNED")
+    for axis in sorted(set(status_axes)):
         if provider_policy.statuses[axis] != PolicyStatus.PASS:
             raise PolicyError(f"{provider} {axis}={provider_policy.statuses[axis].value}")
 
@@ -297,6 +368,23 @@ def authorize_external_run(
         if verify_holdout_freeze:
             holdout_manifest.require_frozen(freeze_hashes)
 
+    exposure_snapshot: VerifiedExposureSnapshot | None = None
+    if split == "holdout":
+        exposure_snapshot = verified_exposure_snapshot or load_verified_exposure_snapshot(
+            register_path=exposure_register_path,
+            anchor_path=exposure_anchor_path,
+            trust_root_path=exposure_trust_root_path,
+            expected_trust_root_sha256=exposure_trust_root_sha256,
+            provider=provider,
+            source_revision=source_revision,
+            match_ids=tuple(sorted(split_manifest.holdout)),
+        )
+        if (
+            exposure_snapshot.anchor.holdout_provider != provider
+            or exposure_snapshot.anchor.holdout_match_ids != tuple(sorted(split_manifest.holdout))
+        ):
+            raise PolicyError("verified Exposure snapshot does not match the Holdout")
+
     return AuthorizedExternalRun(
         policy=policy,
         provider=provider_policy,
@@ -304,6 +392,10 @@ def authorize_external_run(
         label_profiles=profiles,
         freeze_hashes=freeze_hashes,
         governance_identity=identity,
+        use_bases={use: decision.basis for use, decision in decisions.items()},
+        scope_ids={use: decision.scope_id for use, decision in decisions.items()},
+        exposure_records=() if exposure_snapshot is None else exposure_snapshot.records,
+        exposure_snapshot=exposure_snapshot,
     )
 
 

@@ -1,0 +1,24 @@
+{
+  "approved_at": "2026-11-09T00:00:00+08:00",
+  "approved_by": "DP-006 policy review",
+  "approval_evidence": [
+    "docs/policy/v2.1/P1_CLOSURE_003_EVIDENCE.md"
+  ],
+  "highest_exposure_by_match": {
+    "2017461": "TRACKING_SEEN"
+  },
+  "holdout_match_ids": [],
+  "holdout_provider": "skillcorner",
+  "previous_register_sha256": null,
+  "register_path": "configs/policy/exposure-register-v1.json",
+  "register_path_identity": "f67b8f9365e0147c8e66b233b18e5b2ade92f914460ba15cae80784059ae0a84",
+  "register_sha256": "5c1579495502bad3d3a75af6addd54148d272beaa15f42a84eb43506da5d7376",
+  "reseal_id": "EXPOSURE-SEAL-INITIAL-001",
+  "schema_version": "1.0",
+  "source_identity_by_match": {
+    "2017461": {
+      "provider": "skillcorner",
+      "source_revision": "4340d274572876239c154c90bc507a9b3250a656"
+    }
+  }
+}

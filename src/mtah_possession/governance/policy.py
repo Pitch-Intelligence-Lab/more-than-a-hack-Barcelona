@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -14,11 +15,36 @@ class PolicyError(ValueError):
     """Raised when policy data is incomplete or a requested use is not allowed."""
 
 
+class AuthorizationFailureReason(StrEnum):
+    EXTERNAL_LICENSE_HOLD = "EXTERNAL_LICENSE_HOLD"
+    INTERNAL_RESEARCH_HOLD = "INTERNAL_RESEARCH_HOLD"
+    USE_PERMISSION_HOLD = "USE_PERMISSION_HOLD"
+    MISSING_EVIDENCE = "MISSING_EVIDENCE"
+    UNREGISTERED_EVIDENCE = "UNREGISTERED_EVIDENCE"
+    PERMISSION_FAIL = "PERMISSION_FAIL"
+    POLICY_INTEGRITY_ERROR = "POLICY_INTEGRITY_ERROR"
+    SOURCE_IDENTITY_ERROR = "SOURCE_IDENTITY_ERROR"
+
+
+class AuthorizationFailure(PolicyError):
+    """A classified production authorization failure."""
+
+    def __init__(self, reason: AuthorizationFailureReason, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 class PolicyStatus(StrEnum):
     PASS = "PASS"
+    PROJECT_RISK_ACCEPTED_INTERNAL = "PROJECT_RISK_ACCEPTED_INTERNAL"
     HOLD = "HOLD"
     FAIL = "FAIL"
     NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class AuthorizationBasis(StrEnum):
+    EXTERNAL_RIGHT = "EXTERNAL_RIGHT"
+    SCOPED_INTERNAL_RISK = "SCOPED_INTERNAL_RISK"
 
 
 class DataUse(StrEnum):
@@ -54,6 +80,27 @@ STATUS_AXES = frozenset(
 )
 
 USE_AXES = frozenset(use.value for use in DataUse)
+SCOPED_INTERNAL_RISK_USES = frozenset(
+    {
+        DataUse.DOWNLOAD_STORE,
+        DataUse.READ_PREPROCESS,
+    }
+)
+NEVER_SCOPED_INTERNAL_RISK_USES = frozenset(
+    {
+        "final_candidate",
+        DataUse.PUBLICATION.value,
+        DataUse.SOURCE_REDISTRIBUTION.value,
+        DataUse.DERIVED_REDISTRIBUTION.value,
+    }
+)
+SCOPED_RISK_FALLBACK_REASONS = frozenset(
+    {
+        AuthorizationFailureReason.EXTERNAL_LICENSE_HOLD,
+        AuthorizationFailureReason.INTERNAL_RESEARCH_HOLD,
+        AuthorizationFailureReason.USE_PERMISSION_HOLD,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +126,26 @@ class LabelProfile:
 
 
 @dataclass(frozen=True)
+class ProjectRiskAcceptance:
+    scope_id: str
+    provider: str
+    source_revision: str
+    match_ids: tuple[str, ...]
+    allowed_uses: tuple[str, ...]
+    restrictions: tuple[str, ...]
+    risk_owner: str
+    accepted_at: str
+    review_at: str
+    status: PolicyStatus
+
+
+@dataclass(frozen=True)
+class AuthorizationDecision:
+    basis: AuthorizationBasis
+    scope_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ProviderPolicy:
     name: str
     source_revision: str
@@ -86,9 +153,11 @@ class ProviderPolicy:
     statuses: dict[str, PolicyStatus]
     uses: dict[DataUse, UsePermission]
     label_profiles: tuple[LabelProfile, ...]
+    project_risk_acceptances: tuple[ProjectRiskAcceptance, ...] = ()
 
     @property
     def overall_status(self) -> PolicyStatus:
+        """Display-only aggregate; production authorization uses individual gates."""
         research_uses = (
             DataUse.DOWNLOAD_STORE,
             DataUse.READ_PREPROCESS,
@@ -135,9 +204,9 @@ def load_policy(path: str | os.PathLike[str]) -> ExternalDataPolicy:
     required = {"schema_version", "policy_version", "official_rule_revision", "providers"}
     if set(raw) != required:
         raise PolicyError("policy root has missing or unknown fields")
-    if raw["schema_version"] != "2.0":
-        raise PolicyError("policy schema_version must be 2.0")
-    if raw["policy_version"] != "DP-006-POLICY-v2":
+    if raw["schema_version"] not in {"2.0", "2.1"}:
+        raise PolicyError("policy schema_version must be 2.0 or 2.1")
+    if raw["policy_version"] not in {"DP-006-POLICY-v2", "DP-006-POLICY-v2.1"}:
         raise PolicyError("unexpected policy_version")
     if (
         not isinstance(raw["official_rule_revision"], str)
@@ -178,30 +247,156 @@ def require_source_identity(
     return provider
 
 
+def require_scoped_internal_risk(
+    policy: ExternalDataPolicy,
+    *,
+    provider_name: str,
+    source_revision: str,
+    match_id: str,
+    use: str,
+    now: datetime | None = None,
+) -> ProjectRiskAcceptance:
+    """Authorize one bounded internal use without changing external rights."""
+    if use in NEVER_SCOPED_INTERNAL_RISK_USES:
+        raise PolicyError(f"scoped internal risk cannot authorize {use}")
+    provider = require_source_identity(policy, provider_name, source_revision)
+    current = now or datetime.now(UTC)
+    for scope in provider.project_risk_acceptances:
+        if scope.status != PolicyStatus.PROJECT_RISK_ACCEPTED_INTERNAL:
+            continue
+        if scope.provider != provider_name or scope.source_revision != source_revision:
+            continue
+        if match_id not in scope.match_ids or use not in scope.allowed_uses:
+            continue
+        if not scope.restrictions or not scope.risk_owner:
+            continue
+        try:
+            accepted = datetime.fromisoformat(scope.accepted_at)
+            review = datetime.fromisoformat(scope.review_at)
+        except (TypeError, ValueError) as error:
+            raise PolicyError("project risk acceptance timestamps are invalid") from error
+        if accepted.tzinfo is None or review.tzinfo is None or accepted >= review:
+            raise PolicyError("project risk acceptance timestamps are invalid")
+        if accepted > current or review <= current:
+            continue
+        return scope
+    raise PolicyError(f"no active scoped internal risk acceptance for {provider_name}/{use}")
+
+
 def require_allowed(
     policy: ExternalDataPolicy,
     provider_name: str,
     use: DataUse,
     *,
     source_revision: str,
-) -> None:
+    match_id: str | None = None,
+    allow_scoped_internal: bool = False,
+    now: datetime | None = None,
+) -> AuthorizationDecision:
     provider = require_source_identity(policy, provider_name, source_revision)
+    try:
+        _require_external_right(provider, use)
+    except AuthorizationFailure as external_error:
+        if external_error.reason not in SCOPED_RISK_FALLBACK_REASONS:
+            raise
+        if not allow_scoped_internal:
+            raise
+        if use not in SCOPED_INTERNAL_RISK_USES:
+            raise
+        if not match_id:
+            raise PolicyError("scoped internal risk requires a match ID") from None
+        if provider.statuses["PUBLIC_SOURCE_VERIFIED"] != PolicyStatus.PASS:
+            raise PolicyError(
+                f"{provider_name} PUBLIC_SOURCE_VERIFIED="
+                f"{provider.statuses['PUBLIC_SOURCE_VERIFIED'].value}"
+            ) from None
+        for axis in ("LICENSE_VERIFIED", "INTERNAL_RESEARCH_AUTHORIZED"):
+            if provider.statuses[axis] == PolicyStatus.FAIL:
+                raise PolicyError(f"{provider_name} {axis}=FAIL") from None
+        if provider.uses[use].status == PolicyStatus.FAIL:
+            raise PolicyError(f"{provider_name} use {use.value} status is FAIL") from None
+        try:
+            scope = require_scoped_internal_risk(
+                policy,
+                provider_name=provider_name,
+                source_revision=source_revision,
+                match_id=match_id,
+                use=use.value,
+                now=now,
+            )
+        except PolicyError as scope_error:
+            raise PolicyError(f"{external_error}; {scope_error}") from scope_error
+        return AuthorizationDecision(
+            basis=AuthorizationBasis.SCOPED_INTERNAL_RISK,
+            scope_id=scope.scope_id,
+        )
+    return AuthorizationDecision(basis=AuthorizationBasis.EXTERNAL_RIGHT)
+
+
+def _require_external_right(provider: ProviderPolicy, use: DataUse) -> None:
     required_statuses = _required_statuses(use)
-    failed = [
-        f"{axis}={provider.statuses[axis].value}"
-        for axis in required_statuses
-        if provider.statuses[axis] != PolicyStatus.PASS
-    ]
-    if failed:
-        raise PolicyError(f"{provider_name} use {use.value} is not allowed: " + ", ".join(failed))
+    failed: list[str] = []
+    reasons: set[AuthorizationFailureReason] = set()
+    for axis in required_statuses:
+        status = provider.statuses[axis]
+        if status == PolicyStatus.PASS:
+            continue
+        failed.append(f"{axis}={status.value}")
+        if axis == "PUBLIC_SOURCE_VERIFIED":
+            reasons.add(AuthorizationFailureReason.SOURCE_IDENTITY_ERROR)
+        elif axis == "LICENSE_VERIFIED" and status == PolicyStatus.HOLD:
+            reasons.add(AuthorizationFailureReason.EXTERNAL_LICENSE_HOLD)
+        elif axis == "INTERNAL_RESEARCH_AUTHORIZED" and status == PolicyStatus.HOLD:
+            reasons.add(AuthorizationFailureReason.INTERNAL_RESEARCH_HOLD)
+        elif status == PolicyStatus.HOLD:
+            reasons.add(AuthorizationFailureReason.USE_PERMISSION_HOLD)
+        else:
+            reasons.add(AuthorizationFailureReason.PERMISSION_FAIL)
     permission = provider.uses[use]
-    if permission.status != PolicyStatus.PASS:
-        raise PolicyError(f"{provider_name} use {use.value} status is {permission.status.value}")
-    if not permission.evidence_ids:
-        raise PolicyError(f"{provider_name} use {use.value} has no evidence IDs")
-    unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
-    if unavailable:
-        raise PolicyError(f"use evidence IDs are not registered: {unavailable}")
+    if permission.status == PolicyStatus.FAIL:
+        reasons.add(AuthorizationFailureReason.PERMISSION_FAIL)
+        failed.append(f"{use.value}=FAIL")
+    elif permission.status == PolicyStatus.HOLD:
+        reasons.add(AuthorizationFailureReason.USE_PERMISSION_HOLD)
+        failed.append(f"{use.value}=HOLD")
+        if permission.evidence_ids:
+            unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
+            if unavailable:
+                reasons.add(AuthorizationFailureReason.UNREGISTERED_EVIDENCE)
+                failed.append(f"{use.value}=UNREGISTERED_EVIDENCE")
+    elif permission.status != PolicyStatus.PASS:
+        reasons.add(AuthorizationFailureReason.POLICY_INTEGRITY_ERROR)
+        failed.append(f"{use.value}={permission.status.value}")
+    elif not permission.evidence_ids:
+        reasons.add(AuthorizationFailureReason.MISSING_EVIDENCE)
+        failed.append(f"{use.value}=MISSING_EVIDENCE")
+    else:
+        unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
+        if unavailable:
+            reasons.add(AuthorizationFailureReason.UNREGISTERED_EVIDENCE)
+            failed.append(f"{use.value}=UNREGISTERED_EVIDENCE")
+    if reasons:
+        reason = next(
+            (
+                candidate
+                for candidate in (
+                    AuthorizationFailureReason.SOURCE_IDENTITY_ERROR,
+                    AuthorizationFailureReason.PERMISSION_FAIL,
+                    AuthorizationFailureReason.MISSING_EVIDENCE,
+                    AuthorizationFailureReason.UNREGISTERED_EVIDENCE,
+                    AuthorizationFailureReason.POLICY_INTEGRITY_ERROR,
+                    AuthorizationFailureReason.EXTERNAL_LICENSE_HOLD,
+                    AuthorizationFailureReason.INTERNAL_RESEARCH_HOLD,
+                    AuthorizationFailureReason.USE_PERMISSION_HOLD,
+                )
+                if candidate in reasons
+            ),
+            AuthorizationFailureReason.POLICY_INTEGRITY_ERROR,
+        )
+        raise AuthorizationFailure(
+            reason,
+            f"{provider.name} use {use.value} is not allowed: " + ", ".join(failed),
+        )
 
 
 def _parse_provider(raw: Any) -> ProviderPolicy:
@@ -215,7 +410,8 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
         "uses",
         "label_profiles",
     }
-    if set(raw) != required:
+    optional = {"project_risk_acceptances"}
+    if set(raw) != required and set(raw) != required | optional:
         raise PolicyError("provider entry has missing or unknown fields")
     if not isinstance(raw["provider"], str) or not raw["provider"].strip():
         raise PolicyError("provider name is missing")
@@ -226,7 +422,25 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
         raise PolicyError(f"provider {raw['provider']} has no source evidence")
     statuses = _parse_statuses(raw["statuses"])
     uses = _parse_uses(raw["uses"])
+    for use, permission in uses.items():
+        if permission.status == PolicyStatus.PASS and not permission.evidence_ids:
+            raise PolicyError(f"PASS use {use.value} requires evidence IDs")
+        if permission.evidence_ids:
+            unavailable = sorted(set(permission.evidence_ids).difference(source_evidence))
+        else:
+            unavailable = []
+        if unavailable:
+            raise PolicyError(
+                f"{permission.status.value} use {use.value} evidence IDs are not registered: "
+                f"{unavailable}"
+            )
     profiles = tuple(_parse_label_profile(raw["provider"], item) for item in raw["label_profiles"])
+    risks = tuple(
+        _parse_project_risk_acceptance(raw["provider"], item)
+        for item in raw.get("project_risk_acceptances", ())
+    )
+    if any(scope.source_revision != raw["source_revision"] for scope in risks):
+        raise PolicyError("project risk acceptance revision does not match provider")
     return ProviderPolicy(
         name=raw["provider"],
         source_revision=raw["source_revision"],
@@ -234,6 +448,7 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
         statuses=statuses,
         uses=uses,
         label_profiles=profiles,
+        project_risk_acceptances=risks,
     )
 
 
@@ -313,6 +528,53 @@ def _parse_label_profile(provider: str, raw: Any) -> LabelProfile:
         target_mapping_id=raw["target_mapping_id"],
         mapping_version=raw["mapping_version"],
         mapping_evidence=mapping_evidence,
+        status=status,
+    )
+
+
+def _parse_project_risk_acceptance(
+    provider: str,
+    raw: Any,
+) -> ProjectRiskAcceptance:
+    required = {
+        "scope_id",
+        "provider",
+        "source_revision",
+        "match_ids",
+        "allowed_uses",
+        "restrictions",
+        "risk_owner",
+        "accepted_at",
+        "review_at",
+        "status",
+    }
+    if not isinstance(raw, dict) or set(raw) != required:
+        raise PolicyError("project risk acceptance has missing or unknown fields")
+    if raw["provider"] != provider:
+        raise PolicyError("project risk acceptance provider mismatch")
+    match_ids = _string_tuple(raw["match_ids"], "match_ids")
+    allowed_uses = _string_tuple(raw["allowed_uses"], "allowed_uses")
+    restrictions = _string_tuple(raw["restrictions"], "restrictions")
+    if not match_ids or match_ids != tuple(sorted(set(match_ids))):
+        raise PolicyError("project risk acceptance match IDs are invalid")
+    if not allowed_uses or not restrictions:
+        raise PolicyError("project risk acceptance scope is incomplete")
+    try:
+        status = PolicyStatus(raw["status"])
+    except ValueError as error:
+        raise PolicyError("project risk acceptance status is invalid") from error
+    if status != PolicyStatus.PROJECT_RISK_ACCEPTED_INTERNAL:
+        raise PolicyError("project risk acceptance must use scoped internal status")
+    return ProjectRiskAcceptance(
+        scope_id=str(raw["scope_id"]),
+        provider=provider,
+        source_revision=str(raw["source_revision"]),
+        match_ids=match_ids,
+        allowed_uses=allowed_uses,
+        restrictions=restrictions,
+        risk_owner=str(raw["risk_owner"]),
+        accepted_at=str(raw["accepted_at"]),
+        review_at=str(raw["review_at"]),
         status=status,
     )
 

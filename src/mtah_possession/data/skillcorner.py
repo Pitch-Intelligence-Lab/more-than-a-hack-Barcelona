@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 
 from mtah_possession.data.neutral import (
+    EvaluationReference,
     NeutralMatch,
     PeriodSpan,
     PhaseSpan,
@@ -60,6 +61,8 @@ class LoadedSkillCornerSource:
     actual_checksums: Mapping[str, str]
     actual_source_identity: Any
     snapshot_digest: str
+    external_root: str = ""
+    read_roles: tuple[str, ...] = ()
 
 
 def create_skillcorner_manifest_snapshot(
@@ -188,21 +191,37 @@ def load_skillcorner_match_from_snapshot(
     snapshot: SkillCornerManifestSnapshot,
     external_root: str | os.PathLike[str],
     expected_source_identity: Any | None,
+    *,
+    read_roles: tuple[str, ...] | None = None,
+    parse_reference: bool = True,
 ) -> LoadedSkillCornerSource:
     manifest = snapshot.manifest
     root = Path(external_root).resolve(strict=False)
     file_snapshots: dict[str, ImmutableFileSnapshot] = {}
-    for role, relative, expected in (
-        ("license", manifest["license_file"], manifest["license_sha256"]),
-        ("readme", "README.md", manifest["readme_sha256"]),
-        (
-            "tracking",
+    requested_roles = (
+        ("license", "readme", "tracking", "phases", "match") if read_roles is None else read_roles
+    )
+    allowed_roles = {"license", "readme", "tracking", "phases", "match"}
+    if not set(requested_roles) <= allowed_roles:
+        raise SkillCornerDataError("unsupported source read role")
+    specs = {
+        "license": (manifest["license_file"], manifest["license_sha256"]),
+        "readme": ("README.md", manifest["readme_sha256"]),
+        "tracking": (
             manifest["files"]["tracking"]["path"],
             manifest["files"]["tracking"]["sha256"],
         ),
-        ("phases", manifest["files"]["phases"]["path"], manifest["files"]["phases"]["sha256"]),
-        ("match", manifest["files"]["match"]["path"], manifest["files"]["match"]["sha256"]),
-    ):
+        "phases": (
+            manifest["files"]["phases"]["path"],
+            manifest["files"]["phases"]["sha256"],
+        ),
+        "match": (
+            manifest["files"]["match"]["path"],
+            manifest["files"]["match"]["sha256"],
+        ),
+    }
+    for role in requested_roles:
+        relative, expected = specs[role]
         path = root / relative
         try:
             data = path.read_bytes()
@@ -221,6 +240,8 @@ def load_skillcorner_match_from_snapshot(
             data=data,
         )
     checksums = {role: snapshot.actual_sha256 for role, snapshot in file_snapshots.items()}
+    for role in allowed_roles.difference(checksums):
+        checksums[role] = str(specs[role][1])
     actual_source_identity = None
     if expected_source_identity is not None:
         from mtah_possession.governance.source import build_source_identity_from_manifest
@@ -317,23 +338,24 @@ def load_skillcorner_match_from_snapshot(
             continue
         frame_present[frame] = True
 
-        group = (record.get("possession") or {}).get("group")
-        group_key = "<null>" if group is None else str(group)
-        group_counts = aggregate["possession_group_values"]
-        group_counts[group_key] = group_counts.get(group_key, 0) + 1
-        side = _side_from_group(group, home_team_id, away_team_id)
-        possession_side[frame] = side
-        if side == TeamSide.HOME:
-            aggregate["possession_home"] += 1
-            possession_status[frame] = 0
-        elif side == TeamSide.AWAY:
-            aggregate["possession_away"] += 1
-            possession_status[frame] = 0
-        elif group is None:
-            aggregate["possession_missing"] += 1
-        else:
-            aggregate["possession_unrecognized"] += 1
-            possession_status[frame] = 2
+        if parse_reference:
+            group = (record.get("possession") or {}).get("group")
+            group_key = "<null>" if group is None else str(group)
+            group_counts = aggregate["possession_group_values"]
+            group_counts[group_key] = group_counts.get(group_key, 0) + 1
+            side = _side_from_group(group, home_team_id, away_team_id)
+            possession_side[frame] = side
+            if side == TeamSide.HOME:
+                aggregate["possession_home"] += 1
+                possession_status[frame] = 0
+            elif side == TeamSide.AWAY:
+                aggregate["possession_away"] += 1
+                possession_status[frame] = 0
+            elif group is None:
+                aggregate["possession_missing"] += 1
+            else:
+                aggregate["possession_unrecognized"] += 1
+                possession_status[frame] = 2
 
         ball = record.get("ball_data")
         if isinstance(ball, dict):
@@ -373,14 +395,16 @@ def load_skillcorner_match_from_snapshot(
 
     try:
         phases_handle = StringIO(file_snapshots["phases"].data.decode("utf-8"), newline="")
-    except UnicodeDecodeError as error:
-        raise SkillCornerDataError("could not decode external phase data") from error
-    phases = _parse_phases_stream(
-        phases_handle,
-        frame_count=frame_count,
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-    )
+        phases = _parse_phases_stream(
+            phases_handle,
+            frame_count=frame_count,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+        )
+    except (KeyError, UnicodeDecodeError) as error:
+        if "phases" in requested_roles:
+            raise SkillCornerDataError("could not decode external phase data") from error
+        phases = ()
     match = NeutralMatch(
         match_id=str(manifest["match_id"]),
         fps=int(manifest["fps"]),
@@ -429,6 +453,92 @@ def load_skillcorner_match_from_snapshot(
         actual_checksums=MappingProxyType(dict(checksums)),
         actual_source_identity=actual_source_identity,
         snapshot_digest=source_snapshot_digest,
+        external_root=str(root),
+        read_roles=(
+            (*tuple(requested_roles), "possession_reference")
+            if parse_reference
+            else tuple(requested_roles)
+        ),
+    )
+
+
+def load_skillcorner_evaluation_reference(
+    loaded: LoadedSkillCornerSource,
+    *,
+    include_phases: bool = True,
+) -> EvaluationReference:
+    """Construct evaluation-only fields after predictions are fixed."""
+    tracking_snapshot = loaded.files.get("tracking")
+    if tracking_snapshot is None:
+        raise SkillCornerDataError("prediction snapshot is missing tracking bytes")
+    manifest = loaded.manifest_snapshot.manifest
+    frame_count = loaded.match.frame_count
+    possession_side = np.full(frame_count, TeamSide.UNKNOWN, dtype=np.int8)
+    possession_status = np.full(frame_count, 1, dtype=np.int8)
+    try:
+        tracking_handle = StringIO(tracking_snapshot.data.decode("utf-8"))
+    except UnicodeDecodeError as error:
+        raise SkillCornerDataError("could not decode evaluation tracking bytes") from error
+    for line in tracking_handle:
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+            frame = int(record["frame"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise SkillCornerDataError("malformed evaluation possession record") from error
+        if not 0 <= frame < frame_count:
+            continue
+        group = (record.get("possession") or {}).get("group")
+        side = _side_from_group(
+            group,
+            int(manifest["home_team_id"]),
+            int(manifest["away_team_id"]),
+        )
+        possession_side[frame] = side
+        if side in {TeamSide.HOME, TeamSide.AWAY}:
+            possession_status[frame] = 0
+        elif group is not None:
+            possession_status[frame] = 2
+
+    checksums = dict(loaded.actual_checksums)
+    phases: tuple[PhaseSpan, ...] = ()
+    if include_phases:
+        phase_snapshot = loaded.files.get("phases")
+        if phase_snapshot is None:
+            phase_path = Path(loaded.external_root) / manifest["files"]["phases"]["path"]
+            try:
+                phase_data = phase_path.read_bytes()
+            except OSError as error:
+                raise SkillCornerDataError("evaluation phase file is missing") from error
+            actual = hashlib.sha256(phase_data).hexdigest()
+            if actual != manifest["files"]["phases"]["sha256"]:
+                raise SkillCornerDataError("evaluation phase checksum mismatch")
+            checksums["phases"] = actual
+            phase_bytes = phase_data
+        else:
+            phase_bytes = phase_snapshot.data
+        try:
+            phase_handle = StringIO(phase_bytes.decode("utf-8"), newline="")
+        except UnicodeDecodeError as error:
+            raise SkillCornerDataError("could not decode evaluation phase bytes") from error
+        phases = _parse_phases_stream(
+            phase_handle,
+            frame_count=frame_count,
+            home_team_id=int(manifest["home_team_id"]),
+            away_team_id=int(manifest["away_team_id"]),
+        )
+    return EvaluationReference(
+        match_id=str(manifest["match_id"]),
+        frame_count=frame_count,
+        player_ids=loaded.match.player_ids,
+        periods=loaded.match.periods,
+        phases=phases,
+        frame_present=loaded.match.frame_present.copy(),
+        possession_side=possession_side,
+        possession_status=possession_status,
+        source_checksums=checksums,
+        source_metadata=dict(loaded.match.source_metadata),
     )
 
 

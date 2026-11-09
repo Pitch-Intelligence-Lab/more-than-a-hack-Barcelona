@@ -13,10 +13,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mtah_possession.data.neutral import map_proxy_target  # noqa: E402
+from mtah_possession.data.neutral import (  # noqa: E402
+    map_reference_proxy_target,
+    prediction_source_from_match,
+)
 from mtah_possession.data.skillcorner import (  # noqa: E402
     LoadedSkillCornerSource,
     create_skillcorner_manifest_snapshot,
+    load_skillcorner_evaluation_reference,
     load_skillcorner_match_from_snapshot,
 )
 from mtah_possession.evaluation.splits import (  # noqa: E402
@@ -94,9 +98,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--splits", default=str(ROOT / "configs" / "external-splits.json"))
     parser.add_argument(
         "--policy",
-        default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.json"),
+        default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.1.json"),
     )
     parser.add_argument("--external-root", default=None)
+    parser.add_argument(
+        "--mode",
+        choices=("structural", "proxy"),
+        default="proxy",
+    )
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
 
@@ -109,21 +118,29 @@ def main(argv: list[str] | None = None) -> int:
         manifest = snapshot.manifest
         source_identity = build_source_identity_from_manifest(manifest)
         splits = load_split_manifest(args.splits)
+        proxy_mode = args.mode == "proxy"
         authorized = authorize_external_run(
             policy_path=args.policy,
             provider=str(manifest["provider"]),
             source_revision=str(manifest["commit"]),
             requested_uses=(
-                DataUse.READ_PREPROCESS,
-                DataUse.EVALUATION_REFERENCE,
+                (
+                    DataUse.READ_PREPROCESS,
+                    DataUse.EVALUATION_REFERENCE,
+                )
+                if proxy_mode
+                else (DataUse.READ_PREPROCESS,)
             ),
             label_profile_ids=(
-                EVALUATION_POSSESSION_PROFILE,
-                EVALUATION_PHASE_PROFILE,
+                (
+                    EVALUATION_POSSESSION_PROFILE,
+                    EVALUATION_PHASE_PROFILE,
+                )
+                if proxy_mode
+                else ()
             ),
             required_status_axes=(
-                "LABEL_SEMANTICS_ALIGNED",
-                "PHASE_SEMANTICS_VERIFIED",
+                ("LABEL_SEMANTICS_ALIGNED", "PHASE_SEMANTICS_VERIFIED") if proxy_mode else ()
             ),
             split_manifest=splits,
             match_id=str(manifest["match_id"]),
@@ -134,17 +151,42 @@ def main(argv: list[str] | None = None) -> int:
             snapshot,
             root,
             source_identity,
+            read_roles=("license", "readme", "tracking", "phases", "match"),
+            parse_reference=False,
         )
         match = _validate_loaded_source(
             loaded_source,
             snapshot,
             source_identity,
         )
-        proxy = map_proxy_target(
-            match,
-            possession_profile=authorized.label_profiles[EVALUATION_POSSESSION_PROFILE],
-            phase_profile=authorized.label_profiles[EVALUATION_PHASE_PROFILE],
-        )
+        proxy = None
+        evaluation_reference_read = False
+        transformed_feature_families = ["phase_structure"]
+        phase_gap_dead_frames = None
+        if proxy_mode:
+            reference = load_skillcorner_evaluation_reference(
+                loaded_source,
+                include_phases=True,
+            )
+            evaluation_reference_read = True
+            proxy = map_reference_proxy_target(
+                prediction_source_from_match(match),
+                reference,
+                possession_profile=authorized.label_profiles[EVALUATION_POSSESSION_PROFILE],
+                phase_profile=authorized.label_profiles[EVALUATION_PHASE_PROFILE],
+            )
+            transformed_feature_families.append("phase_gap_dead_evidence")
+            directives = derive_gap_dead_directives(
+                tuple((period.start_frame, period.end_frame) for period in match.periods),
+                tuple((phase.start_frame, phase.end_frame) for phase in match.phases),
+                source="skillcorner_phases_of_play_gap",
+            )
+            phase_evidence = compile_phase_evidence(
+                match.frame_count,
+                match.fps,
+                directives,
+            )
+            phase_gap_dead_frames = phase_evidence.forced_dead_frames
         periods = [
             {
                 "period": period.period,
@@ -157,16 +199,10 @@ def main(argv: list[str] | None = None) -> int:
             }
             for period in match.periods
         ]
-        in_play = [False] * match.frame_count
-        for phase in match.phases:
-            for frame in range(phase.start_frame, phase.end_frame):
-                in_play[frame] = True
-        directives = derive_gap_dead_directives(
-            tuple((period.start_frame, period.end_frame) for period in match.periods),
-            tuple((phase.start_frame, phase.end_frame) for phase in match.phases),
-            source="skillcorner_phases_of_play_gap",
+        phase_coverage_frames = sum(phase.end_frame - phase.start_frame for phase in match.phases)
+        phase_interval_valid = all(
+            0 <= phase.start_frame < phase.end_frame <= match.frame_count for phase in match.phases
         )
-        phase_evidence = compile_phase_evidence(match.frame_count, match.fps, directives)
         report = {
             "match_id": match.match_id,
             "fps": match.fps,
@@ -178,12 +214,10 @@ def main(argv: list[str] | None = None) -> int:
             "away_team": {"id": match.away_team_id, "name": match.away_team_name},
             "periods": periods,
             "phase_rows": len(match.phases),
-            "in_play_frames": sum(in_play),
-            "phase_gap_dead_frames": phase_evidence.forced_dead_frames,
+            "phase_interval_valid": phase_interval_valid,
+            "phase_coverage_frames": phase_coverage_frames,
             "tracking_frames_present": int(match.frame_present.sum()),
             "tracking_aggregate": dict(match.source_metadata.get("tracking_aggregate", {})),
-            "proxy_counts": dict(proxy.counts),
-            "proxy_sources": dict(proxy.source_counts),
             "source_checksums": dict(match.source_checksums),
             "source_integrity": {
                 "source_identity_sha256": source_identity.source_identity_sha256,
@@ -201,6 +235,20 @@ def main(argv: list[str] | None = None) -> int:
                     for profile_id, profile in authorized.label_profiles.items()
                 },
             },
+        }
+        if proxy is not None:
+            report["proxy_counts"] = dict(proxy.counts)
+            report["proxy_sources"] = dict(proxy.source_counts)
+            report["phase_gap_dead_frames"] = phase_gap_dead_frames
+        report["audit_mode"] = args.mode
+        report["observed_uses"] = {
+            "declared_uses": [
+                DataUse.READ_PREPROCESS.value,
+                *([DataUse.EVALUATION_REFERENCE.value] if proxy_mode else []),
+            ],
+            "runtime_read_roles": list(loaded_source.read_roles),
+            "transformed_feature_families": transformed_feature_families,
+            "evaluation_reference_read": evaluation_reference_read,
         }
         _atomic_json(Path(args.output), report)
     except ValueError as error:

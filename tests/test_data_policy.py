@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -18,8 +19,10 @@ from mtah_possession.governance.policy import (
     PolicyStatus,
     load_policy,
     require_allowed,
+    require_scoped_internal_risk,
     require_source_identity,
 )
+from mtah_possession.governance.roles import LabelRole, validate_label_role
 from mtah_possession.governance.source import (
     build_source_identity,
     build_source_identity_from_manifest,
@@ -115,6 +118,7 @@ def run_audit(
     output: Path,
     *,
     match_id: str = "101",
+    mode: str = "proxy",
 ) -> int:
     return audit_module.main(
         [
@@ -126,6 +130,8 @@ def run_audit(
             str(fixture["policy"]),
             "--external-root",
             str(fixture["root"]),
+            "--mode",
+            mode,
             "--output",
             str(output),
         ]
@@ -216,14 +222,8 @@ def test_pass_use_without_evidence_id_fails(tmp_path: Path) -> None:
         }
 
     path = write_modified_policy(tmp_path, mutate)
-    policy = load_policy(path)
-    with pytest.raises(PolicyError, match="no evidence IDs"):
-        require_allowed(
-            policy,
-            "skillcorner",
-            DataUse.READ_PREPROCESS,
-            source_revision="4340d274572876239c154c90bc507a9b3250a656",
-        )
+    with pytest.raises(PolicyError, match="requires evidence IDs"):
+        load_policy(path)
 
 
 def test_source_revision_mismatch_fails() -> None:
@@ -347,12 +347,12 @@ def test_ta01_audit_uses_authorized_snapshot_after_config_replacement(
     config_path = fixture["sources"]["101"]["config"]
     original_loader = audit_module.load_skillcorner_match_from_snapshot
 
-    def swapping_loader(snapshot, external_root, expected_identity):
+    def swapping_loader(snapshot, external_root, expected_identity, **kwargs):
         config_path.write_text(
             fixture["sources"]["102"]["config"].read_text(encoding="utf-8"),
             encoding="utf-8",
         )
-        return original_loader(snapshot, external_root, expected_identity)
+        return original_loader(snapshot, external_root, expected_identity, **kwargs)
 
     monkeypatch.setattr(
         audit_module,
@@ -375,9 +375,9 @@ def test_ta02_audit_rejects_data_file_replacement_after_authorization(
     tracking_path = fixture["sources"]["101"]["tracking"]
     original_loader = audit_module.load_skillcorner_match_from_snapshot
 
-    def swapping_loader(snapshot, external_root, expected_identity):
+    def swapping_loader(snapshot, external_root, expected_identity, **kwargs):
         tracking_path.write_text('{"frame":0}\n', encoding="utf-8")
-        return original_loader(snapshot, external_root, expected_identity)
+        return original_loader(snapshot, external_root, expected_identity, **kwargs)
 
     monkeypatch.setattr(
         audit_module,
@@ -397,8 +397,8 @@ def test_ta03_audit_rejects_actual_identity_mismatch(
     original_loader = audit_module.load_skillcorner_match_from_snapshot
     other_identity = build_source_identity(fixture["sources"]["102"]["config"])
 
-    def mismatched_loader(snapshot, external_root, expected_identity):
-        loaded = original_loader(snapshot, external_root, expected_identity)
+    def mismatched_loader(snapshot, external_root, expected_identity, **kwargs):
+        loaded = original_loader(snapshot, external_root, expected_identity, **kwargs)
         return replace(loaded, actual_source_identity=other_identity)
 
     monkeypatch.setattr(
@@ -456,8 +456,8 @@ def test_ta07_failed_audit_leaves_no_success_or_partial_output(
     before = output.read_bytes()
     original_loader = audit_module.load_skillcorner_match_from_snapshot
 
-    def mismatched_loader(snapshot, external_root, expected_identity):
-        loaded = original_loader(snapshot, external_root, expected_identity)
+    def mismatched_loader(snapshot, external_root, expected_identity, **kwargs):
+        loaded = original_loader(snapshot, external_root, expected_identity, **kwargs)
         checksums = dict(loaded.actual_checksums)
         checksums["tracking"] = "0" * 64
         return replace(loaded, actual_checksums=checksums)
@@ -479,3 +479,146 @@ def test_ta08_handoff_documents_have_no_pending_head_placeholders() -> None:
         text = (ROOT / "docs" / "policy" / name).read_text(encoding="utf-8")
         assert "PENDING_PUSH" not in text
         assert "PENDING_FINAL" not in text
+
+
+def test_pb05_unauthorized_possession_training_target_is_rejected(tmp_path: Path) -> None:
+    def mutate(values):
+        provider = values["providers"][0]
+        for axis in (
+            "PUBLIC_SOURCE_VERIFIED",
+            "LICENSE_VERIFIED",
+            "INTERNAL_RESEARCH_AUTHORIZED",
+            "LABEL_SEMANTICS_ALIGNED",
+        ):
+            provider["statuses"][axis] = "PASS"
+        provider["uses"]["possession_group_target"] = {
+            "status": "PASS",
+            "evidence_ids": ["EV-AUTH-SC-README"],
+            "conditions": [],
+        }
+
+    path = write_modified_policy(tmp_path, mutate)
+    policy = load_policy(path)
+    with pytest.raises(PolicyError, match="TRAINING_AUTHORIZED=HOLD"):
+        require_allowed(
+            policy,
+            "skillcorner",
+            DataUse.POSSESSION_GROUP_TARGET,
+            source_revision=SOURCE_REVISION,
+        )
+
+
+def test_pb06_invalid_label_profile_cannot_be_evaluation_reference() -> None:
+    policy = load_policy(POLICY)
+    profile = policy.provider("skillcorner").label_profiles[0]
+    with pytest.raises(PolicyError, match="not PASS"):
+        validate_label_role(profile, LabelRole.EVALUATION_REFERENCE)
+
+
+def test_pb10_scoped_internal_risk_cannot_authorize_final_candidate(
+    tmp_path: Path,
+) -> None:
+    values = json.loads(
+        (ROOT / "configs" / "policy" / "external-data-policy-v2.1.json").read_text(encoding="utf-8")
+    )
+    provider = values["providers"][0]
+    provider["project_risk_acceptances"] = [
+        {
+            "scope_id": "RISK-INTERNAL-001",
+            "provider": "skillcorner",
+            "source_revision": SOURCE_REVISION,
+            "match_ids": ["101"],
+            "allowed_uses": ["internal_inspection", "final_candidate"],
+            "restrictions": ["internal only; no publication or redistribution"],
+            "risk_owner": "project-owner",
+            "accepted_at": "2026-11-09T00:00:00+00:00",
+            "review_at": "2026-12-09T00:00:00+00:00",
+            "status": "PROJECT_RISK_ACCEPTED_INTERNAL",
+        }
+    ]
+    path = tmp_path / "policy-v2.1.json"
+    path.write_text(json.dumps(values), encoding="utf-8")
+    policy = load_policy(path)
+    assert policy.provider("skillcorner").statuses["LICENSE_VERIFIED"] == PolicyStatus.HOLD
+    scope = require_scoped_internal_risk(
+        policy,
+        provider_name="skillcorner",
+        source_revision=SOURCE_REVISION,
+        match_id="101",
+        use="internal_inspection",
+        now=datetime.fromisoformat("2026-11-10T00:00:00+00:00"),
+    )
+    assert scope.scope_id == "RISK-INTERNAL-001"
+    assert policy.provider("skillcorner").statuses["LICENSE_VERIFIED"] == PolicyStatus.HOLD
+    with pytest.raises(PolicyError, match="cannot authorize final_candidate"):
+        require_scoped_internal_risk(
+            policy,
+            provider_name="skillcorner",
+            source_revision=SOURCE_REVISION,
+            match_id="101",
+            use="final_candidate",
+            now=datetime.fromisoformat("2026-11-10T00:00:00+00:00"),
+        )
+
+
+def test_pb08_structural_audit_runs_when_evaluation_is_hold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_audit_fixture(tmp_path)
+    values = json.loads(fixture["policy"].read_text(encoding="utf-8"))
+    provider = values["providers"][0]
+    provider["statuses"]["EVALUATION_AUTHORIZED"] = "HOLD"
+    provider["statuses"]["PHASE_SEMANTICS_VERIFIED"] = "HOLD"
+    provider["uses"]["evaluation_reference"]["status"] = "HOLD"
+    for profile in provider["label_profiles"]:
+        profile["status"] = "HOLD"
+    fixture["policy"].write_text(json.dumps(values), encoding="utf-8")
+
+    def forbidden_phase_evidence(*_args, **_kwargs):
+        raise AssertionError("structural audit must not derive phase evidence")
+
+    monkeypatch.setattr(
+        audit_module,
+        "derive_gap_dead_directives",
+        forbidden_phase_evidence,
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "compile_phase_evidence",
+        forbidden_phase_evidence,
+    )
+    output = tmp_path / "structural-audit.json"
+    assert run_audit(fixture, output, mode="structural") == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["audit_mode"] == "structural"
+    assert "proxy_counts" not in report
+    assert "phase_gap_dead_frames" not in report
+    assert report["observed_uses"]["transformed_feature_families"] == ["phase_structure"]
+    assert report["observed_uses"]["evaluation_reference_read"] is False
+
+
+def test_pb09_proxy_audit_fails_when_evaluation_is_hold(tmp_path: Path) -> None:
+    fixture = prepare_audit_fixture(tmp_path)
+    values = json.loads(fixture["policy"].read_text(encoding="utf-8"))
+    provider = values["providers"][0]
+    provider["statuses"]["EVALUATION_AUTHORIZED"] = "HOLD"
+    provider["uses"]["evaluation_reference"]["status"] = "HOLD"
+    fixture["policy"].write_text(json.dumps(values), encoding="utf-8")
+    output = tmp_path / "proxy-audit.json"
+    assert run_audit(fixture, output, mode="proxy") == 1
+    assert not output.exists()
+
+
+def test_overall_status_is_not_a_production_authorization_gate() -> None:
+    production_files = [
+        *(ROOT / "src").rglob("*.py"),
+        *(ROOT / "scripts").glob("*.py"),
+    ]
+    callers = [
+        path
+        for path in production_files
+        if path != ROOT / "src" / "mtah_possession" / "governance" / "policy.py"
+        and ".overall_status" in path.read_text(encoding="utf-8")
+    ]
+    assert callers == []

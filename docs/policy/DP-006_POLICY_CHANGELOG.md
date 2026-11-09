@@ -1,5 +1,44 @@
 # DP-006 Policy Changelog
 
+## 2026-11-09 — Policy v2.1 P1 Closure 004
+
+- Documented and enforced HOLD-use evidence integrity: empty evidence is valid
+  for scoped fallback, while present evidence must be registered.
+- Added Ledger V7, recording register/anchor path identities and hashes,
+  trust-root hash and reseal ID on every event.
+- Bound failed and in-progress Ledger retries to the first recorded Exposure
+  Identity.
+- Kept completed Ledger reuse prohibited and made unbound V6 Ledger reuse fail
+  closed, requiring a new Holdout seal and Ledger.
+- Real-data research remains HOLD; final acceptance and PR merge remain pending
+  independent re-review.
+
+## 2026-11-09 — Policy v2.1 P1 Closure 003
+
+- Classified authorization failures so scoped internal risk only handles
+  external-license, internal-research and use HOLD reasons.
+- Enforced non-empty, registered evidence IDs for every PASS use at load time.
+- Added register, anchor and code-pinned trust-root verification for Exposure.
+- Bound the verified Exposure snapshot to provider, Holdout match set and path
+  identity.
+- Added explicit monotonic reseal history with old/new hashes, approval metadata
+  and historical high-water maps.
+- Removed alternate exposure-register paths from production CLI entrypoints.
+- Real-data research remains HOLD; final acceptance and PR merge remain pending
+  independent re-review.
+
+## 2026-11-09 — Policy v2.1 P1 Closure 002
+
+- Enforced scored-only Promotion before loader, ledger or lifecycle side effects.
+- Connected scoped internal risk to production authorization with explicit
+  basis/scope attribution while keeping external license facts unchanged.
+- Added the machine-readable exposure register and production Holdout checks.
+- Removed phase-derived dead evidence from structural audit mode.
+- Replaced `PredictionSource` phase spans with interval-only projections.
+- Recorded reference reads and feature families from actual production branches.
+- Real-data research remains HOLD; Policy v2.1 final acceptance and PR merge
+  remain pending independent review.
+
 ## 2026-11-09 — Final Assurance and Policy Acceptance
 
 - DP-006 Final Assurance A1-A5 completed with PASS.
@@ -123,6 +162,33 @@ merge and real-data research authorization remain `HOLD` for PM/QA.
 
 Policy implementation final acceptance, merge and real-data research
 authorization remain `HOLD` for PM/QA.
+
+## DP-006-POLICY-V2.1-P0P1-001
+
+**Date:** 2026-11-09
+
+**Status:** P0 delivered; P1 FIX CANDIDATE; independent review pending
+
+### Added
+
+- Policy v2.1 config/schema and scoped project-internal risk acceptance;
+- PredictionSource/EvaluationReference boundary;
+- post-prediction evaluation-reference construction;
+- tracking-only, phase-prediction-only and full-scored evaluation plans;
+- structural/proxy audit modes;
+- runtime declared/observed use evidence;
+- PB-01 through PB-15.
+
+### Preserved
+
+- Policy v2 remains historical/compatibility configuration.
+- Source Identity, Holdout lifecycle, migration, contamination terminal state
+  and frozen data are unchanged.
+
+### Not claimed
+
+Policy v2.1 acceptance, merge, real-data access, training, tuning, real
+evaluation and final model selection remain unauthorized or HOLD.
 
 ## DP-006-INTEGRATION-METADATA-CORRECTION-001
 

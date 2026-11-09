@@ -23,6 +23,10 @@ from mtah_possession.governance.authorization import (
     GovernanceAuthorizationIdentity,
     governance_identity_from_dict,
 )
+from mtah_possession.governance.exposure import (
+    ExposureIdentity,
+    exposure_identity_from_dict,
+)
 from mtah_possession.governance.holdout import FreezeHashes
 from mtah_possession.governance.migration import (
     MIGRATION_RECEIPT_FIELDS,
@@ -95,6 +99,14 @@ V4_RECORD_FIELDS = V3_RECORD_FIELDS | {
 }
 V5_RECORD_FIELDS = V4_RECORD_FIELDS | {"source_identity_set"}
 V6_RECORD_FIELDS = V5_RECORD_FIELDS | {"schema_version", "match_id"}
+V7_RECORD_FIELDS = V6_RECORD_FIELDS | {
+    "exposure_register_path_identity",
+    "exposure_register_sha256",
+    "exposure_anchor_path_identity",
+    "exposure_anchor_sha256",
+    "exposure_trust_root_sha256",
+    "exposure_reseal_id",
+}
 MIGRATION_RECORD_FIELDS = V5_RECORD_FIELDS | {"migration_receipt"}
 LEGACY_FREEZE_PROTOCOL_VERSION = "combined-policy-model-v1"
 PRE_SPLIT_FREEZE_PROTOCOL_VERSION = "model-governance-separated-v2"
@@ -103,6 +115,8 @@ SOURCE_SEALED_PROTOCOL_VERSION = "source-sealed-evaluation-v4"
 SOURCE_SET_SEALED_PROTOCOL_VERSION = "source-set-sealed-v5"
 MATCH_LIFECYCLE_PROTOCOL_VERSION = "source-set-match-lifecycle-v6"
 V6_RECORD_SCHEMA_VERSION = "6.0"
+EXPOSURE_BOUND_PROTOCOL_VERSION = "exposure-bound-match-lifecycle-v7"
+V7_RECORD_SCHEMA_VERSION = "7.0"
 MIGRATION_RULE_VERSION = "1.0"
 _LIFECYCLE_FREEZE_EVENTS = {
     LedgerEvent.SEALED_VERIFIED.value,
@@ -132,6 +146,7 @@ class HoldoutLedger:
     governance_identity: GovernanceAuthorizationIdentity | None = None
     source_identity: SourceIdentity | None = None
     source_identity_set: SourceIdentitySet | None = None
+    exposure_identity: ExposureIdentity | None = None
 
     def append(
         self,
@@ -216,8 +231,24 @@ class HoldoutLedger:
             if len(self.match_ids) != 1:
                 raise PolicyError(f"holdout ledger {event_type.value} requires a match ID")
             effective_match_id = self.match_ids[0]
-        return {
-            "schema_version": V6_RECORD_SCHEMA_VERSION,
+        exposure_fields = (
+            {}
+            if self.exposure_identity is None
+            else {
+                "exposure_register_path_identity": (self.exposure_identity.register_path_identity),
+                "exposure_register_sha256": self.exposure_identity.register_sha256,
+                "exposure_anchor_path_identity": self.exposure_identity.anchor_path_identity,
+                "exposure_anchor_sha256": self.exposure_identity.anchor_sha256,
+                "exposure_trust_root_sha256": self.exposure_identity.trust_root_sha256,
+                "exposure_reseal_id": self.exposure_identity.reseal_id,
+            }
+        )
+        record = {
+            "schema_version": (
+                V7_RECORD_SCHEMA_VERSION
+                if self.exposure_identity is not None
+                else V6_RECORD_SCHEMA_VERSION
+            ),
             "recorded_at": datetime.now(UTC).isoformat(),
             "event_type": event_type.value,
             "provider": self.provider,
@@ -231,13 +262,19 @@ class HoldoutLedger:
             "previous_record_sha256": previous,
             "reason": reason,
             "governance_identity": self.governance_identity.to_dict(),
-            "freeze_protocol_version": MATCH_LIFECYCLE_PROTOCOL_VERSION,
+            "freeze_protocol_version": (
+                EXPOSURE_BOUND_PROTOCOL_VERSION
+                if self.exposure_identity is not None
+                else MATCH_LIFECYCLE_PROTOCOL_VERSION
+            ),
             "holdout_manifest_path_sha256": self.holdout_manifest_path_sha256,
             "split_manifest_sha256": self.split_manifest_sha256,
             "source_config_sha256": effective_source_identity.source_config_sha256,
             "source_identity": effective_source_identity.to_dict(),
             "source_identity_set": self.source_identity_set.to_dict(),
         }
+        record.update(exposure_fields)
+        return record
 
     def append_freeze_migration(
         self,
@@ -376,6 +413,11 @@ class HoldoutLedger:
         records = self.records()
         return bool(records) and _ledger_record_kind(records[0]) in {"v3", "v4", "v5"}
 
+    @property
+    def requires_exposure_protocol_reseal(self) -> bool:
+        records = self.records()
+        return bool(records) and _ledger_record_kind(records[0]) == "v6"
+
     def sealed_manifest_sha256(self) -> str | None:
         for record in self.records():
             if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value:
@@ -386,7 +428,7 @@ class HoldoutLedger:
         for record in self.records():
             if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value and _ledger_record_kind(
                 record
-            ) in {"v3", "v4", "v5", "v6"}:
+            ) in {"v3", "v4", "v5", "v6", "v7"}:
                 return str(record["split_manifest_sha256"])
         return None
 
@@ -394,7 +436,7 @@ class HoldoutLedger:
         for record in self.records():
             if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value and _ledger_record_kind(
                 record
-            ) in {"v3", "v4", "v5", "v6"}:
+            ) in {"v3", "v4", "v5", "v6", "v7"}:
                 return str(record["holdout_manifest_path_sha256"])
         return None
 
@@ -411,8 +453,17 @@ class HoldoutLedger:
         for record in self.records():
             if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value and _ledger_record_kind(
                 record
-            ) in {"v5", "v6"}:
+            ) in {"v5", "v6", "v7"}:
                 return source_identity_set_from_dict(record["source_identity_set"])
+        return None
+
+    def sealed_exposure_identity(self) -> ExposureIdentity | None:
+        return self.recorded_exposure_identity()
+
+    def recorded_exposure_identity(self) -> ExposureIdentity | None:
+        for record in self.records():
+            if _ledger_record_kind(record) == "v7":
+                return exposure_identity_from_record(record)
         return None
 
     def lifecycle_freeze_hashes(self) -> FreezeHashes | None:
@@ -432,7 +483,7 @@ class HoldoutLedger:
         for record in reversed(records):
             if record["event_type"] == LedgerEvent.FREEZE_PROTOCOL_MIGRATED.value:
                 return _freeze_from_record(record)
-            if _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}:
+            if _ledger_record_kind(record) in {"v3", "v4", "v5", "v6", "v7"}:
                 return _freeze_from_record(record)
         return None
 
@@ -440,8 +491,8 @@ class HoldoutLedger:
 def reduce_holdout_state(
     records: Sequence[Mapping[str, Any]],
 ) -> HoldoutLedgerState:
-    """Derive the aggregate state for legacy or V6 member-level lifecycles."""
-    if any(_ledger_record_kind(record) == "v6" for record in records):
+    """Derive the aggregate state for legacy or V6/V7 member-level lifecycles."""
+    if any(_ledger_record_kind(record) in {"v6", "v7"} for record in records):
         return _reduce_v6_holdout_state(records)
     return _reduce_legacy_holdout_state(records)
 
@@ -464,7 +515,7 @@ def reduce_match_states(
     unsealed = False
     compromised = False
     for record in records:
-        if _ledger_record_kind(record) != "v6":
+        if _ledger_record_kind(record) not in {"v6", "v7"}:
             continue
         event = LedgerEvent(record["event_type"])
         match_id = record["match_id"]
@@ -604,6 +655,7 @@ def create_ledger(
     governance_identity: GovernanceAuthorizationIdentity | None = None,
     source_identity: SourceIdentity | None = None,
     source_identity_set: SourceIdentitySet | None = None,
+    exposure_identity: ExposureIdentity | None = None,
 ) -> HoldoutLedger:
     normalized_provider, normalized_matches, holdout_id = stable_holdout_identity(
         provider,
@@ -625,6 +677,7 @@ def create_ledger(
         governance_identity=governance_identity,
         source_identity=source_identity,
         source_identity_set=source_identity_set,
+        exposure_identity=exposure_identity,
     )
     try:
         with path.open("a", encoding="utf-8"):
@@ -661,6 +714,7 @@ def load_existing_ledger(
         governance_identity=None,
         source_identity=None,
         source_identity_set=None,
+        exposure_identity=None,
     )
     records = ledger.records()
     if not records:
@@ -673,13 +727,16 @@ def load_existing_ledger(
     )
     source_identity = (
         source_identity_from_dict(last["source_identity"])
-        if _ledger_record_kind(last) in {"v4", "v5", "v6", "migration"}
+        if _ledger_record_kind(last) in {"v4", "v5", "v6", "v7", "migration"}
         else None
     )
     source_identity_set = (
         source_identity_set_from_dict(last["source_identity_set"])
-        if _ledger_record_kind(last) in {"v5", "v6", "migration"}
+        if _ledger_record_kind(last) in {"v5", "v6", "v7", "migration"}
         else None
+    )
+    exposure_identity = (
+        exposure_identity_from_record(last) if _ledger_record_kind(last) == "v7" else None
     )
     return HoldoutLedger(
         path=path,
@@ -690,18 +747,19 @@ def load_existing_ledger(
         holdout_manifest_sha256=str(last["holdout_manifest_sha256"]),
         holdout_manifest_path_sha256=(
             str(last["holdout_manifest_path_sha256"])
-            if _ledger_record_kind(last) in {"v3", "v4", "v5", "v6", "migration"}
+            if _ledger_record_kind(last) in {"v3", "v4", "v5", "v6", "v7", "migration"}
             else None
         ),
         split_manifest_sha256=(
             str(last["split_manifest_sha256"])
-            if _ledger_record_kind(last) in {"v3", "v4", "v5", "v6", "migration"}
+            if _ledger_record_kind(last) in {"v3", "v4", "v5", "v6", "v7", "migration"}
             else None
         ),
         code_commit=str(last["code_commit"]),
         governance_identity=identity,
         source_identity=source_identity,
         source_identity_set=source_identity_set,
+        exposure_identity=exposure_identity,
     )
 
 
@@ -908,9 +966,11 @@ def _validate_record(
         raise PolicyError("source-set ledger record has missing or unknown fields")
     if kind == "v6" and set(record) != V6_RECORD_FIELDS:
         raise PolicyError("match-lifecycle ledger record has missing or unknown fields")
+    if kind == "v7" and set(record) != V7_RECORD_FIELDS:
+        raise PolicyError("exposure-bound ledger record has missing or unknown fields")
     if kind == "migration" and set(record) != MIGRATION_RECORD_FIELDS:
         raise PolicyError("holdout migration record has missing or unknown fields")
-    if kind not in {"legacy", "v2", "v3", "v4", "v5", "v6", "migration"}:
+    if kind not in {"legacy", "v2", "v3", "v4", "v5", "v6", "v7", "migration"}:
         raise PolicyError("holdout ledger record has missing or unknown fields")
     try:
         event = LedgerEvent(record["event_type"])
@@ -944,8 +1004,9 @@ def _validate_record(
         raise PolicyError("holdout ledger completed event requires a prediction SHA-256")
     if event == LedgerEvent.FREEZE_PROTOCOL_MIGRATED and kind != "migration":
         raise PolicyError("FREEZE_PROTOCOL_MIGRATED record is incomplete")
-    if kind == "v6":
-        if record["schema_version"] != V6_RECORD_SCHEMA_VERSION:
+    if kind in {"v6", "v7"}:
+        expected_schema = V7_RECORD_SCHEMA_VERSION if kind == "v7" else V6_RECORD_SCHEMA_VERSION
+        if record["schema_version"] != expected_schema:
             raise PolicyError("match-lifecycle ledger schema version is unsupported")
         match_id = record["match_id"]
         if event in _MATCH_EVENTS:
@@ -956,12 +1017,13 @@ def _validate_record(
                 raise PolicyError("authorization denial references an unknown match")
         elif match_id is not None:
             raise PolicyError(f"{event.value} must be a collection-level event")
-    if kind in {"v3", "v4", "v5", "v6", "migration"}:
+    if kind in {"v3", "v4", "v5", "v6", "v7", "migration"}:
         expected_protocol = {
             "v3": SEAL_BOUND_FREEZE_PROTOCOL_VERSION,
             "v4": SOURCE_SEALED_PROTOCOL_VERSION,
             "v5": SOURCE_SET_SEALED_PROTOCOL_VERSION,
             "v6": MATCH_LIFECYCLE_PROTOCOL_VERSION,
+            "v7": EXPOSURE_BOUND_PROTOCOL_VERSION,
             "migration": SOURCE_SET_SEALED_PROTOCOL_VERSION,
         }[kind]
         if record["freeze_protocol_version"] != expected_protocol:
@@ -971,17 +1033,17 @@ def _validate_record(
             "Manifest path SHA-256",
         )
         _validate_sha256(record["split_manifest_sha256"], "split manifest SHA-256")
-    if kind in {"v4", "v5", "v6", "migration"}:
+    if kind in {"v4", "v5", "v6", "v7", "migration"}:
         source_identity = source_identity_from_dict(record["source_identity"])
         if source_identity.source_config_sha256 != record["source_config_sha256"]:
             raise PolicyError("source config SHA does not match Source Identity")
         if (
-            kind == "v6"
+            kind in {"v6", "v7"}
             and event in _MATCH_EVENTS
             and record["match_id"] != source_identity.match_id
         ):
             raise PolicyError(f"{event.value} match ID does not match its Source Identity")
-    if kind in {"v5", "v6", "migration"}:
+    if kind in {"v5", "v6", "v7", "migration"}:
         source_set = source_identity_set_from_dict(record["source_identity_set"])
         if source_set.provider != record["provider"]:
             raise PolicyError("SourceIdentitySet provider does not match ledger")
@@ -998,6 +1060,8 @@ def _validate_record(
         if event != LedgerEvent.FREEZE_PROTOCOL_MIGRATED:
             raise PolicyError("migration fields require FREEZE_PROTOCOL_MIGRATED event")
         _validate_migration_record(record)
+    if kind == "v7":
+        exposure_identity_from_record(record)
     if kind != "legacy":
         identity = governance_identity_from_dict(record["governance_identity"])
         if identity.provider != provider:
@@ -1018,6 +1082,19 @@ def _freeze_dict(freeze: FreezeHashes) -> dict[str, str]:
         "evaluation_script": freeze.evaluation_script,
         "metric_contract_version": freeze.metric_contract_version,
     }
+
+
+def exposure_identity_from_record(record: Mapping[str, Any]) -> ExposureIdentity:
+    return exposure_identity_from_dict(
+        {
+            "register_path_identity": record["exposure_register_path_identity"],
+            "register_sha256": record["exposure_register_sha256"],
+            "anchor_path_identity": record["exposure_anchor_path_identity"],
+            "anchor_sha256": record["exposure_anchor_sha256"],
+            "trust_root_sha256": record["exposure_trust_root_sha256"],
+            "reseal_id": record["exposure_reseal_id"],
+        }
+    )
 
 
 def _freeze_from_record(record: Mapping[str, Any]) -> FreezeHashes:
@@ -1100,6 +1177,8 @@ def _ledger_record_kind(record: Mapping[str, Any]) -> str:
         return "v5"
     if fields == V6_RECORD_FIELDS:
         return "v6"
+    if fields == V7_RECORD_FIELDS:
+        return "v7"
     if fields == MIGRATION_RECORD_FIELDS:
         return "migration"
     return "invalid"
@@ -1131,6 +1210,10 @@ def _validate_protocol_sequence(records: Sequence[Mapping[str, Any]]) -> None:
         if any(kind != "v6" for kind in kinds):
             raise PolicyError("match-lifecycle holdout ledger has mixed protocol records")
         return
+    if kinds[0] == "v7":
+        if any(kind != "v7" for kind in kinds):
+            raise PolicyError("exposure-bound holdout ledger has mixed protocol records")
+        return
     if kinds[0] != "legacy":
         raise PolicyError("holdout ledger must begin with a legacy, v2 or v3 record")
     migration_indexes = [index for index, kind in enumerate(kinds) if kind == "migration"]
@@ -1155,11 +1238,18 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
     sealed_source_identity_sha256: str | None = None
     sealed_source_set_sha256: str | None = None
     sealed_source_identity_map: dict[str, str] | None = None
+    sealed_exposure_identity: ExposureIdentity | None = None
     for record in records:
+        if _ledger_record_kind(record) == "v7":
+            current_exposure_identity = exposure_identity_from_record(record)
+            if sealed_exposure_identity is None:
+                sealed_exposure_identity = current_exposure_identity
+            elif current_exposure_identity != sealed_exposure_identity:
+                raise PolicyError("holdout ledger contains a changed sealed Exposure Identity")
         if record["event_type"] == LedgerEvent.SEALED_VERIFIED.value:
             if sealed_manifest_sha256 is None:
                 sealed_manifest_sha256 = str(record["holdout_manifest_sha256"])
-                if _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}:
+                if _ledger_record_kind(record) in {"v3", "v4", "v5", "v6", "v7"}:
                     sealed_manifest_path_sha256 = str(record["holdout_manifest_path_sha256"])
                     sealed_split_sha256 = str(record["split_manifest_sha256"])
                 if _ledger_record_kind(record) == "v4":
@@ -1167,7 +1257,7 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
                     sealed_source_identity_sha256 = str(
                         record["source_identity"]["source_identity_sha256"]
                     )
-                if _ledger_record_kind(record) in {"v5", "v6"}:
+                if _ledger_record_kind(record) in {"v5", "v6", "v7"}:
                     source_set = source_identity_set_from_dict(record["source_identity_set"])
                     sealed_source_set_sha256 = source_set.source_set_sha256
                     sealed_source_identity_map = dict(source_set.identity_digests)
@@ -1178,13 +1268,13 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
             raise PolicyError("holdout ledger contains a changed sealed Manifest SHA")
         if (
             sealed_manifest_path_sha256 is not None
-            and _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}
+            and _ledger_record_kind(record) in {"v3", "v4", "v5", "v6", "v7"}
             and record["holdout_manifest_path_sha256"] != sealed_manifest_path_sha256
         ):
             raise PolicyError("holdout ledger contains a changed sealed Manifest path")
         if (
             sealed_split_sha256 is not None
-            and _ledger_record_kind(record) in {"v3", "v4", "v5", "v6"}
+            and _ledger_record_kind(record) in {"v3", "v4", "v5", "v6", "v7"}
             and record["split_manifest_sha256"] != sealed_split_sha256
         ):
             raise PolicyError("holdout ledger contains a changed sealed split SHA")
@@ -1198,7 +1288,11 @@ def _validate_seal_immutability(records: Sequence[Mapping[str, Any]]) -> None:
             )
         ):
             raise PolicyError("holdout ledger contains a changed sealed Source Identity")
-        if sealed_source_set_sha256 is not None and _ledger_record_kind(record) in {"v5", "v6"}:
+        if sealed_source_set_sha256 is not None and _ledger_record_kind(record) in {
+            "v5",
+            "v6",
+            "v7",
+        }:
             source_set = source_identity_set_from_dict(record["source_identity_set"])
             if (
                 source_set.source_set_sha256 != sealed_source_set_sha256

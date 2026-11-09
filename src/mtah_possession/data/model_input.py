@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from mtah_possession.data.neutral import NeutralMatch, neutral_to_tracking
+from mtah_possession.data.neutral import PredictionSource, neutral_to_tracking
 from mtah_possession.data.tracking import TrackingData
 from mtah_possession.governance.roles import (
     model_input_field_names,
@@ -53,7 +53,7 @@ class ModelInput:
 
 
 def build_model_input(
-    match: NeutralMatch,
+    match: PredictionSource,
     event_evidence: PhaseLayerEvidence | None = None,
 ) -> ModelInput:
     tracking = neutral_to_tracking(match)
