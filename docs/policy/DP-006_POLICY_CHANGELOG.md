@@ -1,5 +1,18 @@
 # DP-006 Policy Changelog
 
+## 2026-11-09 — Policy v2.1 P1 Closure 004
+
+- Documented and enforced HOLD-use evidence integrity: empty evidence is valid
+  for scoped fallback, while present evidence must be registered.
+- Added Ledger V7, recording register/anchor path identities and hashes,
+  trust-root hash and reseal ID on every event.
+- Bound failed and in-progress Ledger retries to the first recorded Exposure
+  Identity.
+- Kept completed Ledger reuse prohibited and made unbound V6 Ledger reuse fail
+  closed, requiring a new Holdout seal and Ledger.
+- Real-data research remains HOLD; final acceptance and PR merge remain pending
+  independent re-review.
+
 ## 2026-11-09 — Policy v2.1 P1 Closure 003
 
 - Classified authorization failures so scoped internal risk only handles
