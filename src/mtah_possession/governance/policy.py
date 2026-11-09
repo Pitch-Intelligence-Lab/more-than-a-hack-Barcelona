@@ -1,0 +1,343 @@
+"""Machine-validated external data policy."""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
+
+
+class PolicyError(ValueError):
+    """Raised when policy data is incomplete or a requested use is not allowed."""
+
+
+class PolicyStatus(StrEnum):
+    PASS = "PASS"
+    HOLD = "HOLD"
+    FAIL = "FAIL"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class DataUse(StrEnum):
+    DOWNLOAD_STORE = "download_store"
+    READ_PREPROCESS = "read_preprocess"
+    TRACKING_MODEL_INPUT = "tracking_model_input"
+    POSSESSION_GROUP_TARGET = "possession_group_target"
+    POSSESSION_PLAYER_AUX_TARGET = "possession_player_aux_target"
+    PHASE_AUXILIARY_TARGET = "phase_auxiliary_target"
+    PHASE_MODEL_INPUT = "phase_model_input"
+    EVALUATION_REFERENCE = "evaluation_reference"
+    DERIVED_MODEL = "derived_model"
+    PUBLICATION = "publication"
+    SOURCE_REDISTRIBUTION = "source_redistribution"
+    DERIVED_REDISTRIBUTION = "derived_redistribution"
+
+
+STATUS_AXES = frozenset(
+    {
+        "PUBLIC_SOURCE_VERIFIED",
+        "LICENSE_VERIFIED",
+        "INTERNAL_RESEARCH_AUTHORIZED",
+        "TRAINING_AUTHORIZED",
+        "EVALUATION_AUTHORIZED",
+        "PUBLICATION_AUTHORIZED",
+        "REDISTRIBUTION_AUTHORIZED",
+        "TEMPORAL_AVAILABILITY_VERIFIED",
+        "PHASE_SEMANTICS_VERIFIED",
+        "PLAYER_ID_LABEL_QUALITY_VERIFIED",
+        "LABEL_SEMANTICS_ALIGNED",
+        "HOLDOUT_SEAL_VERIFIED",
+    }
+)
+
+USE_AXES = frozenset(use.value for use in DataUse)
+
+
+@dataclass(frozen=True)
+class UsePermission:
+    status: PolicyStatus
+    evidence_ids: tuple[str, ...]
+    conditions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class LabelProfile:
+    provider: str
+    provider_label_definition_id: str
+    source_field: str
+    label_kind: str
+    roles: tuple[str, ...]
+    time_basis: str
+    null_semantics: str
+    target_mapping_id: str
+    mapping_version: str
+    mapping_evidence: tuple[str, ...]
+    status: PolicyStatus
+
+
+@dataclass(frozen=True)
+class ProviderPolicy:
+    name: str
+    source_revision: str
+    source_evidence: tuple[str, ...]
+    statuses: dict[str, PolicyStatus]
+    uses: dict[DataUse, UsePermission]
+    label_profiles: tuple[LabelProfile, ...]
+
+    @property
+    def overall_status(self) -> PolicyStatus:
+        research_uses = (
+            DataUse.DOWNLOAD_STORE,
+            DataUse.READ_PREPROCESS,
+            DataUse.TRACKING_MODEL_INPUT,
+            DataUse.POSSESSION_GROUP_TARGET,
+            DataUse.POSSESSION_PLAYER_AUX_TARGET,
+            DataUse.PHASE_AUXILIARY_TARGET,
+            DataUse.PHASE_MODEL_INPUT,
+            DataUse.EVALUATION_REFERENCE,
+            DataUse.DERIVED_MODEL,
+        )
+        statuses = {self.uses[use].status for use in research_uses}
+        if PolicyStatus.FAIL in statuses:
+            return PolicyStatus.FAIL
+        if PolicyStatus.HOLD in statuses:
+            return PolicyStatus.HOLD
+        if statuses == {PolicyStatus.NOT_APPLICABLE}:
+            return PolicyStatus.NOT_APPLICABLE
+        return PolicyStatus.PASS
+
+
+@dataclass(frozen=True)
+class ExternalDataPolicy:
+    schema_version: str
+    policy_version: str
+    official_rule_revision: str
+    providers: dict[str, ProviderPolicy]
+
+    def provider(self, name: str) -> ProviderPolicy:
+        try:
+            return self.providers[name]
+        except KeyError as error:
+            raise PolicyError(f"provider {name!r} is not registered") from error
+
+
+def load_policy(path: str | os.PathLike[str]) -> ExternalDataPolicy:
+    policy_path = Path(path)
+    try:
+        raw = json.loads(policy_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PolicyError(f"could not read external data policy: {policy_path}") from error
+    if not isinstance(raw, dict):
+        raise PolicyError("policy root must be an object")
+    required = {"schema_version", "policy_version", "official_rule_revision", "providers"}
+    if set(raw) != required:
+        raise PolicyError("policy root has missing or unknown fields")
+    if raw["schema_version"] != "2.0":
+        raise PolicyError("policy schema_version must be 2.0")
+    if raw["policy_version"] != "DP-006-POLICY-v2":
+        raise PolicyError("unexpected policy_version")
+    if (
+        not isinstance(raw["official_rule_revision"], str)
+        or len(raw["official_rule_revision"]) < 40
+    ):
+        raise PolicyError("official rule revision must be pinned")
+    if not isinstance(raw["providers"], list):
+        raise PolicyError("providers must be a list")
+    providers: dict[str, ProviderPolicy] = {}
+    for provider_raw in raw["providers"]:
+        provider = _parse_provider(provider_raw)
+        if provider.name in providers:
+            raise PolicyError(f"duplicate provider: {provider.name}")
+        providers[provider.name] = provider
+    return ExternalDataPolicy(
+        schema_version=raw["schema_version"],
+        policy_version=raw["policy_version"],
+        official_rule_revision=raw["official_rule_revision"],
+        providers=providers,
+    )
+
+
+def require_source_identity(
+    policy: ExternalDataPolicy,
+    provider_name: str,
+    source_revision: str,
+) -> ProviderPolicy:
+    provider = policy.provider(provider_name)
+    if not source_revision.strip():
+        raise PolicyError("provider source revision is not pinned")
+    if provider.source_revision != source_revision:
+        raise PolicyError(
+            "provider revision mismatch: "
+            f"policy={provider.source_revision}, source={source_revision}"
+        )
+    if not provider.source_evidence:
+        raise PolicyError("provider source evidence IDs are missing")
+    return provider
+
+
+def require_allowed(
+    policy: ExternalDataPolicy,
+    provider_name: str,
+    use: DataUse,
+    *,
+    source_revision: str,
+) -> None:
+    provider = require_source_identity(policy, provider_name, source_revision)
+    required_statuses = _required_statuses(use)
+    failed = [
+        f"{axis}={provider.statuses[axis].value}"
+        for axis in required_statuses
+        if provider.statuses[axis] != PolicyStatus.PASS
+    ]
+    if failed:
+        raise PolicyError(f"{provider_name} use {use.value} is not allowed: " + ", ".join(failed))
+    permission = provider.uses[use]
+    if permission.status != PolicyStatus.PASS:
+        raise PolicyError(f"{provider_name} use {use.value} status is {permission.status.value}")
+    if not permission.evidence_ids:
+        raise PolicyError(f"{provider_name} use {use.value} has no evidence IDs")
+    unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
+    if unavailable:
+        raise PolicyError(f"use evidence IDs are not registered: {unavailable}")
+
+
+def _parse_provider(raw: Any) -> ProviderPolicy:
+    if not isinstance(raw, dict):
+        raise PolicyError("provider entry must be an object")
+    required = {
+        "provider",
+        "source_revision",
+        "source_evidence",
+        "statuses",
+        "uses",
+        "label_profiles",
+    }
+    if set(raw) != required:
+        raise PolicyError("provider entry has missing or unknown fields")
+    if not isinstance(raw["provider"], str) or not raw["provider"].strip():
+        raise PolicyError("provider name is missing")
+    if not isinstance(raw["source_revision"], str) or len(raw["source_revision"]) < 7:
+        raise PolicyError(f"provider {raw['provider']} revision is not pinned")
+    source_evidence = _string_tuple(raw["source_evidence"], "source_evidence")
+    if not source_evidence:
+        raise PolicyError(f"provider {raw['provider']} has no source evidence")
+    statuses = _parse_statuses(raw["statuses"])
+    uses = _parse_uses(raw["uses"])
+    profiles = tuple(_parse_label_profile(raw["provider"], item) for item in raw["label_profiles"])
+    return ProviderPolicy(
+        name=raw["provider"],
+        source_revision=raw["source_revision"],
+        source_evidence=source_evidence,
+        statuses=statuses,
+        uses=uses,
+        label_profiles=profiles,
+    )
+
+
+def _parse_statuses(raw: Any) -> dict[str, PolicyStatus]:
+    if not isinstance(raw, dict) or set(raw) != STATUS_AXES:
+        raise PolicyError("policy status axes are missing or unknown")
+    try:
+        return {name: PolicyStatus(value) for name, value in raw.items()}
+    except ValueError as error:
+        raise PolicyError("policy status contains an invalid value") from error
+
+
+def _parse_uses(raw: Any) -> dict[DataUse, UsePermission]:
+    if not isinstance(raw, dict) or set(raw) != USE_AXES:
+        raise PolicyError("policy use axes are missing or unknown")
+    parsed: dict[DataUse, UsePermission] = {}
+    for name, item in raw.items():
+        if not isinstance(item, dict) or set(item) != {"status", "evidence_ids", "conditions"}:
+            raise PolicyError(f"use {name} has invalid fields")
+        try:
+            status = PolicyStatus(item["status"])
+        except ValueError as error:
+            raise PolicyError(f"use {name} has invalid status") from error
+        parsed[DataUse(name)] = UsePermission(
+            status=status,
+            evidence_ids=_string_tuple(item["evidence_ids"], "evidence_ids"),
+            conditions=_string_tuple(item["conditions"], "conditions"),
+        )
+    return parsed
+
+
+def _parse_label_profile(provider: str, raw: Any) -> LabelProfile:
+    required = {
+        "provider_label_definition_id",
+        "source_field",
+        "label_kind",
+        "roles",
+        "time_basis",
+        "null_semantics",
+        "target_mapping_id",
+        "mapping_version",
+        "mapping_evidence",
+        "status",
+    }
+    if not isinstance(raw, dict) or set(raw) != required:
+        raise PolicyError("label profile has missing or unknown fields")
+    if raw["label_kind"] not in {"truth", "proxy", "event-derived", "unknown"}:
+        raise PolicyError("label profile has invalid label_kind")
+    roles = _string_tuple(raw["roles"], "roles")
+    if "MODEL_INPUT" in roles:
+        raise PolicyError("label profile roles cannot include MODEL_INPUT by default")
+    try:
+        status = PolicyStatus(raw["status"])
+    except ValueError as error:
+        raise PolicyError("label profile has invalid status") from error
+    for key in (
+        "provider_label_definition_id",
+        "source_field",
+        "time_basis",
+        "null_semantics",
+        "target_mapping_id",
+        "mapping_version",
+    ):
+        if not isinstance(raw[key], str) or not raw[key].strip():
+            raise PolicyError(f"label profile {key} is missing")
+    mapping_evidence = _string_tuple(raw["mapping_evidence"], "mapping_evidence")
+    if not mapping_evidence:
+        raise PolicyError("label profile mapping evidence is missing")
+    return LabelProfile(
+        provider=provider,
+        provider_label_definition_id=raw["provider_label_definition_id"],
+        source_field=raw["source_field"],
+        label_kind=raw["label_kind"],
+        roles=roles,
+        time_basis=raw["time_basis"],
+        null_semantics=raw["null_semantics"],
+        target_mapping_id=raw["target_mapping_id"],
+        mapping_version=raw["mapping_version"],
+        mapping_evidence=mapping_evidence,
+        status=status,
+    )
+
+
+def _required_statuses(use: DataUse) -> tuple[str, ...]:
+    common = (
+        "PUBLIC_SOURCE_VERIFIED",
+        "LICENSE_VERIFIED",
+        "INTERNAL_RESEARCH_AUTHORIZED",
+    )
+    specific = {
+        DataUse.POSSESSION_GROUP_TARGET: ("TRAINING_AUTHORIZED",),
+        DataUse.POSSESSION_PLAYER_AUX_TARGET: ("TRAINING_AUTHORIZED",),
+        DataUse.PHASE_AUXILIARY_TARGET: ("TRAINING_AUTHORIZED", "PHASE_SEMANTICS_VERIFIED"),
+        DataUse.PHASE_MODEL_INPUT: ("PHASE_SEMANTICS_VERIFIED",),
+        DataUse.TRACKING_MODEL_INPUT: ("TEMPORAL_AVAILABILITY_VERIFIED",),
+        DataUse.EVALUATION_REFERENCE: ("EVALUATION_AUTHORIZED",),
+        DataUse.PUBLICATION: ("PUBLICATION_AUTHORIZED",),
+        DataUse.SOURCE_REDISTRIBUTION: ("REDISTRIBUTION_AUTHORIZED",),
+        DataUse.DERIVED_REDISTRIBUTION: ("REDISTRIBUTION_AUTHORIZED",),
+    }
+    return common + specific.get(use, ())
+
+
+def _string_tuple(value: Any, name: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise PolicyError(f"{name} must be a string list")
+    return tuple(value)

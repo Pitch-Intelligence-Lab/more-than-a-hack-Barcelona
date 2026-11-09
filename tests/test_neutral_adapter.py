@@ -2,6 +2,7 @@ from dataclasses import fields, replace
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from mtah_possession.algorithm_config import load_algorithm_config
 from mtah_possession.data.model_input import (
@@ -27,6 +28,20 @@ from mtah_possession.evaluation.external import (
     predict_model_input,
 )
 from mtah_possession.features.evidence import build_evidence_series
+from mtah_possession.governance.authorization import (
+    EVALUATION_PHASE_PROFILE,
+    EVALUATION_POSSESSION_PROFILE,
+    AuthorizedExternalRun,
+    build_governance_identity,
+)
+from mtah_possession.governance.policy import (
+    DataUse,
+    PolicyError,
+    PolicyStatus,
+    UsePermission,
+    load_policy,
+)
+from mtah_possession.governance.temporal import TemporalFieldPolicy
 from mtah_possession.states.phase_layer import (
     PhaseDirective,
     PhaseKind,
@@ -36,6 +51,46 @@ from mtah_possession.states.possession_state import run_state_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_CONFIG = load_algorithm_config(ROOT / "configs" / "state-engine.json")
+
+
+def authorized_run() -> AuthorizedExternalRun:
+    policy = load_policy(ROOT / "configs" / "policy" / "external-data-policy-v2.json")
+    provider = policy.provider("skillcorner")
+    profiles = tuple(
+        replace(profile, status=PolicyStatus.PASS) for profile in provider.label_profiles
+    )
+    selected_profiles = {
+        EVALUATION_POSSESSION_PROFILE: next(
+            profile
+            for profile in profiles
+            if profile.provider_label_definition_id == EVALUATION_POSSESSION_PROFILE
+        ),
+        EVALUATION_PHASE_PROFILE: next(
+            profile
+            for profile in profiles
+            if profile.provider_label_definition_id == EVALUATION_PHASE_PROFILE
+        ),
+    }
+    permissions = {
+        use: UsePermission(PolicyStatus.PASS, ("EV-AUTH-SC-README",), ())
+        for use in (
+            DataUse.TRACKING_MODEL_INPUT,
+            DataUse.PHASE_MODEL_INPUT,
+            DataUse.EVALUATION_REFERENCE,
+        )
+    }
+    return AuthorizedExternalRun(
+        policy=policy,
+        provider=replace(provider, label_profiles=profiles),
+        use_permissions=permissions,
+        label_profiles=selected_profiles,
+        freeze_hashes=None,
+        governance_identity=build_governance_identity(
+            policy_path=ROOT / "configs" / "policy" / "external-data-policy-v2.json",
+            provider="skillcorner",
+            source_revision=provider.source_revision,
+        ),
+    )
 
 
 def neutral(
@@ -85,13 +140,40 @@ def test_proxy_maps_missing_cases_explicitly() -> None:
         possession_status=[1, 1, 1, 0, 0, 1, 2],
         phases=(PhaseSpan(2, 4, 1, "build_up"),),
     )
-    proxy = map_proxy_target(data)
+    profiles = authorized_run().label_profiles
+    proxy = map_proxy_target(
+        data,
+        possession_profile=profiles[EVALUATION_POSSESSION_PROFILE],
+        phase_profile=profiles[EVALUATION_PHASE_PROFILE],
+    )
     assert proxy.labels.tolist() == ["X", "D", "X", "H", "A", "X", "X"]
     assert proxy.sources[0] == "outside_declared_period"
     assert proxy.sources[1] == "no_possession_and_no_phase"
     assert proxy.sources[2] == "missing_possession_inside_phase"
     assert proxy.sources[5] == "missing_tracking_frame"
     assert proxy.sources[6] == "unrecognized_possession_group"
+    assert proxy.label_profiles[EVALUATION_PHASE_PROFILE]["label_kind"] == "proxy"
+    assert proxy.label_profiles[EVALUATION_PHASE_PROFILE]["target_mapping_id"]
+    assert proxy.label_profiles[EVALUATION_PHASE_PROFILE]["mapping_version"]
+
+
+def test_phase_gap_proxy_requires_pass_label_profile() -> None:
+    data = neutral(
+        frame_count=3,
+        frame_present=[True] * 3,
+        possession_side=[-1] * 3,
+        possession_status=[1] * 3,
+    )
+    profiles = authorized_run().label_profiles
+    with pytest.raises(PolicyError, match="is HOLD"):
+        map_proxy_target(
+            data,
+            possession_profile=profiles[EVALUATION_POSSESSION_PROFILE],
+            phase_profile=replace(
+                profiles[EVALUATION_PHASE_PROFILE],
+                status=PolicyStatus.HOLD,
+            ),
+        )
 
 
 def test_neutral_metres_convert_to_engine_normalised_coordinates() -> None:
@@ -201,11 +283,88 @@ def test_phase_evidence_changes_only_approved_dead_and_restart_behavior() -> Non
         restart_window_s=0.2,
     )
     phase_input = with_event_evidence(base_input, phase_evidence)
+    temporal_fields = phase_input.event_evidence.temporal_fields
+    assert {field.field_name for field in temporal_fields} == {
+        "forced_dead_mask",
+        "restart_evidence",
+        "source_codes",
+    }
+    assert all(len(field.per_frame_available_at) == 30 for field in temporal_fields)
+    assert all(field.available_at is None for field in temporal_fields)
     baseline = predict_model_input(base_input, config)
     phase_aware = predict_model_input(phase_input, config)
     assert baseline.labels.tolist() == ["H"] * 30
     assert phase_aware.labels[5:11].tolist() == ["D"] * 6
     assert phase_aware.labels[11:].tolist() == ["H"] * 19
+
+
+def test_nonempty_phase_evidence_without_temporal_metadata_fails() -> None:
+    data = replace(
+        neutral(
+            frame_count=20,
+            frame_present=[True] * 20,
+            possession_side=[-1] * 20,
+            possession_status=[1] * 20,
+        ),
+        periods=(PeriodSpan(1, 0, 20),),
+    )
+    base_input = build_model_input(data)
+    phase = compile_phase_evidence(
+        20,
+        10,
+        (PhaseDirective(5, 10, PhaseKind.CORNER, confirmed_dead=True),),
+    )
+    injected = with_event_evidence(base_input, phase)
+    invalid = replace(injected, event_evidence=replace(injected.event_evidence, temporal_fields=()))
+    with pytest.raises(PolicyError, match="requires temporal metadata"):
+        predict_model_input(
+            invalid,
+            replace(
+                BASE_CONFIG,
+                fps=10,
+                expected_frames=20,
+                ungraded_blocks=(),
+                forced_dead_blocks=(),
+            ),
+        )
+
+
+def test_nonempty_phase_evidence_requires_temporal_metadata_for_each_field() -> None:
+    data = replace(
+        neutral(
+            frame_count=20,
+            frame_present=[True] * 20,
+            possession_side=[-1] * 20,
+            possession_status=[1] * 20,
+        ),
+        periods=(PeriodSpan(1, 0, 20),),
+    )
+    model_input = build_model_input(data)
+    phase = compile_phase_evidence(
+        20,
+        10,
+        (PhaseDirective(5, 10, PhaseKind.CORNER, confirmed_dead=True),),
+    )
+    injected = with_event_evidence(model_input, phase)
+    partial = replace(
+        injected.event_evidence,
+        temporal_fields=tuple(
+            field
+            for field in injected.event_evidence.temporal_fields
+            if field.field_name != "source_codes"
+        ),
+    )
+    with pytest.raises(PolicyError, match="lack temporal metadata: source_codes"):
+        predict_model_input(
+            replace(injected, event_evidence=partial),
+            replace(
+                BASE_CONFIG,
+                fps=10,
+                expected_frames=20,
+                ungraded_blocks=(),
+                forced_dead_blocks=(),
+            ),
+        )
 
 
 def test_synthetic_external_evaluation_preserves_requested_split() -> None:
@@ -221,6 +380,7 @@ def test_synthetic_external_evaluation_preserves_requested_split() -> None:
     evaluation = evaluate_external_match(
         data,
         BASE_CONFIG,
+        authorization=authorized_run(),
         split="validation",
     )
     assert evaluation.split == "validation"
@@ -231,6 +391,44 @@ def test_synthetic_external_evaluation_preserves_requested_split() -> None:
     }
     for candidate in evaluation.candidates.values():
         assert candidate.labels.shape == (60,)
+
+
+def test_future_event_field_is_rejected_by_real_model_path() -> None:
+    data = replace(
+        neutral(
+            frame_count=10,
+            frame_present=[True] * 10,
+            possession_side=[-1] * 10,
+            possession_status=[1] * 10,
+        ),
+        periods=(PeriodSpan(1, 0, 10),),
+    )
+    model_input = build_model_input(data)
+    invalid_events = replace(
+        model_input.event_evidence,
+        temporal_fields=(
+            TemporalFieldPolicy(
+                field_name="event_end_x",
+                event_time=0.1,
+                interval_start=0.1,
+                interval_end=None,
+                available_at=0.1,
+                availability_source="event export",
+                semantics_version="DP-006-POLICY-v2",
+            ),
+        ),
+    )
+    with pytest.raises(PolicyError, match="event fields are not registered"):
+        predict_model_input(
+            replace(model_input, event_evidence=invalid_events),
+            replace(
+                BASE_CONFIG,
+                fps=10,
+                expected_frames=10,
+                ungraded_blocks=(),
+                forced_dead_blocks=(),
+            ),
+        )
 
 
 def test_blocks_from_mask_uses_inclusive_frame_pairs() -> None:

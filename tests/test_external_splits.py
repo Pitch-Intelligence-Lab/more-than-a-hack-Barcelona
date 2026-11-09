@@ -84,14 +84,16 @@ def test_promotion_cli_rejects_single_match_before_external_access(tmp_path: Pat
             "holdout",
             "--output",
             str(tmp_path / "should-not-exist.json"),
+            "--holdout-ledger-dir",
+            str(tmp_path / "ledger"),
         ],
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 1
-    assert "promotion gate failed" in result.stderr
-    assert "MTAH_EXTERNAL_DATA_DIR" not in result.stderr
+    assert "not allowed" in result.stderr or "promotion gate failed" in result.stderr
+    assert "MTAH_EXTERNAL_DATA_DIR is not set" not in result.stderr
     assert not (tmp_path / "should-not-exist.json").exists()
 
 

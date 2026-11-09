@@ -137,7 +137,7 @@ DP-006 adds:
 External data is not tracked. Set its root separately:
 
 ```powershell
-$env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
+$env:MTAH_EXTERNAL_DATA_DIR = "<external-data-root>"
 .\.venv\Scripts\python scripts\audit_external.py `
   --output outputs\external-data-audit.json
 .\.venv\Scripts\python scripts\evaluate_external.py `
@@ -148,6 +148,23 @@ $env:MTAH_EXTERNAL_DATA_DIR = "E:\external-data\skillcorner"
 ```
 
 Only match `2017461` was audited and it is assigned to development. There is no validation or holdout match, so the external result cannot establish generalisation. `--split` is mandatory and has no silent default. The DP-006 phase candidate performs well against the development proxy partly because its phase-gap input and the proxy's D definition share the same source. DP-006 is therefore not selected as the final submission model. DP-005 v1.2 remains the provisional target candidate, with DP-001–004 retained as fallback.
+
+## External data policy v2
+
+DP-006-POLICY-v2 separates official rules, provider rights, project authorization and technical controls. The real-data gate is fail-closed:
+
+```powershell
+.\.venv\Scripts\python scripts\evaluate_external.py `
+  --split development `
+  --mode diagnostic `
+  --code-commit <full-code-commit> `
+  --policy configs\policy\external-data-policy-v2.json `
+  --output outputs\external-report.json
+```
+
+The current SkillCorner, Metrica and SoccerTrack statuses are HOLD. The command therefore fails before the external loader runs. Policy implementation does not activate real external research.
+
+Historical DP-006 documents are preserved unchanged for audit history. Any older statement describing SkillCorner data as MIT-licensed is superseded by the current policy: the repository software is MIT, while data rights remain `HOLD`.
 
 ## Documents
 
@@ -164,6 +181,13 @@ Only match `2017461` was audited and it is assigned to development. There is no 
 - [External data audit](docs/external-data-audit.md)
 - [External development evaluation](docs/external-evaluation.md)
 - [Evaluation contract](docs/evaluation-contract.md)
+- [DP-006 policy review](docs/policy/DP-006_POLICY_REVIEW.md)
+- [DP-006 policy changelog](docs/policy/DP-006_POLICY_CHANGELOG.md)
+- [Label role contract](docs/policy/LABEL_ROLE_CONTRACT.md)
+- [Split and holdout contract](docs/policy/SPLIT_AND_HOLDOUT_CONTRACT.md)
+- [SkillCorner authorization status](docs/policy/SKILLCORNER_AUTHORIZATION_STATUS.md)
+- [DP-006 policy handoff](docs/policy/DP-006_POLICY_HANDOFF.md)
+- [DP-006 policy remediation evidence](docs/policy/DP-006_POLICY_REMEDIATION_EVIDENCE.md)
 - [External reference register](docs/reference-register.md)
 - [Final checklist](docs/final-checklist.md)
 - [Notion task template](notion/task-template.md)

@@ -18,7 +18,16 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements-dev.txt
-      - run: python -m pytest
-      - run: python -m ruff check .
-      - run: python -m ruff format --check .
+      - name: Synthetic tests with warnings as errors
+        run: python -m pytest -q -W error
+      - name: Synthetic tests with invalid external root
+        env:
+          MTAH_EXTERNAL_DATA_DIR: ${{ runner.temp }}/dp006-invalid-external-root
+        run: |
+          test ! -e "$MTAH_EXTERNAL_DATA_DIR"
+          python -m pytest -q -W error
+      - name: Ruff check
+        run: python -m ruff check .
+      - name: Ruff format check
+        run: python -m ruff format --check .
 

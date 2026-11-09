@@ -24,6 +24,13 @@ from mtah_possession.data.observations import prepare_ball_observations
 from mtah_possession.features.ball import nearest_team_candidates
 from mtah_possession.features.evidence import build_evidence_series
 from mtah_possession.features.possession import majority_vote_labels
+from mtah_possession.governance.authorization import (
+    EVALUATION_PHASE_PROFILE,
+    EVALUATION_POSSESSION_PROFILE,
+    AuthorizedExternalRun,
+)
+from mtah_possession.governance.policy import DataUse, PolicyError, PolicyStatus
+from mtah_possession.governance.temporal import validate_temporal_feature_path
 from mtah_possession.states.cleanup import apply_structural_cleanup
 from mtah_possession.states.phase_layer import (
     compile_phase_evidence,
@@ -103,6 +110,7 @@ class ExternalMatchEvaluation:
             "split": self.split,
             "proxy_counts": dict(self.proxy.counts),
             "proxy_sources": dict(self.proxy.source_counts),
+            "proxy_label_profiles": dict(self.proxy.label_profiles or {}),
             "source_checksums": dict(self.source_checksums),
             "external_aggregate": dict(self.external_aggregate),
             "candidates": {
@@ -143,9 +151,17 @@ def evaluate_external_match(
     match: NeutralMatch,
     state_config: StateEngineConfig,
     *,
+    authorization: AuthorizedExternalRun,
     split: str = "development",
     transition_tolerance_s: float = 0.5,
 ) -> ExternalMatchEvaluation:
+    for use in (
+        DataUse.TRACKING_MODEL_INPUT,
+        DataUse.PHASE_MODEL_INPUT,
+        DataUse.EVALUATION_REFERENCE,
+    ):
+        if authorization.use_permissions[use].status != PolicyStatus.PASS:
+            raise PolicyError(f"{use.value} is not authorized")
     model_input = build_model_input(match)
     adapted = replace(
         state_config,
@@ -178,7 +194,11 @@ def evaluate_external_match(
         dp006_config,
         with_event_evidence(model_input, phase_evidence),
     )
-    proxy = map_proxy_target(match)
+    proxy = map_proxy_target(
+        match,
+        possession_profile=authorization.label_profiles[EVALUATION_POSSESSION_PROFILE],
+        phase_profile=authorization.label_profiles[EVALUATION_PHASE_PROFILE],
+    )
 
     tolerance_frames = max(1, round(transition_tolerance_s * match.fps))
     candidates = {}
@@ -322,6 +342,32 @@ def predict_model_input(
     model_input: ModelInput,
     config: StateEngineConfig,
 ) -> ModelPrediction:
+    event_evidence = model_input.event_evidence
+    has_event_evidence = bool(
+        event_evidence.forced_dead_mask.any()
+        or event_evidence.restart_evidence.any()
+        or (event_evidence.source_codes != "phase-none").any()
+    )
+    if has_event_evidence and not event_evidence.temporal_fields:
+        raise PolicyError("non-empty phase evidence requires temporal metadata")
+    temporal_names = {field.field_name for field in event_evidence.temporal_fields}
+    required_temporal_names = set()
+    if event_evidence.forced_dead_mask.any():
+        required_temporal_names.add("forced_dead_mask")
+    if event_evidence.restart_evidence.any():
+        required_temporal_names.add("restart_evidence")
+    if (event_evidence.source_codes != "phase-none").any():
+        required_temporal_names.add("source_codes")
+    missing_temporal_names = sorted(required_temporal_names - temporal_names)
+    if missing_temporal_names:
+        raise PolicyError(
+            "phase evidence fields lack temporal metadata: " + ", ".join(missing_temporal_names)
+        )
+    validate_temporal_feature_path(
+        event_evidence.temporal_fields,
+        frame_count=model_input.tracking.frame_count,
+        fps=model_input.fps,
+    )
     observations = prepare_ball_observations(
         model_input.tracking,
         fps=config.fps,

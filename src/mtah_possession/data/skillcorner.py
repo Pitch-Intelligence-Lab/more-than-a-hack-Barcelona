@@ -11,7 +11,11 @@ import hashlib
 import json
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from io import StringIO
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import numpy as np
@@ -29,14 +33,83 @@ class SkillCornerDataError(ValueError):
     """Raised when the audited external input does not match its manifest."""
 
 
+@dataclass(frozen=True)
+class SkillCornerManifestSnapshot:
+    source_path: str
+    config_bytes: bytes
+    manifest: Mapping[str, Any]
+    config_sha256: str
+    snapshot_digest: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class ImmutableFileSnapshot:
+    role: str
+    path: str
+    expected_sha256: str
+    actual_sha256: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class LoadedSkillCornerSource:
+    match: NeutralMatch
+    manifest_snapshot: SkillCornerManifestSnapshot
+    files: Mapping[str, ImmutableFileSnapshot]
+    actual_checksums: Mapping[str, str]
+    actual_source_identity: Any
+    snapshot_digest: str
+
+
+def create_skillcorner_manifest_snapshot(
+    config_path: str | os.PathLike[str],
+) -> SkillCornerManifestSnapshot:
+    path = Path(config_path)
+    try:
+        config_bytes = path.read_bytes()
+    except OSError as error:
+        raise SkillCornerDataError(f"could not read SkillCorner manifest at {path}") from error
+    manifest = parse_skillcorner_manifest_bytes(config_bytes, source=str(path))
+    config_sha256 = hashlib.sha256(config_bytes).hexdigest()
+    snapshot_digest = hashlib.sha256(
+        _canonical_json(
+            {
+                "config_sha256": config_sha256,
+                "manifest": manifest,
+            }
+        )
+    ).hexdigest()
+    return SkillCornerManifestSnapshot(
+        source_path=str(path.resolve(strict=True)),
+        config_bytes=config_bytes,
+        manifest=_deep_freeze(manifest),
+        config_sha256=config_sha256,
+        snapshot_digest=snapshot_digest,
+        created_at=datetime.now(UTC).isoformat(),
+    )
+
+
 def load_skillcorner_manifest(
     config_path: str | os.PathLike[str],
 ) -> dict[str, Any]:
     path = Path(config_path)
     try:
-        values = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        config_bytes = path.read_bytes()
+    except OSError as error:
         raise SkillCornerDataError(f"could not read SkillCorner manifest at {path}") from error
+    return dict(parse_skillcorner_manifest_bytes(config_bytes, source=str(path)))
+
+
+def parse_skillcorner_manifest_bytes(
+    config_bytes: bytes,
+    *,
+    source: str,
+) -> dict[str, Any]:
+    try:
+        values = json.loads(config_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SkillCornerDataError(f"could not parse SkillCorner manifest at {source}") from error
     if not isinstance(values, dict) or values.get("provider") != "skillcorner":
         raise SkillCornerDataError("SkillCorner manifest must declare provider=skillcorner")
     required = {
@@ -44,7 +117,9 @@ def load_skillcorner_manifest(
         "provider",
         "repository",
         "commit",
-        "license",
+        "repository_software_license",
+        "data_license_status",
+        "data_license_evidence",
         "license_file",
         "license_sha256",
         "readme_sha256",
@@ -66,8 +141,16 @@ def load_skillcorner_manifest(
         raise SkillCornerDataError(f"manifest has unknown keys: {sorted(unknown)}")
     if values["schema_version"] != "1.0":
         raise SkillCornerDataError("SkillCorner manifest schema_version must be '1.0'")
-    if values["license"] != "MIT":
-        raise SkillCornerDataError("this adapter is audited only for the MIT manifest")
+    if values["repository_software_license"] != "MIT":
+        raise SkillCornerDataError("repository software license must be MIT")
+    if values["data_license_status"] not in {"PASS", "HOLD", "FAIL"}:
+        raise SkillCornerDataError("invalid data_license_status")
+    if values["data_license_status"] == "MIT":
+        raise SkillCornerDataError("data_license_status cannot reuse the software license")
+    if not isinstance(values["data_license_evidence"], list) or not all(
+        isinstance(item, str) and item for item in values["data_license_evidence"]
+    ):
+        raise SkillCornerDataError("data_license_evidence must be a non-empty string list")
     if values["coordinate_convention"] != "metres-center-origin":
         raise SkillCornerDataError("unexpected coordinate convention")
     files = values["files"]
@@ -92,44 +175,87 @@ def load_skillcorner_match(
     config_path: str | os.PathLike[str],
     external_root: str | os.PathLike[str],
 ) -> NeutralMatch:
-    manifest = load_skillcorner_manifest(config_path)
+    """Legacy compatibility helper; production entrypoints must use snapshot APIs."""
+    snapshot = create_skillcorner_manifest_snapshot(config_path)
+    return load_skillcorner_match_from_snapshot(
+        snapshot,
+        external_root,
+        None,
+    ).match
+
+
+def load_skillcorner_match_from_snapshot(
+    snapshot: SkillCornerManifestSnapshot,
+    external_root: str | os.PathLike[str],
+    expected_source_identity: Any | None,
+) -> LoadedSkillCornerSource:
+    manifest = snapshot.manifest
     root = Path(external_root).resolve(strict=False)
-    files = {role: root / entry["path"] for role, entry in manifest["files"].items()}
-    checksums: dict[str, str] = {}
+    file_snapshots: dict[str, ImmutableFileSnapshot] = {}
     for role, relative, expected in (
         ("license", manifest["license_file"], manifest["license_sha256"]),
         ("readme", "README.md", manifest["readme_sha256"]),
+        (
+            "tracking",
+            manifest["files"]["tracking"]["path"],
+            manifest["files"]["tracking"]["sha256"],
+        ),
+        ("phases", manifest["files"]["phases"]["path"], manifest["files"]["phases"]["sha256"]),
+        ("match", manifest["files"]["match"]["path"], manifest["files"]["match"]["sha256"]),
     ):
         path = root / relative
-        if not path.is_file():
-            raise SkillCornerDataError(f"audited {role} file is missing: {path}")
-        actual = sha256_file(path)
+        try:
+            data = path.read_bytes()
+        except OSError as error:
+            raise SkillCornerDataError(f"audited {role} file is missing: {path}") from error
+        actual = hashlib.sha256(data).hexdigest()
         if actual != expected:
             raise SkillCornerDataError(
                 f"audited {role} checksum mismatch: expected {expected}, found {actual}"
             )
-        checksums[role] = actual
-    for role, path in files.items():
-        if not path.is_file():
-            raise SkillCornerDataError(f"external {role} file is missing: {path}")
-        actual = sha256_file(path)
-        expected = manifest["files"][role]["sha256"]
-        if actual != expected:
-            raise SkillCornerDataError(
-                f"external {role} checksum mismatch: expected {expected}, found {actual}"
-            )
-        checksums[role] = actual
+        file_snapshots[role] = ImmutableFileSnapshot(
+            role=role,
+            path=str(path),
+            expected_sha256=str(expected),
+            actual_sha256=actual,
+            data=data,
+        )
+    checksums = {role: snapshot.actual_sha256 for role, snapshot in file_snapshots.items()}
+    actual_source_identity = None
+    if expected_source_identity is not None:
+        from mtah_possession.governance.source import build_source_identity_from_manifest
+
+        actual_source_identity = build_source_identity_from_manifest(
+            manifest,
+            actual_file_sha256={
+                "tracking": checksums["tracking"],
+                "phases": checksums["phases"],
+                "match": checksums["match"],
+            },
+            actual_license_sha256=checksums["license"],
+            actual_readme_sha256=checksums["readme"],
+        )
+        if actual_source_identity != expected_source_identity:
+            raise SkillCornerDataError("loader actual Source Identity does not match the seal")
+    source_snapshot_digest = hashlib.sha256(
+        _canonical_json(
+            {
+                "manifest_snapshot_digest": snapshot.snapshot_digest,
+                "actual_checksums": checksums,
+            }
+        )
+    ).hexdigest()
 
     try:
-        match_data = json.loads(files["match"].read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        match_data = json.loads(file_snapshots["match"].data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise SkillCornerDataError("could not parse external match metadata") from error
     periods = _parse_periods(match_data, manifest["match_id"])
     if not periods:
         raise SkillCornerDataError("external match has no declared periods")
     frame_count = max(
         max(period.end_frame for period in periods),
-        _max_tracking_frame(files["tracking"]) + 1,
+        _max_tracking_frame_bytes(file_snapshots["tracking"].data) + 1,
     )
 
     home_team_id = int(manifest["home_team_id"])
@@ -173,84 +299,89 @@ def load_skillcorner_match(
         "period_values": {},
     }
 
-    with files["tracking"].open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line)
-                frame = int(record["frame"])
-            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
-                raise SkillCornerDataError("malformed external tracking record") from error
-            aggregate["tracking_rows"] += 1
-            if not 0 <= frame < frame_count:
-                aggregate["out_of_range_rows"] += 1
-                continue
-            frame_present[frame] = True
+    try:
+        tracking_handle = StringIO(file_snapshots["tracking"].data.decode("utf-8"))
+    except UnicodeDecodeError as error:
+        raise SkillCornerDataError("could not decode external tracking data") from error
+    for line in tracking_handle:
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+            frame = int(record["frame"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise SkillCornerDataError("malformed external tracking record") from error
+        aggregate["tracking_rows"] += 1
+        if not 0 <= frame < frame_count:
+            aggregate["out_of_range_rows"] += 1
+            continue
+        frame_present[frame] = True
 
-            group = (record.get("possession") or {}).get("group")
-            group_key = "<null>" if group is None else str(group)
-            group_counts = aggregate["possession_group_values"]
-            group_counts[group_key] = group_counts.get(group_key, 0) + 1
-            side = _side_from_group(group, home_team_id, away_team_id)
-            possession_side[frame] = side
-            if side == TeamSide.HOME:
-                aggregate["possession_home"] += 1
-                possession_status[frame] = 0
-            elif side == TeamSide.AWAY:
-                aggregate["possession_away"] += 1
-                possession_status[frame] = 0
-            elif group is None:
-                aggregate["possession_missing"] += 1
-            else:
-                aggregate["possession_unrecognized"] += 1
-                possession_status[frame] = 2
+        group = (record.get("possession") or {}).get("group")
+        group_key = "<null>" if group is None else str(group)
+        group_counts = aggregate["possession_group_values"]
+        group_counts[group_key] = group_counts.get(group_key, 0) + 1
+        side = _side_from_group(group, home_team_id, away_team_id)
+        possession_side[frame] = side
+        if side == TeamSide.HOME:
+            aggregate["possession_home"] += 1
+            possession_status[frame] = 0
+        elif side == TeamSide.AWAY:
+            aggregate["possession_away"] += 1
+            possession_status[frame] = 0
+        elif group is None:
+            aggregate["possession_missing"] += 1
+        else:
+            aggregate["possession_unrecognized"] += 1
+            possession_status[frame] = 2
 
-            ball = record.get("ball_data")
-            if isinstance(ball, dict):
-                point = _finite_point(ball)
-                if point is not None:
-                    ball_positions[frame] = point
-                    ball_detected[frame] = bool(ball.get("is_detected"))
-                    ball_source_quality[frame] = (
-                        SourceQuality.DETECTED
-                        if ball_detected[frame]
-                        else SourceQuality.EXTRAPOLATED
-                    )
-                    aggregate["ball_detected"] += int(ball_detected[frame])
-                    aggregate["ball_present_but_not_detected"] += int(not ball_detected[frame])
-
-            for player in record.get("player_data") or []:
-                aggregate["player_observations"] += 1
-                player_id = player.get("player_id")
-                slot = id_to_slot.get(player_id)
-                if slot is None:
-                    aggregate["unknown_player_ids"] += 1
-                    continue
-                point = _finite_point(player)
-                if point is None:
-                    continue
-                slot_positions[frame, slot] = point
-                detected = bool(player.get("is_detected"))
-                slot_detected[frame, slot] = detected
-                slot_source_quality[frame, slot] = (
-                    SourceQuality.DETECTED if detected else SourceQuality.EXTRAPOLATED
+        ball = record.get("ball_data")
+        if isinstance(ball, dict):
+            point = _finite_point(ball)
+            if point is not None:
+                ball_positions[frame] = point
+                ball_detected[frame] = bool(ball.get("is_detected"))
+                ball_source_quality[frame] = (
+                    SourceQuality.DETECTED if ball_detected[frame] else SourceQuality.EXTRAPOLATED
                 )
-                aggregate["player_detected"] += int(detected)
-                aggregate["player_extrapolated"] += int(not detected)
+                aggregate["ball_detected"] += int(ball_detected[frame])
+                aggregate["ball_present_but_not_detected"] += int(not ball_detected[frame])
 
-            period = record.get("period")
-            period_key = "<null>" if period is None else str(period)
-            period_counts = aggregate["period_values"]
-            period_counts[period_key] = period_counts.get(period_key, 0) + 1
+        for player in record.get("player_data") or []:
+            aggregate["player_observations"] += 1
+            player_id = player.get("player_id")
+            slot = id_to_slot.get(player_id)
+            if slot is None:
+                aggregate["unknown_player_ids"] += 1
+                continue
+            point = _finite_point(player)
+            if point is None:
+                continue
+            slot_positions[frame, slot] = point
+            detected = bool(player.get("is_detected"))
+            slot_detected[frame, slot] = detected
+            slot_source_quality[frame, slot] = (
+                SourceQuality.DETECTED if detected else SourceQuality.EXTRAPOLATED
+            )
+            aggregate["player_detected"] += int(detected)
+            aggregate["player_extrapolated"] += int(not detected)
 
-    phases = _parse_phases(
-        files["phases"],
+        period = record.get("period")
+        period_key = "<null>" if period is None else str(period)
+        period_counts = aggregate["period_values"]
+        period_counts[period_key] = period_counts.get(period_key, 0) + 1
+
+    try:
+        phases_handle = StringIO(file_snapshots["phases"].data.decode("utf-8"), newline="")
+    except UnicodeDecodeError as error:
+        raise SkillCornerDataError("could not decode external phase data") from error
+    phases = _parse_phases_stream(
+        phases_handle,
         frame_count=frame_count,
         home_team_id=home_team_id,
         away_team_id=away_team_id,
     )
-    return NeutralMatch(
+    match = NeutralMatch(
         match_id=str(manifest["match_id"]),
         fps=int(manifest["fps"]),
         frame_count=frame_count,
@@ -278,10 +409,26 @@ def load_skillcorner_match(
         source_metadata={
             "repository": manifest["repository"],
             "commit": manifest["commit"],
-            "license": manifest["license"],
+            "repository_software_license": manifest["repository_software_license"],
+            "data_license_status": manifest["data_license_status"],
+            "data_license_evidence": list(manifest["data_license_evidence"]),
             "retrieval_date": manifest["retrieval_date"],
             "tracking_aggregate": aggregate,
+            "source_identity_sha256": (
+                actual_source_identity.source_identity_sha256
+                if actual_source_identity is not None
+                else None
+            ),
+            "source_snapshot_digest": source_snapshot_digest,
         },
+    )
+    return LoadedSkillCornerSource(
+        match=match,
+        manifest_snapshot=snapshot,
+        files=MappingProxyType(dict(file_snapshots)),
+        actual_checksums=MappingProxyType(dict(checksums)),
+        actual_source_identity=actual_source_identity,
+        snapshot_digest=source_snapshot_digest,
     )
 
 
@@ -346,32 +493,47 @@ def _parse_phases(
     home_team_id: int,
     away_team_id: int,
 ) -> tuple[PhaseSpan, ...]:
-    phases: list[PhaseSpan] = []
     with path.open("r", encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle):
-            first = int(row["frame_start"])
-            end = int(row["frame_end"])
-            if not 0 <= first < end <= frame_count:
-                raise SkillCornerDataError("external phase lies outside declared periods")
-            team_id = int(row["team_in_possession_id"])
-            if team_id == home_team_id:
-                side = TeamSide.HOME
-            elif team_id == away_team_id:
-                side = TeamSide.AWAY
-            else:
-                raise SkillCornerDataError("external phase has an unknown team")
-            phases.append(
-                PhaseSpan(
-                    start_frame=first,
-                    end_frame=end,
-                    period=int(row["period"]),
-                    kind=str(row["team_in_possession_phase_type"]),
-                    team=side,
-                    restart=False,
-                    dead_ball=False,
-                    source="phases_of_play",
-                )
+        return _parse_phases_stream(
+            handle,
+            frame_count=frame_count,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+        )
+
+
+def _parse_phases_stream(
+    handle: Any,
+    *,
+    frame_count: int,
+    home_team_id: int,
+    away_team_id: int,
+) -> tuple[PhaseSpan, ...]:
+    phases: list[PhaseSpan] = []
+    for row in csv.DictReader(handle):
+        first = int(row["frame_start"])
+        end = int(row["frame_end"])
+        if not 0 <= first < end <= frame_count:
+            raise SkillCornerDataError("external phase lies outside declared periods")
+        team_id = int(row["team_in_possession_id"])
+        if team_id == home_team_id:
+            side = TeamSide.HOME
+        elif team_id == away_team_id:
+            side = TeamSide.AWAY
+        else:
+            raise SkillCornerDataError("external phase has an unknown team")
+        phases.append(
+            PhaseSpan(
+                start_frame=first,
+                end_frame=end,
+                period=int(row["period"]),
+                kind=str(row["team_in_possession_phase_type"]),
+                team=side,
+                restart=False,
+                dead_ball=False,
+                source="phases_of_play",
             )
+        )
     return tuple(phases)
 
 
@@ -421,3 +583,30 @@ def _max_tracking_frame(path: Path) -> int:
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
             raise SkillCornerDataError("could not parse the final external frame") from error
     raise SkillCornerDataError("external tracking file has no records")
+
+
+def _max_tracking_frame_bytes(data: bytes) -> int:
+    try:
+        lines = data[-1024 * 1024 :].decode("utf-8").splitlines()
+    except UnicodeDecodeError as error:
+        raise SkillCornerDataError("could not decode external tracking data") from error
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            return int(json.loads(line)["frame"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise SkillCornerDataError("could not parse the final external frame") from error
+    raise SkillCornerDataError("external tracking file has no records")
+
+
+def _canonical_json(values: Mapping[str, Any]) -> bytes:
+    return json.dumps(values, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _deep_freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _deep_freeze(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_deep_freeze(item) for item in value)
+    return value

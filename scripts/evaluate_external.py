@@ -43,7 +43,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default=str(ROOT / "configs" / "external-skillcorner.json"))
     parser.add_argument("--state-config", default=str(ROOT / "configs" / "state-engine.json"))
     parser.add_argument("--splits", default=str(ROOT / "configs" / "external-splits.json"))
+    parser.add_argument(
+        "--policy",
+        default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.json"),
+    )
+    parser.add_argument(
+        "--holdout-manifest",
+        default=str(ROOT / "configs" / "policy" / "holdout-manifest-v2.json"),
+    )
+    parser.add_argument(
+        "--freeze-spec",
+        default=str(ROOT / "configs" / "policy" / "artifact-freeze-v2.json"),
+    )
+    parser.add_argument(
+        "--holdout-ledger-dir",
+        default=str(ROOT / "outputs" / "holdout"),
+    )
     parser.add_argument("--external-root", default=None)
+    parser.add_argument("--source-set", default=None)
     parser.add_argument(
         "--split",
         required=True,
@@ -69,6 +86,11 @@ def main(argv: list[str] | None = None) -> int:
             split=args.split,
             mode=mode,
             code_commit=args.code_commit or "",
+            policy_path=args.policy,
+            holdout_manifest_path=args.holdout_manifest,
+            freeze_spec_path=args.freeze_spec,
+            ledger_dir=args.holdout_ledger_dir,
+            source_set_path=args.source_set,
         )
         _write_json_atomic(Path(args.output), result.report)
     except (OSError, ValueError) as error:

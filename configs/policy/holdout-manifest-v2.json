@@ -1,0 +1,12 @@
+{
+  "schema_version": "2.0",
+  "status": "unassigned",
+  "matches": [],
+  "model_freeze_sha256": null,
+  "feature_set_sha256": null,
+  "config_freeze_sha256": null,
+  "hyperparameter_set_sha256": null,
+  "evaluation_script_sha256": null,
+  "metric_contract_version": null,
+  "unseal_log": []
+}

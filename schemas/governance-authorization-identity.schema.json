@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pitch-intelligence-lab.local/schemas/governance-authorization-identity.schema.json",
+  "title": "Governance authorization identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "provider",
+    "source_revision",
+    "policy_version",
+    "policy_sha256",
+    "license_status",
+    "internal_research_authorization",
+    "evaluation_authorization",
+    "temporal_authorization",
+    "phase_authorization",
+    "holdout_seal_authorization",
+    "authorization_status_digest",
+    "evidence_ids"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "provider": {"type": "string", "minLength": 1},
+    "source_revision": {"type": "string", "minLength": 1},
+    "policy_version": {"type": "string", "minLength": 1},
+    "policy_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "license_status": {"enum": ["PASS", "HOLD", "FAIL", "NOT_APPLICABLE"]},
+    "internal_research_authorization": {
+      "enum": ["PASS", "HOLD", "FAIL", "NOT_APPLICABLE"]
+    },
+    "evaluation_authorization": {
+      "enum": ["PASS", "HOLD", "FAIL", "NOT_APPLICABLE"]
+    },
+    "temporal_authorization": {
+      "enum": ["PASS", "HOLD", "FAIL", "NOT_APPLICABLE"]
+    },
+    "phase_authorization": {
+      "enum": ["PASS", "HOLD", "FAIL", "NOT_APPLICABLE"]
+    },
+    "holdout_seal_authorization": {
+      "enum": ["PASS", "HOLD", "FAIL", "NOT_APPLICABLE"]
+    },
+    "authorization_status_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "evidence_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

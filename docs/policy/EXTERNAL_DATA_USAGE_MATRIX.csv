@@ -1,0 +1,16 @@
+provider,use_key,use_label,label_role,technical_status,license_status,internal_authorization,overall_status,conditions
+SkillCorner Open Data,download_store,Download and internal storage,GOVERNANCE,IMPLEMENTED,HOLD,HOLD,HOLD,Written data-specific rights required.
+SkillCorner Open Data,tracking_feature_input,Tracking geometry as model input,MODEL_INPUT,IMPLEMENTED,HOLD,HOLD,HOLD,License and temporal/model-input approval required.
+SkillCorner Open Data,possession_group_target,possession.group as supervised target,TRAINING_TARGET,IMPLEMENTED,HOLD,HOLD,HOLD,Training rights and label-semantic audit required.
+SkillCorner Open Data,possession_player_target,possession.player_id as auxiliary target,AUXILIARY_TRAINING_TARGET,IMPLEMENTED,HOLD,HOLD,HOLD,Training rights and player-label quality audit required.
+SkillCorner Open Data,phase_auxiliary_target,Phases as auxiliary target,AUXILIARY_TRAINING_TARGET,IMPLEMENTED,HOLD,HOLD,HOLD,Training rights and phase-boundary audit required.
+SkillCorner Open Data,phase_model_input,Phases directly as model input,MODEL_INPUT,IMPLEMENTED,HOLD,HOLD,HOLD,Leakage and phase-semantics review required.
+SkillCorner Open Data,validation_reference,External validation reference,EVALUATION_REFERENCE,IMPLEMENTED,HOLD,HOLD,HOLD,Evaluation rights and sealed split required.
+SkillCorner Open Data,independent_holdout,Independent holdout,EVALUATION_REFERENCE,IMPLEMENTED,HOLD,HOLD,HOLD,Evaluation rights and sealed holdout required.
+Metrica Sports Sample Data,tracking_feature_input,Tracking geometry as model input,MODEL_INPUT,IMPLEMENTED,HOLD,HOLD,HOLD,Data-specific terms required.
+Metrica Sports Sample Data,possession_group_target,possession group target,TRAINING_TARGET,IMPLEMENTED,HOLD,HOLD,HOLD,Confirmed possession label source required.
+Metrica Sports Sample Data,validation_reference,External validation reference,EVALUATION_REFERENCE,IMPLEMENTED,HOLD,HOLD,HOLD,Data-specific terms required.
+SoccerTrack v2,tracking_feature_input,Tracking geometry as model input,MODEL_INPUT,IMPLEMENTED,HOLD,HOLD,HOLD,Gated access and internal authorization required.
+SoccerTrack v2,phase_auxiliary_target,BAS restart evidence as auxiliary target,AUXILIARY_TRAINING_TARGET,IMPLEMENTED,HOLD,HOLD,HOLD,Gated terms and restart-label mapping required.
+SoccerTrack v2,validation_reference,External validation reference,EVALUATION_REFERENCE,IMPLEMENTED,HOLD,HOLD,HOLD,Evaluation rights required.
+

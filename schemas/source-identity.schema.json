@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pitch-intelligence-lab.local/schemas/source-identity.schema.json",
+  "title": "Audited external source identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "provider",
+    "source_revision",
+    "match_id",
+    "fps",
+    "home_team_id",
+    "away_team_id",
+    "pitch_length_m",
+    "pitch_width_m",
+    "coordinate_convention",
+    "license_sha256",
+    "readme_sha256",
+    "files",
+    "source_config_sha256",
+    "source_identity_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "provider": {"type": "string", "minLength": 1},
+    "source_revision": {"$ref": "#/$defs/commit"},
+    "match_id": {"type": "string", "minLength": 1},
+    "fps": {"type": "integer", "minimum": 1},
+    "home_team_id": {"type": "integer"},
+    "away_team_id": {"type": "integer"},
+    "pitch_length_m": {"type": "number", "exclusiveMinimum": 0},
+    "pitch_width_m": {"type": "number", "exclusiveMinimum": 0},
+    "coordinate_convention": {"type": "string", "minLength": 1},
+    "license_sha256": {"$ref": "#/$defs/sha256"},
+    "readme_sha256": {"$ref": "#/$defs/sha256"},
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tracking", "phases", "match"],
+      "properties": {
+        "tracking": {"$ref": "#/$defs/file"},
+        "phases": {"$ref": "#/$defs/file"},
+        "match": {"$ref": "#/$defs/file"}
+      }
+    },
+    "source_config_sha256": {"$ref": "#/$defs/sha256"},
+    "source_identity_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

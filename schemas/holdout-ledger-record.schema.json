@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pitch-intelligence-lab.local/schemas/holdout-ledger-record.schema.json",
+  "title": "Append-only holdout lifecycle record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recorded_at",
+    "event_type",
+    "provider",
+    "holdout_id",
+    "match_ids",
+    "freeze_hashes",
+    "holdout_manifest_sha256",
+    "code_commit",
+    "prediction_sha256",
+    "previous_record_sha256",
+    "reason"
+  ],
+  "properties": {
+    "schema_version": {"const": "6.0"},
+    "recorded_at": {"type": "string", "minLength": 1},
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "AUTHORIZATION_DENIED",
+        "SEALED_VERIFIED",
+        "UNSEALED",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+        "EVALUATION_FAILED",
+        "COMPROMISED",
+        "FREEZE_PROTOCOL_MIGRATED"
+      ]
+    },
+    "provider": {"type": "string", "minLength": 1},
+    "holdout_id": {"type": "string", "minLength": 1},
+    "match_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "match_id": {"type": ["string", "null"], "minLength": 1},
+    "freeze_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "feature_set",
+        "configuration",
+        "hyperparameters",
+        "evaluation_script",
+        "metric_contract_version"
+      ],
+      "properties": {
+        "model": {"type": "string", "minLength": 1},
+        "feature_set": {"type": "string", "minLength": 1},
+        "configuration": {"type": "string", "minLength": 1},
+        "hyperparameters": {"type": "string", "minLength": 1},
+        "evaluation_script": {"type": "string", "minLength": 1},
+        "metric_contract_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "holdout_manifest_sha256": {"type": "string", "minLength": 64},
+    "code_commit": {"type": "string", "minLength": 7},
+    "prediction_sha256": {"type": ["string", "null"]},
+    "previous_record_sha256": {"type": ["string", "null"]},
+    "reason": {"type": ["string", "null"]},
+    "governance_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "provider",
+        "source_revision",
+        "policy_version",
+        "policy_sha256",
+        "license_status",
+        "internal_research_authorization",
+        "evaluation_authorization",
+        "temporal_authorization",
+        "phase_authorization",
+        "holdout_seal_authorization",
+        "authorization_status_digest",
+        "evidence_ids"
+      ],
+      "properties": {
+        "schema_version": {"type": "string", "minLength": 1},
+        "provider": {"type": "string", "minLength": 1},
+        "source_revision": {"type": "string", "minLength": 1},
+        "policy_version": {"type": "string", "minLength": 1},
+        "policy_sha256": {"type": "string", "minLength": 64},
+        "license_status": {"type": "string", "minLength": 1},
+        "internal_research_authorization": {"type": "string", "minLength": 1},
+        "evaluation_authorization": {"type": "string", "minLength": 1},
+        "temporal_authorization": {"type": "string", "minLength": 1},
+        "phase_authorization": {"type": "string", "minLength": 1},
+        "holdout_seal_authorization": {"type": "string", "minLength": 1},
+        "authorization_status_digest": {"type": "string", "minLength": 64},
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "freeze_protocol_version": {"type": "string", "minLength": 1},
+    "holdout_manifest_path_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "split_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_config_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_identity": {
+      "$ref": "source-identity.schema.json"
+    },
+    "source_identity_set": {
+      "$ref": "source-identity-set.schema.json"
+    },
+    "migration_receipt": {
+      "$ref": "holdout-migration-receipt.schema.json"
+    },
+    "old_protocol_version": {"type": "string", "minLength": 1},
+    "new_protocol_version": {"type": "string", "minLength": 1},
+    "legacy_combined_freeze": {"type": "object"},
+    "new_model_freeze": {"type": "object"},
+    "governance_identity_digest": {"type": "string", "minLength": 64},
+    "old_code_commit": {"type": "string", "minLength": 40},
+    "migration_commit": {"type": "string", "minLength": 40},
+    "migration_rule_version": {"type": "string", "minLength": 1},
+    "approver": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "freeze_protocol_version": {"const": "source-set-match-lifecycle-v6"}
+        },
+        "required": ["freeze_protocol_version"]
+      },
+      "then": {
+        "required": ["schema_version", "match_id"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": ["EVALUATION_STARTED", "EVALUATION_FAILED", "EVALUATION_COMPLETED"]
+          }
+        },
+        "required": ["event_type"]
+      },
+      "then": {
+        "required": ["match_id"],
+        "properties": {
+          "match_id": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  ]
+}

@@ -8,6 +8,7 @@ from enum import StrEnum
 import numpy as np
 from numpy.typing import NDArray
 
+from mtah_possession.governance.temporal import TemporalFieldPolicy
 from mtah_possession.states.possession_state import duration_to_frames
 
 
@@ -38,6 +39,7 @@ class PhaseLayerEvidence:
     forced_dead_mask: NDArray[np.bool_]
     restart_evidence: NDArray[np.bool_]
     source_codes: NDArray[np.str_]
+    temporal_fields: tuple[TemporalFieldPolicy, ...]
 
     @property
     def forced_dead_frames(self) -> int:
@@ -57,12 +59,18 @@ def compile_phase_evidence(
 ) -> PhaseLayerEvidence:
     if frame_count <= 0:
         raise ValueError("frame_count must be positive")
+    if fps <= 0:
+        raise ValueError("fps must be positive")
     if restart_window_s < 0:
         raise ValueError("restart_window_s must be non-negative")
     restart_frames = max(1, duration_to_frames(restart_window_s, fps))
     forced_dead = np.zeros(frame_count, dtype=bool)
     restart = np.zeros(frame_count, dtype=bool)
     source_codes = np.full(frame_count, "phase-none", dtype="<U48")
+    frame_available_at = np.arange(frame_count, dtype=np.float64) / fps
+    forced_available_at = frame_available_at.copy()
+    restart_available_at = frame_available_at.copy()
+    source_available_at = frame_available_at.copy()
 
     for directive in directives:
         if not 0 <= directive.start_frame < directive.end_frame <= frame_count:
@@ -71,13 +79,66 @@ def compile_phase_evidence(
             sl = slice(directive.start_frame, directive.end_frame)
             forced_dead[sl] = True
             source_codes[sl] = f"dead:{directive.kind}:{directive.source}"
+            forced_available_at[sl] = np.minimum(
+                forced_available_at[sl],
+                directive.start_frame / fps,
+            )
+            source_available_at[sl] = np.minimum(
+                source_available_at[sl],
+                directive.start_frame / fps,
+            )
         if directive.restart:
             start = directive.start_frame
             end = min(frame_count, start + restart_frames)
             restart[start:end] = True
+            restart_available_at[start:end] = np.minimum(
+                restart_available_at[start:end],
+                directive.start_frame / fps,
+            )
             empty = source_codes[start:end] == "phase-none"
             source_codes[start:end][empty] = f"restart:{directive.kind}:{directive.source}"
-    return PhaseLayerEvidence(forced_dead, restart, source_codes)
+            source_available_at[start:end] = np.minimum(
+                source_available_at[start:end],
+                directive.start_frame / fps,
+            )
+    temporal_fields: tuple[TemporalFieldPolicy, ...] = ()
+    if directives:
+        interval_start = min(item.start_frame for item in directives) / fps
+        interval_end = max(item.end_frame for item in directives) / fps
+        source = "+".join(sorted({item.source for item in directives}))
+        temporal_fields = (
+            TemporalFieldPolicy(
+                field_name="forced_dead_mask",
+                event_time=interval_start,
+                interval_start=interval_start,
+                interval_end=interval_end,
+                available_at=None,
+                availability_source=f"phase intervals: {source}",
+                per_frame_available_at=tuple(forced_available_at.tolist()),
+                semantics_version="DP-006-POLICY-v2",
+            ),
+            TemporalFieldPolicy(
+                field_name="restart_evidence",
+                event_time=interval_start,
+                interval_start=interval_start,
+                interval_end=interval_end,
+                available_at=None,
+                availability_source=f"phase restart intervals: {source}",
+                per_frame_available_at=tuple(restart_available_at.tolist()),
+                semantics_version="DP-006-POLICY-v2",
+            ),
+            TemporalFieldPolicy(
+                field_name="source_codes",
+                event_time=interval_start,
+                interval_start=interval_start,
+                interval_end=interval_end,
+                available_at=None,
+                availability_source=f"phase source intervals: {source}",
+                per_frame_available_at=tuple(source_available_at.tolist()),
+                semantics_version="DP-006-POLICY-v2",
+            ),
+        )
+    return PhaseLayerEvidence(forced_dead, restart, source_codes, temporal_fields)
 
 
 def derive_gap_dead_directives(

@@ -1,0 +1,45 @@
+{
+  "schema_version": "2.0",
+  "artifact_root": "../..",
+  "artifacts": {
+    "prediction_code": [
+      "src/mtah_possession/algorithm_config.py",
+      "src/mtah_possession/pipeline",
+      "src/mtah_possession/states"
+    ],
+    "feature_set": [
+      "src/mtah_possession/features"
+    ],
+    "data_transform": [
+      "src/mtah_possession/config.py",
+      "src/mtah_possession/data"
+    ],
+    "algorithm_configuration": [
+      "configs/state-engine.json"
+    ],
+    "hyperparameters": [
+      "configs/state-engine.json"
+    ],
+    "evaluation_script": [
+      "scripts/evaluate_external.py",
+      "src/mtah_possession/evaluation/external.py",
+      "src/mtah_possession/evaluation/provenance.py",
+      "src/mtah_possession/evaluation/runner.py",
+      "src/mtah_possession/evaluation/splits.py"
+    ],
+    "metric_contract": [
+      "docs/evaluation-contract.md",
+      "src/mtah_possession/evaluation/external.py"
+    ]
+  },
+  "category_reasons": {
+    "prediction_code": "Prediction, state inference and submission pipeline code that determines labels.",
+    "feature_set": "Ball, evidence and possession feature computations used by prediction.",
+    "data_transform": "Data loading, normalization, model-input conversion and timing configuration.",
+    "algorithm_configuration": "The frozen state-engine configuration that changes algorithm behavior.",
+    "hyperparameters": "The frozen numeric parameter values used by the state engine.",
+    "evaluation_script": "The external evaluation orchestration and result-reporting code.",
+    "metric_contract": "The metric semantics and metric implementation used to report results."
+  },
+  "metric_contract_version": "1.1.0"
+}

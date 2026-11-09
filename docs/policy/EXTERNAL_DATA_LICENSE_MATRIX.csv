@@ -1,0 +1,5 @@
+provider,source_revision,software_license,data_license_status,download_store,tracking_read_preprocess,tracking_model_input,possession_supervision_target,player_id_auxiliary_target,phases_research_or_target,validation_evaluation,derived_model_retention,publication,source_redistribution,derived_redistribution,evidence_ids
+SkillCorner Open Data,4340d274572876239c154c90bc507a9b3250a656,MIT,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,EV-AUTH-SC-README; EV-AUTH-SC-LICENSE; EV-AUTH-SC-CONTACT
+Metrica Sports Sample Data,e706dd506b360d69d9d123d5b8026e7294b13996,NO LICENSE FILE,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,NOT_APPLICABLE,HOLD,HOLD,HOLD,HOLD,HOLD,EV-AUTH-MET-README; EV-AUTH-MET-TERMS
+SoccerTrack v2,325bd4c57ee8e135ab652f3921d274526ada496b,MIT,CC BY 4.0 / GATED TERMS HOLD,HOLD,HOLD,HOLD,NOT_PROVIDED,NOT_PROVIDED,HOLD,HOLD,HOLD,HOLD,HOLD,HOLD,EV-AUTH-ST-README; EV-AUTH-ST-LICENSE; EV-AUTH-ST-HF
+
