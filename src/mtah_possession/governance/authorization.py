@@ -18,7 +18,8 @@ from mtah_possession.evaluation.splits import (
 )
 from mtah_possession.governance.exposure import (
     ExposureRecord,
-    load_exposure_register,
+    VerifiedExposureSnapshot,
+    load_verified_exposure_snapshot,
 )
 from mtah_possession.governance.holdout import (
     FreezeHashes,
@@ -46,6 +47,18 @@ EVALUATION_PHASE_PROFILE = "skillcorner_phases_v1"
 GOVERNANCE_IDENTITY_SCHEMA_VERSION = "1.0"
 DEFAULT_EXPOSURE_REGISTER_PATH = (
     Path(__file__).resolve().parents[3] / "configs" / "policy" / "exposure-register-v1.json"
+)
+DEFAULT_EXPOSURE_ANCHOR_PATH = (
+    Path(__file__).resolve().parents[3] / "configs" / "policy" / "exposure-register-anchor-v1.json"
+)
+DEFAULT_EXPOSURE_TRUST_ROOT_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "configs"
+    / "policy"
+    / "exposure-register-trust-root-v1.json"
+)
+APPROVED_EXPOSURE_TRUST_ROOT_SHA256 = (
+    "584fa741fc0b0b624b96d8758d13b5437b76cadc6608e9ae376be3ab572c0159"
 )
 
 
@@ -94,6 +107,7 @@ class AuthorizedExternalRun:
     use_bases: dict[DataUse, AuthorizationBasis] = dataclass_field(default_factory=dict)
     scope_ids: dict[DataUse, str | None] = dataclass_field(default_factory=dict)
     exposure_records: tuple[ExposureRecord, ...] = ()
+    exposure_snapshot: VerifiedExposureSnapshot | None = None
 
     def to_authorization_record(self) -> dict[str, Any]:
         return {
@@ -109,6 +123,20 @@ class AuthorizedExternalRun:
                 for use in sorted(self.use_permissions, key=lambda item: item.value)
             },
             "exposure_disclosure": [record.to_dict() for record in self.exposure_records],
+            "exposure_integrity": (
+                {
+                    "register_path": self.exposure_snapshot.register_path,
+                    "register_path_identity": self.exposure_snapshot.register_path_identity,
+                    "register_sha256": self.exposure_snapshot.register_sha256,
+                    "anchor_path": self.exposure_snapshot.anchor_path,
+                    "anchor_path_identity": self.exposure_snapshot.anchor_path_identity,
+                    "anchor_sha256": self.exposure_snapshot.anchor_sha256,
+                    "trust_root_sha256": self.exposure_snapshot.trust_root_sha256,
+                    "reseal_id": self.exposure_snapshot.anchor.reseal_id,
+                }
+                if self.exposure_snapshot is not None
+                else None
+            ),
         }
 
 
@@ -270,6 +298,9 @@ def authorize_external_run(
     governance_identity: GovernanceAuthorizationIdentity | None = None,
     verify_holdout_freeze: bool = True,
     exposure_register_path: str | os.PathLike[str] | None = DEFAULT_EXPOSURE_REGISTER_PATH,
+    exposure_anchor_path: str | os.PathLike[str] | None = DEFAULT_EXPOSURE_ANCHOR_PATH,
+    exposure_trust_root_path: str | os.PathLike[str] | None = (DEFAULT_EXPOSURE_TRUST_ROOT_PATH),
+    exposure_trust_root_sha256: str | None = APPROVED_EXPOSURE_TRUST_ROOT_SHA256,
     now: datetime | None = None,
 ) -> AuthorizedExternalRun:
     policy = load_policy(policy_path)
@@ -336,11 +367,13 @@ def authorize_external_run(
         if verify_holdout_freeze:
             holdout_manifest.require_frozen(freeze_hashes)
 
-    exposure_records: tuple[ExposureRecord, ...] = ()
+    exposure_snapshot: VerifiedExposureSnapshot | None = None
     if split == "holdout":
-        if exposure_register_path is None:
-            raise PolicyError("Holdout authorization requires an exposure register")
-        exposure_records = load_exposure_register(exposure_register_path).for_holdout(
+        exposure_snapshot = load_verified_exposure_snapshot(
+            register_path=exposure_register_path,
+            anchor_path=exposure_anchor_path,
+            trust_root_path=exposure_trust_root_path,
+            expected_trust_root_sha256=exposure_trust_root_sha256,
             provider=provider,
             source_revision=source_revision,
             match_ids=tuple(sorted(split_manifest.holdout)),
@@ -355,7 +388,8 @@ def authorize_external_run(
         governance_identity=identity,
         use_bases={use: decision.basis for use, decision in decisions.items()},
         scope_ids={use: decision.scope_id for use, decision in decisions.items()},
-        exposure_records=exposure_records,
+        exposure_records=() if exposure_snapshot is None else exposure_snapshot.records,
+        exposure_snapshot=exposure_snapshot,
     )
 
 

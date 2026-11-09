@@ -100,10 +100,6 @@ def main(argv: list[str] | None = None) -> int:
         "--policy",
         default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.1.json"),
     )
-    parser.add_argument(
-        "--exposure-register",
-        default=str(ROOT / "configs" / "policy" / "exposure-register-v1.json"),
-    )
     parser.add_argument("--external-root", default=None)
     parser.add_argument(
         "--mode",
@@ -150,7 +146,6 @@ def main(argv: list[str] | None = None) -> int:
             match_id=str(manifest["match_id"]),
             split="development",
             mode=EvaluationMode.DIAGNOSTIC,
-            exposure_register_path=args.exposure_register,
         )
         loaded_source = load_skillcorner_match_from_snapshot(
             snapshot,

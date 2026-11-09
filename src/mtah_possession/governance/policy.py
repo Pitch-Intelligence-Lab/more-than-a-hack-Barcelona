@@ -15,6 +15,25 @@ class PolicyError(ValueError):
     """Raised when policy data is incomplete or a requested use is not allowed."""
 
 
+class AuthorizationFailureReason(StrEnum):
+    EXTERNAL_LICENSE_HOLD = "EXTERNAL_LICENSE_HOLD"
+    INTERNAL_RESEARCH_HOLD = "INTERNAL_RESEARCH_HOLD"
+    USE_PERMISSION_HOLD = "USE_PERMISSION_HOLD"
+    MISSING_EVIDENCE = "MISSING_EVIDENCE"
+    UNREGISTERED_EVIDENCE = "UNREGISTERED_EVIDENCE"
+    PERMISSION_FAIL = "PERMISSION_FAIL"
+    POLICY_INTEGRITY_ERROR = "POLICY_INTEGRITY_ERROR"
+    SOURCE_IDENTITY_ERROR = "SOURCE_IDENTITY_ERROR"
+
+
+class AuthorizationFailure(PolicyError):
+    """A classified production authorization failure."""
+
+    def __init__(self, reason: AuthorizationFailureReason, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 class PolicyStatus(StrEnum):
     PASS = "PASS"
     PROJECT_RISK_ACCEPTED_INTERNAL = "PROJECT_RISK_ACCEPTED_INTERNAL"
@@ -73,6 +92,13 @@ NEVER_SCOPED_INTERNAL_RISK_USES = frozenset(
         DataUse.PUBLICATION.value,
         DataUse.SOURCE_REDISTRIBUTION.value,
         DataUse.DERIVED_REDISTRIBUTION.value,
+    }
+)
+SCOPED_RISK_FALLBACK_REASONS = frozenset(
+    {
+        AuthorizationFailureReason.EXTERNAL_LICENSE_HOLD,
+        AuthorizationFailureReason.INTERNAL_RESEARCH_HOLD,
+        AuthorizationFailureReason.USE_PERMISSION_HOLD,
     }
 )
 
@@ -270,7 +296,9 @@ def require_allowed(
     provider = require_source_identity(policy, provider_name, source_revision)
     try:
         _require_external_right(provider, use)
-    except PolicyError as external_error:
+    except AuthorizationFailure as external_error:
+        if external_error.reason not in SCOPED_RISK_FALLBACK_REASONS:
+            raise
         if not allow_scoped_internal:
             raise
         if use not in SCOPED_INTERNAL_RISK_USES:
@@ -307,21 +335,63 @@ def require_allowed(
 
 def _require_external_right(provider: ProviderPolicy, use: DataUse) -> None:
     required_statuses = _required_statuses(use)
-    failed = [
-        f"{axis}={provider.statuses[axis].value}"
-        for axis in required_statuses
-        if provider.statuses[axis] != PolicyStatus.PASS
-    ]
-    if failed:
-        raise PolicyError(f"{provider.name} use {use.value} is not allowed: " + ", ".join(failed))
+    failed: list[str] = []
+    reasons: set[AuthorizationFailureReason] = set()
+    for axis in required_statuses:
+        status = provider.statuses[axis]
+        if status == PolicyStatus.PASS:
+            continue
+        failed.append(f"{axis}={status.value}")
+        if axis == "PUBLIC_SOURCE_VERIFIED":
+            reasons.add(AuthorizationFailureReason.SOURCE_IDENTITY_ERROR)
+        elif axis == "LICENSE_VERIFIED" and status == PolicyStatus.HOLD:
+            reasons.add(AuthorizationFailureReason.EXTERNAL_LICENSE_HOLD)
+        elif axis == "INTERNAL_RESEARCH_AUTHORIZED" and status == PolicyStatus.HOLD:
+            reasons.add(AuthorizationFailureReason.INTERNAL_RESEARCH_HOLD)
+        elif status == PolicyStatus.HOLD:
+            reasons.add(AuthorizationFailureReason.USE_PERMISSION_HOLD)
+        else:
+            reasons.add(AuthorizationFailureReason.PERMISSION_FAIL)
     permission = provider.uses[use]
-    if permission.status != PolicyStatus.PASS:
-        raise PolicyError(f"{provider.name} use {use.value} status is {permission.status.value}")
-    if not permission.evidence_ids:
-        raise PolicyError(f"{provider.name} use {use.value} has no evidence IDs")
-    unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
-    if unavailable:
-        raise PolicyError(f"use evidence IDs are not registered: {unavailable}")
+    if permission.status == PolicyStatus.FAIL:
+        reasons.add(AuthorizationFailureReason.PERMISSION_FAIL)
+        failed.append(f"{use.value}=FAIL")
+    elif permission.status == PolicyStatus.HOLD:
+        reasons.add(AuthorizationFailureReason.USE_PERMISSION_HOLD)
+        failed.append(f"{use.value}=HOLD")
+    elif permission.status != PolicyStatus.PASS:
+        reasons.add(AuthorizationFailureReason.POLICY_INTEGRITY_ERROR)
+        failed.append(f"{use.value}={permission.status.value}")
+    elif not permission.evidence_ids:
+        reasons.add(AuthorizationFailureReason.MISSING_EVIDENCE)
+        failed.append(f"{use.value}=MISSING_EVIDENCE")
+    else:
+        unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
+        if unavailable:
+            reasons.add(AuthorizationFailureReason.UNREGISTERED_EVIDENCE)
+            failed.append(f"{use.value}=UNREGISTERED_EVIDENCE")
+    if reasons:
+        reason = next(
+            (
+                candidate
+                for candidate in (
+                    AuthorizationFailureReason.SOURCE_IDENTITY_ERROR,
+                    AuthorizationFailureReason.PERMISSION_FAIL,
+                    AuthorizationFailureReason.MISSING_EVIDENCE,
+                    AuthorizationFailureReason.UNREGISTERED_EVIDENCE,
+                    AuthorizationFailureReason.POLICY_INTEGRITY_ERROR,
+                    AuthorizationFailureReason.EXTERNAL_LICENSE_HOLD,
+                    AuthorizationFailureReason.INTERNAL_RESEARCH_HOLD,
+                    AuthorizationFailureReason.USE_PERMISSION_HOLD,
+                )
+                if candidate in reasons
+            ),
+            AuthorizationFailureReason.POLICY_INTEGRITY_ERROR,
+        )
+        raise AuthorizationFailure(
+            reason,
+            f"{provider.name} use {use.value} is not allowed: " + ", ".join(failed),
+        )
 
 
 def _parse_provider(raw: Any) -> ProviderPolicy:
@@ -347,6 +417,16 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
         raise PolicyError(f"provider {raw['provider']} has no source evidence")
     statuses = _parse_statuses(raw["statuses"])
     uses = _parse_uses(raw["uses"])
+    for use, permission in uses.items():
+        if permission.status != PolicyStatus.PASS:
+            continue
+        if not permission.evidence_ids:
+            raise PolicyError(f"PASS use {use.value} requires evidence IDs")
+        unavailable = sorted(set(permission.evidence_ids).difference(source_evidence))
+        if unavailable:
+            raise PolicyError(
+                f"PASS use {use.value} evidence IDs are not registered: {unavailable}"
+            )
     profiles = tuple(_parse_label_profile(raw["provider"], item) for item in raw["label_profiles"])
     risks = tuple(
         _parse_project_risk_acceptance(raw["provider"], item)

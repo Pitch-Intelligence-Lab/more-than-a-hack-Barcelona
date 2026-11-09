@@ -1,0 +1,8 @@
+{
+  "anchor_path": "configs/policy/exposure-register-anchor-v1.json",
+  "anchor_path_identity": "cba9023cd1702b046b7e00aece7b0ea153faa3ff7e0f466cd93ea1cc12a900fe",
+  "anchor_sha256": "1f1c927e7e2892c9e8ecde978251134da453fee2e03e3f66db2cdc30f3ef7be8",
+  "reseals": [],
+  "schema_version": "1.0",
+  "status": "ACTIVE"
+}

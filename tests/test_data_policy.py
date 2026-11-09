@@ -222,14 +222,8 @@ def test_pass_use_without_evidence_id_fails(tmp_path: Path) -> None:
         }
 
     path = write_modified_policy(tmp_path, mutate)
-    policy = load_policy(path)
-    with pytest.raises(PolicyError, match="no evidence IDs"):
-        require_allowed(
-            policy,
-            "skillcorner",
-            DataUse.READ_PREPROCESS,
-            source_revision="4340d274572876239c154c90bc507a9b3250a656",
-        )
+    with pytest.raises(PolicyError, match="requires evidence IDs"):
+        load_policy(path)
 
 
 def test_source_revision_mismatch_fails() -> None:

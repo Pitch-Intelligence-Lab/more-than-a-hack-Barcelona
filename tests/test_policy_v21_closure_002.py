@@ -30,6 +30,7 @@ from mtah_possession.evaluation.splits import (
     SplitManifest,
 )
 from mtah_possession.governance.authorization import authorize_external_run
+from mtah_possession.governance.exposure import create_exposure_seal
 from mtah_possession.governance.ledger import HoldoutLedgerState, load_existing_ledger
 from mtah_possession.governance.policy import (
     AuthorizationBasis,
@@ -139,8 +140,6 @@ def test_pb16_prediction_only_promotion_is_rejected_without_side_effects(
             str(fixture["freeze_spec_path"]),
             "--holdout-ledger-dir",
             str(fixture["ledger_dir"]),
-            "--exposure-register",
-            str(fixture["exposure_register_path"]),
             "--mode",
             "promotion",
             "--split",
@@ -314,10 +313,7 @@ def test_pb12_high_exposure_is_bound_to_production_split(
     tmp_path: Path,
     level: str,
 ) -> None:
-    fixture = prepare_snapshot_promotion(tmp_path)
-    values = json.loads(fixture["exposure_register_path"].read_text(encoding="utf-8"))
-    values["records"][0]["exposure_level"] = level
-    fixture["exposure_register_path"].write_text(json.dumps(values), encoding="utf-8")
+    fixture = prepare_snapshot_promotion(tmp_path, exposure_level=level)
     calls = 0
 
     def forbidden_loader(*_args, **_kwargs):
@@ -337,6 +333,18 @@ def test_pb12_missing_exposure_record_fails_closed_in_production(
     values = json.loads(fixture["exposure_register_path"].read_text(encoding="utf-8"))
     values["records"] = []
     fixture["exposure_register_path"].write_text(json.dumps(values), encoding="utf-8")
+    seal = create_exposure_seal(
+        register_path=fixture["exposure_register_path"],
+        anchor_path=fixture["exposure_anchor_path"],
+        trust_root_path=fixture["exposure_trust_root_path"],
+        holdout_provider="skillcorner",
+        holdout_match_ids=("101",),
+        approved_by="fixture-owner",
+        approved_at="2026-11-09T00:00:00+08:00",
+        approval_evidence=("synthetic empty-history test",),
+        reseal_id="Synthetic-empty-history",
+    )
+    fixture["exposure_trust_root_sha256"] = seal.trust_root_sha256
     calls = 0
 
     def forbidden_loader(*_args, **_kwargs):
@@ -352,10 +360,10 @@ def test_pb12_missing_exposure_record_fails_closed_in_production(
 def test_pb12_split_change_cannot_clear_exposure_history(
     tmp_path: Path,
 ) -> None:
-    fixture = prepare_snapshot_promotion(tmp_path)
-    values = json.loads(fixture["exposure_register_path"].read_text(encoding="utf-8"))
-    values["records"][0]["exposure_level"] = "MODEL_EXPERIMENT_USED"
-    fixture["exposure_register_path"].write_text(json.dumps(values), encoding="utf-8")
+    fixture = prepare_snapshot_promotion(
+        tmp_path,
+        exposure_level="MODEL_EXPERIMENT_USED",
+    )
     split_values = json.loads(fixture["splits_path"].read_text(encoding="utf-8"))
     split_values["reason"] = "split metadata change must not clear history"
     fixture["splits_path"].write_text(json.dumps(split_values), encoding="utf-8")
@@ -377,10 +385,7 @@ def test_pb12_low_disclosed_exposure_can_enter_holdout(
     monkeypatch: pytest.MonkeyPatch,
     level: str,
 ) -> None:
-    fixture = prepare_snapshot_promotion(tmp_path)
-    values = json.loads(fixture["exposure_register_path"].read_text(encoding="utf-8"))
-    values["records"][0]["exposure_level"] = level
-    fixture["exposure_register_path"].write_text(json.dumps(values), encoding="utf-8")
+    fixture = prepare_snapshot_promotion(tmp_path, exposure_level=level)
     monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
     result = run_snapshot_match(
         fixture,

@@ -33,7 +33,10 @@ from mtah_possession.evaluation.splits import (
 )
 from mtah_possession.governance.artifacts import compute_freeze_hashes
 from mtah_possession.governance.authorization import (
+    APPROVED_EXPOSURE_TRUST_ROOT_SHA256,
+    DEFAULT_EXPOSURE_ANCHOR_PATH,
     DEFAULT_EXPOSURE_REGISTER_PATH,
+    DEFAULT_EXPOSURE_TRUST_ROOT_PATH,
     EVALUATION_PHASE_PROFILE,
     EVALUATION_POSSESSION_PROFILE,
     authorize_external_run,
@@ -108,6 +111,9 @@ def run_external_evaluation(
     source_set_path: str | os.PathLike[str] | None = None,
     evaluation_plan: EvaluationPlan | None = None,
     exposure_register_path: str | os.PathLike[str] | None = (DEFAULT_EXPOSURE_REGISTER_PATH),
+    exposure_anchor_path: str | os.PathLike[str] | None = DEFAULT_EXPOSURE_ANCHOR_PATH,
+    exposure_trust_root_path: str | os.PathLike[str] | None = (DEFAULT_EXPOSURE_TRUST_ROOT_PATH),
+    exposure_trust_root_sha256: str | None = APPROVED_EXPOSURE_TRUST_ROOT_SHA256,
     state_config_loader: Callable[[str | os.PathLike[str]], StateEngineConfig] = (
         load_algorithm_config
     ),
@@ -291,6 +297,9 @@ def run_external_evaluation(
             governance_identity=governance_identity,
             verify_holdout_freeze=True,
             exposure_register_path=exposure_register_path,
+            exposure_anchor_path=exposure_anchor_path,
+            exposure_trust_root_path=exposure_trust_root_path,
+            exposure_trust_root_sha256=exposure_trust_root_sha256,
         )
     except HoldoutCompromisedError as error:
         if ledger is not None:

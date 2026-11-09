@@ -37,6 +37,7 @@ from mtah_possession.evaluation.runner import run_external_evaluation
 from mtah_possession.evaluation.splits import EvaluationMode, SplitManifestError
 from mtah_possession.governance.artifacts import compute_freeze_hashes
 from mtah_possession.governance.authorization import build_governance_identity
+from mtah_possession.governance.exposure import create_exposure_seal
 from mtah_possession.governance.holdout import (
     SplitAssignment,
 )
@@ -207,8 +208,11 @@ def exposure_register(
     match_ids: list[str],
     *,
     filename: str = "exposure-register.json",
-) -> Path:
+    exposure_level: str = "ID_ONLY",
+) -> dict[str, Path | str]:
     path = tmp_path / filename
+    anchor_path = tmp_path / f"{path.stem}-anchor.json"
+    trust_root_path = tmp_path / f"{path.stem}-trust-root.json"
     path.write_text(
         json.dumps(
             {
@@ -220,7 +224,7 @@ def exposure_register(
                         "match_id": match_id,
                         "provider": "skillcorner",
                         "source_revision": SOURCE_REVISION,
-                        "exposure_level": "ID_ONLY",
+                        "exposure_level": exposure_level,
                         "evidence": ["synthetic Holdout allocation review"],
                         "recorded_at": "2026-11-09T00:00:00+08:00",
                         "recorded_by": "fixture-owner",
@@ -232,7 +236,32 @@ def exposure_register(
         ),
         encoding="utf-8",
     )
-    return path
+    seal = create_exposure_seal(
+        register_path=path,
+        anchor_path=anchor_path,
+        trust_root_path=trust_root_path,
+        holdout_provider="skillcorner",
+        holdout_match_ids=tuple(match_ids),
+        approved_by="fixture-owner",
+        approved_at="2026-11-09T00:00:00+08:00",
+        approval_evidence=("synthetic exposure approval",),
+        reseal_id=f"Synthetic-{path.stem}",
+    )
+    return {
+        "register": path,
+        "anchor": anchor_path,
+        "trust_root": trust_root_path,
+        "trust_root_sha256": seal.trust_root_sha256,
+    }
+
+
+def exposure_fixture_fields(bundle: dict[str, Path | str]) -> dict[str, Path | str]:
+    return {
+        "exposure_register_path": bundle["register"],
+        "exposure_anchor_path": bundle["anchor"],
+        "exposure_trust_root_path": bundle["trust_root"],
+        "exposure_trust_root_sha256": bundle["trust_root_sha256"],
+    }
 
 
 @pytest.mark.parametrize(
@@ -307,6 +336,10 @@ def prepare_promotion(
     values = json.loads(policy_path.read_text(encoding="utf-8"))
     values["providers"][0]["statuses"]["HOLDOUT_SEAL_VERIFIED"] = holdout_status
     policy_path.write_text(json.dumps(values), encoding="utf-8")
+    exposure = exposure_register(
+        tmp_path,
+        ["holdout-1"] if holdout_matches is None else holdout_matches,
+    )
     return {
         "config_path": external_config(tmp_path),
         "splits_path": split_manifest(tmp_path),
@@ -315,10 +348,7 @@ def prepare_promotion(
         "freeze_spec_path": spec_path,
         "ledger_dir": tmp_path / "ledger",
         "code_commit": "abcdef0123456789abcdef0123456789abcdef01",
-        "exposure_register_path": exposure_register(
-            tmp_path,
-            ["holdout-1"] if holdout_matches is None else holdout_matches,
-        ),
+        **exposure_fixture_fields(exposure),
     }
 
 
@@ -342,6 +372,9 @@ def run_prepared_promotion(fixture: dict, *, loader=None):
         ledger_dir=fixture["ledger_dir"],
         source_set_path=fixture.get("source_set_path"),
         exposure_register_path=fixture.get("exposure_register_path"),
+        exposure_anchor_path=fixture.get("exposure_anchor_path"),
+        exposure_trust_root_path=fixture.get("exposure_trust_root_path"),
+        exposure_trust_root_sha256=fixture.get("exposure_trust_root_sha256"),
         match_loader=loader or default_loader,
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
@@ -394,6 +427,9 @@ def run_snapshot_match(
         source_set_path=base["source_set_path"],
         evaluation_plan=evaluation_plan,
         exposure_register_path=base["exposure_register_path"],
+        exposure_anchor_path=base["exposure_anchor_path"],
+        exposure_trust_root_path=base["exposure_trust_root_path"],
+        exposure_trust_root_sha256=base["exposure_trust_root_sha256"],
         match_loader=loader or load_skillcorner_match_from_snapshot,
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
@@ -3142,10 +3178,10 @@ def test_pb11_2017461_cannot_become_holdout() -> None:
 def test_pb12_historically_exposed_match_cannot_become_holdout(
     tmp_path: Path,
 ) -> None:
-    fixture = prepare_snapshot_promotion(tmp_path)
-    values = json.loads(fixture["exposure_register_path"].read_text(encoding="utf-8"))
-    values["records"][0]["exposure_level"] = "TRACKING_SEEN"
-    fixture["exposure_register_path"].write_text(json.dumps(values), encoding="utf-8")
+    fixture = prepare_snapshot_promotion(
+        tmp_path,
+        exposure_level="TRACKING_SEEN",
+    )
     calls = 0
 
     def forbidden_loader(*_args, **_kwargs):
@@ -3350,6 +3386,11 @@ def prepare_separated_promotion(tmp_path: Path) -> dict:
     holdout_path = holdout_manifest(tmp_path, freeze, ["holdout-1"])
     policy_path = allowed_policy(tmp_path)
     code_commit = "abcdef0123456789abcdef0123456789abcdef01"
+    exposure = exposure_register(
+        tmp_path,
+        ["holdout-1"],
+        filename="separated-exposure.json",
+    )
     return {
         "config_path": external_config(tmp_path),
         "splits_path": split_manifest(tmp_path),
@@ -3361,11 +3402,7 @@ def prepare_separated_promotion(tmp_path: Path) -> dict:
         "artifact_paths": artifact_paths,
         "governance_file": governance_file,
         "freeze": freeze,
-        "exposure_register_path": exposure_register(
-            tmp_path,
-            ["holdout-1"],
-            filename="separated-exposure.json",
-        ),
+        **exposure_fixture_fields(exposure),
     }
 
 
@@ -3401,6 +3438,11 @@ def prepare_multi_source_promotion(tmp_path: Path) -> dict:
         encoding="utf-8",
     )
     policy_path = allowed_policy(tmp_path)
+    exposure = exposure_register(
+        tmp_path,
+        ["holdout-1", "holdout-2"],
+        filename="multi-exposure.json",
+    )
     return {
         "config_path": source_1,
         "splits_path": split_path,
@@ -3415,11 +3457,7 @@ def prepare_multi_source_promotion(tmp_path: Path) -> dict:
         "source_set_path": source_set_path,
         "source_1": source_1,
         "source_2": source_2,
-        "exposure_register_path": exposure_register(
-            tmp_path,
-            ["holdout-1", "holdout-2"],
-            filename="multi-exposure.json",
-        ),
+        **exposure_fixture_fields(exposure),
     }
 
 
@@ -3427,6 +3465,7 @@ def prepare_snapshot_promotion(
     tmp_path: Path,
     *,
     match_ids: tuple[str, ...] = ("101",),
+    exposure_level: str = "ID_ONLY",
 ) -> dict:
     tmp_path.mkdir(parents=True, exist_ok=True)
     spec_path, artifact_paths, governance_file = separated_artifact_spec(tmp_path)
@@ -3473,6 +3512,12 @@ def prepare_snapshot_promotion(
         ),
         encoding="utf-8",
     )
+    exposure = exposure_register(
+        tmp_path,
+        list(match_ids),
+        filename="snapshot-exposure.json",
+        exposure_level=exposure_level,
+    )
     return {
         "config_path": sources[match_ids[0]]["config"],
         "splits_path": split_path,
@@ -3488,11 +3533,7 @@ def prepare_snapshot_promotion(
         "source_set_path": source_set_path,
         "sources": sources,
         "match_ids": match_ids,
-        "exposure_register_path": exposure_register(
-            tmp_path,
-            list(match_ids),
-            filename="snapshot-exposure.json",
-        ),
+        **exposure_fixture_fields(exposure),
     }
 
 
