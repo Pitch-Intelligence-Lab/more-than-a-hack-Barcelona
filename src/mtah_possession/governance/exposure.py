@@ -218,6 +218,36 @@ class VerifiedExposureSnapshot:
     anchor_sha256: str
     trust_root_sha256: str
 
+    def identity(self) -> ExposureIdentity:
+        return ExposureIdentity(
+            register_path_identity=self.register_path_identity,
+            register_sha256=self.register_sha256,
+            anchor_path_identity=self.anchor_path_identity,
+            anchor_sha256=self.anchor_sha256,
+            trust_root_sha256=self.trust_root_sha256,
+            reseal_id=self.anchor.reseal_id,
+        )
+
+
+@dataclass(frozen=True)
+class ExposureIdentity:
+    register_path_identity: str
+    register_sha256: str
+    anchor_path_identity: str
+    anchor_sha256: str
+    trust_root_sha256: str
+    reseal_id: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "register_path_identity": self.register_path_identity,
+            "register_sha256": self.register_sha256,
+            "anchor_path_identity": self.anchor_path_identity,
+            "anchor_sha256": self.anchor_sha256,
+            "trust_root_sha256": self.trust_root_sha256,
+            "reseal_id": self.reseal_id,
+        }
+
 
 @dataclass(frozen=True)
 class ExposureSealResult:
@@ -344,6 +374,31 @@ def load_exposure_trust_root(path: str | os.PathLike[str]) -> ExposureTrustRoot:
         anchor_path_identity=raw["anchor_path_identity"],
         anchor_sha256=raw["anchor_sha256"],
         reseals=reseals,
+    )
+
+
+def exposure_identity_from_dict(values: Any) -> ExposureIdentity:
+    required = {
+        "register_path_identity",
+        "register_sha256",
+        "anchor_path_identity",
+        "anchor_sha256",
+        "trust_root_sha256",
+        "reseal_id",
+    }
+    if not isinstance(values, dict) or set(values) != required:
+        raise PolicyError("exposure identity has missing or unknown fields")
+    for field in required:
+        _require_nonempty_string(values[field], f"exposure identity {field}")
+    for field in required.difference({"reseal_id"}):
+        _require_sha256(values[field], f"exposure identity {field}")
+    return ExposureIdentity(
+        register_path_identity=values["register_path_identity"],
+        register_sha256=values["register_sha256"],
+        anchor_path_identity=values["anchor_path_identity"],
+        anchor_sha256=values["anchor_sha256"],
+        trust_root_sha256=values["trust_root_sha256"],
+        reseal_id=values["reseal_id"],
     )
 
 

@@ -37,7 +37,10 @@ from mtah_possession.evaluation.runner import run_external_evaluation
 from mtah_possession.evaluation.splits import EvaluationMode, SplitManifestError
 from mtah_possession.governance.artifacts import compute_freeze_hashes
 from mtah_possession.governance.authorization import build_governance_identity
-from mtah_possession.governance.exposure import create_exposure_seal
+from mtah_possession.governance.exposure import (
+    create_exposure_seal,
+    load_verified_exposure_snapshot,
+)
 from mtah_possession.governance.holdout import (
     SplitAssignment,
 )
@@ -3284,7 +3287,8 @@ def _fixture_relative(fixture: dict, path: Path) -> str:
     return path.resolve().relative_to(fixture["repo_root"].resolve()).as_posix()
 
 
-def _new_ledger(fixture: dict):
+def _new_ledger(fixture: dict, *, with_exposure: bool = True):
+    match_id = fixture["match_ids"][0] if fixture.get("match_ids") else "holdout-1"
     freeze = compute_freeze_hashes(fixture["freeze_spec_path"])
     governance_identity = build_governance_identity(
         policy_path=fixture["policy_path"],
@@ -3293,21 +3297,34 @@ def _new_ledger(fixture: dict):
     )
     source_identity_set = build_single_source_identity_set(
         provider="skillcorner",
-        match_id="holdout-1",
+        match_id=match_id,
         source_config=fixture["config_path"],
     )
+    exposure_identity = None
+    if with_exposure:
+        exposure_snapshot = load_verified_exposure_snapshot(
+            register_path=fixture["exposure_register_path"],
+            anchor_path=fixture["exposure_anchor_path"],
+            trust_root_path=fixture["exposure_trust_root_path"],
+            expected_trust_root_sha256=fixture["exposure_trust_root_sha256"],
+            provider="skillcorner",
+            source_revision=SOURCE_REVISION,
+            match_ids=(match_id,),
+        )
+        exposure_identity = exposure_snapshot.identity()
     return create_ledger(
         fixture["ledger_dir"],
         provider="skillcorner",
-        match_ids=("holdout-1",),
+        match_ids=(match_id,),
         freeze_hashes=freeze,
         holdout_manifest_sha256=sha256_file(fixture["holdout_path"]),
         holdout_manifest_path_sha256=sha256_path_identity(fixture["holdout_path"]),
         split_manifest_sha256=sha256_file(fixture["splits_path"]),
         code_commit=fixture["code_commit"],
         governance_identity=governance_identity,
-        source_identity=source_identity_set.identities["holdout-1"],
+        source_identity=source_identity_set.identities[match_id],
         source_identity_set=source_identity_set,
+        exposure_identity=exposure_identity,
     )
 
 
@@ -3712,6 +3729,11 @@ def prepare_legacy_migration(
     _git(tmp_path, "add", "--", "approval-migration.json")
     _git(tmp_path, "commit", "-m", "approve audit migration")
     approval_commit = _git(tmp_path, "rev-parse", "HEAD").strip()
+    exposure = exposure_register(
+        tmp_path,
+        ["holdout-1"],
+        filename="legacy-exposure.json",
+    )
     return {
         "repo_root": tmp_path,
         "config_path": config_path,
@@ -3729,6 +3751,7 @@ def prepare_legacy_migration(
         "source_identity": source_identity,
         "artifact_paths": artifact_paths,
         "governance_file": governance_file,
+        **exposure_fixture_fields(exposure),
     }
 
 

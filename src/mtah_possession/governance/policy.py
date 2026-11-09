@@ -359,6 +359,11 @@ def _require_external_right(provider: ProviderPolicy, use: DataUse) -> None:
     elif permission.status == PolicyStatus.HOLD:
         reasons.add(AuthorizationFailureReason.USE_PERMISSION_HOLD)
         failed.append(f"{use.value}=HOLD")
+        if permission.evidence_ids:
+            unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
+            if unavailable:
+                reasons.add(AuthorizationFailureReason.UNREGISTERED_EVIDENCE)
+                failed.append(f"{use.value}=UNREGISTERED_EVIDENCE")
     elif permission.status != PolicyStatus.PASS:
         reasons.add(AuthorizationFailureReason.POLICY_INTEGRITY_ERROR)
         failed.append(f"{use.value}={permission.status.value}")
@@ -418,14 +423,16 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
     statuses = _parse_statuses(raw["statuses"])
     uses = _parse_uses(raw["uses"])
     for use, permission in uses.items():
-        if permission.status != PolicyStatus.PASS:
-            continue
-        if not permission.evidence_ids:
+        if permission.status == PolicyStatus.PASS and not permission.evidence_ids:
             raise PolicyError(f"PASS use {use.value} requires evidence IDs")
-        unavailable = sorted(set(permission.evidence_ids).difference(source_evidence))
+        if permission.evidence_ids:
+            unavailable = sorted(set(permission.evidence_ids).difference(source_evidence))
+        else:
+            unavailable = []
         if unavailable:
             raise PolicyError(
-                f"PASS use {use.value} evidence IDs are not registered: {unavailable}"
+                f"{permission.status.value} use {use.value} evidence IDs are not registered: "
+                f"{unavailable}"
             )
     profiles = tuple(_parse_label_profile(raw["provider"], item) for item in raw["label_profiles"])
     risks = tuple(

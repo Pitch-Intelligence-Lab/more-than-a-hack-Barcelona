@@ -42,6 +42,10 @@ from mtah_possession.governance.authorization import (
     authorize_external_run,
     build_governance_identity,
 )
+from mtah_possession.governance.exposure import (
+    VerifiedExposureSnapshot,
+    load_verified_exposure_snapshot,
+)
 from mtah_possession.governance.holdout import (
     FreezeHashes,
     HoldoutCompromisedError,
@@ -130,6 +134,7 @@ def run_external_evaluation(
     holdout_manifest: HoldoutManifest | None = None
     freeze_hashes: FreezeHashes | None = None
     ledger: HoldoutLedger | None = None
+    exposure_snapshot: VerifiedExposureSnapshot | None = None
     if mode == EvaluationMode.PROMOTION:
         holdout_manifest = load_holdout_manifest(holdout_manifest_path)
         current_match_id = str(manifest["match_id"])
@@ -187,6 +192,16 @@ def run_external_evaluation(
                 raise PolicyError(
                     "sealed Holdout Manifest path is bound to a different match identity"
                 )
+        if holdout_matches_are_valid:
+            exposure_snapshot = load_verified_exposure_snapshot(
+                register_path=exposure_register_path,
+                anchor_path=exposure_anchor_path,
+                trust_root_path=exposure_trust_root_path,
+                expected_trust_root_sha256=exposure_trust_root_sha256,
+                provider=provider_name,
+                source_revision=source_revision,
+                match_ids=tuple(sorted(holdout_manifest.matches)),
+            )
         ledger = create_ledger(
             ledger_dir,
             provider=provider_name,
@@ -198,7 +213,19 @@ def run_external_evaluation(
             code_commit=code_commit,
             source_identity=source_identity,
             source_identity_set=source_set,
+            exposure_identity=(None if exposure_snapshot is None else exposure_snapshot.identity()),
         )
+        if exposure_snapshot is not None:
+            if ledger.requires_exposure_protocol_reseal:
+                raise PolicyError("V6 holdout ledger requires a new Exposure-bound seal")
+            if ledger.exposure_identity is None:
+                raise PolicyError("holdout ledger requires an Exposure Identity")
+            sealed_exposure_identity = ledger.sealed_exposure_identity()
+            if (
+                sealed_exposure_identity is not None
+                and sealed_exposure_identity != ledger.exposure_identity
+            ):
+                raise PolicyError("sealed Exposure Identity has changed for this holdout ledger")
         ledger_state = ledger.state
         if ledger_state == HoldoutLedgerState.COMPROMISED:
             raise PolicyError("holdout ledger is permanently COMPROMISED")
@@ -300,6 +327,7 @@ def run_external_evaluation(
             exposure_anchor_path=exposure_anchor_path,
             exposure_trust_root_path=exposure_trust_root_path,
             exposure_trust_root_sha256=exposure_trust_root_sha256,
+            verified_exposure_snapshot=exposure_snapshot,
         )
     except HoldoutCompromisedError as error:
         if ledger is not None:

@@ -301,6 +301,7 @@ def authorize_external_run(
     exposure_anchor_path: str | os.PathLike[str] | None = DEFAULT_EXPOSURE_ANCHOR_PATH,
     exposure_trust_root_path: str | os.PathLike[str] | None = (DEFAULT_EXPOSURE_TRUST_ROOT_PATH),
     exposure_trust_root_sha256: str | None = APPROVED_EXPOSURE_TRUST_ROOT_SHA256,
+    verified_exposure_snapshot: VerifiedExposureSnapshot | None = None,
     now: datetime | None = None,
 ) -> AuthorizedExternalRun:
     policy = load_policy(policy_path)
@@ -369,7 +370,7 @@ def authorize_external_run(
 
     exposure_snapshot: VerifiedExposureSnapshot | None = None
     if split == "holdout":
-        exposure_snapshot = load_verified_exposure_snapshot(
+        exposure_snapshot = verified_exposure_snapshot or load_verified_exposure_snapshot(
             register_path=exposure_register_path,
             anchor_path=exposure_anchor_path,
             trust_root_path=exposure_trust_root_path,
@@ -378,6 +379,11 @@ def authorize_external_run(
             source_revision=source_revision,
             match_ids=tuple(sorted(split_manifest.holdout)),
         )
+        if (
+            exposure_snapshot.anchor.holdout_provider != provider
+            or exposure_snapshot.anchor.holdout_match_ids != tuple(sorted(split_manifest.holdout))
+        ):
+            raise PolicyError("verified Exposure snapshot does not match the Holdout")
 
     return AuthorizedExternalRun(
         policy=policy,
