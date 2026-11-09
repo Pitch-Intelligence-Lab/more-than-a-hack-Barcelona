@@ -51,9 +51,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 17 passed.
-- Full repository: 81 passed (64 frozen + 17 candidate).
-- `pytest -W error`: 81 passed.
+- Candidate synthetic tests: 19 passed.
+- Full repository: 83 passed (64 frozen + 19 candidate).
+- `pytest -W error`: 83 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
@@ -115,6 +115,11 @@ material contribution to D in this dataset, not accuracy or generalisation.
 - Evidence-strength hysteresis is implemented and tested. It preserves strong quick switches and
   suppresses weak flicker in synthetic tests, but did not change the 384/96 structure on the local
   match; the stable config keeps it disabled.
+- Relative time-to-ball is implemented and tested. It resolves synthetic closing/receding cases,
+  but at real-data weight 0.4 and 1.0 it increased H/A segmentation to 401 and 419; the stable
+  config keeps `time_to_ball_weight=0`.
+- Optional `--decision-log` writes a local frame-level diagnostic with derived features and
+  confidence. It is not committed or uploaded.
 
 ## Interface relationship to frozen base
 

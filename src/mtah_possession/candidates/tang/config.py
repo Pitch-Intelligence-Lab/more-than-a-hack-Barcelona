@@ -55,6 +55,10 @@ REQUIRED_PARAMETERS = frozenset(
         "near_player_vote_k",
         "contest_margin_m",
         "max_control_distance_m",
+        "min_closing_speed_mps",
+        "max_time_to_ball_s",
+        "time_advantage_cap_s",
+        "time_to_ball_weight",
         "ball_rest_weight",
         "ball_rest_speed_mps",
         "ball_rest_min_s",
@@ -190,6 +194,10 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
         raise CandidateConfigError("near_player_vote_k must be a positive integer")
     _positive(parameters["contest_margin_m"].value, "contest_margin_m")
     _positive(parameters["max_control_distance_m"].value, "max_control_distance_m")
+    _positive(parameters["min_closing_speed_mps"].value, "min_closing_speed_mps")
+    _positive(parameters["max_time_to_ball_s"].value, "max_time_to_ball_s")
+    _positive(parameters["time_advantage_cap_s"].value, "time_advantage_cap_s")
+    _non_negative(parameters["time_to_ball_weight"].value, "time_to_ball_weight")
     smoothing = parameters["emission_smoothing_half_width_frames"].value
     if isinstance(smoothing, bool) or not isinstance(smoothing, int) or smoothing < 0:
         raise CandidateConfigError(

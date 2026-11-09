@@ -132,6 +132,8 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 | + 0.6 s dwell（实验） | 384 | 96 | 13.5 s | 12.3 s | `4cd5…` |
 | + 1.2 s 强 dwell（实验） | 377 | 186 | 13.5 s | 6.8 s | `ab90…` |
 | + evidence hysteresis（实验） | 384 | 96 | 13.5 s | 12.3 s | `8a3f…` |
+| + time-to-ball 0.4（实验） | 401 | 94 | 12.9 s | 12.6 s | `49f8…` |
+| + time-to-ball 1.0（实验） | 419 | 90 | 12.4 s | 12.8 s | `11c0…` |
 | 关闭 Smart Tagging 消融 | 333 | 72 | 17.6 s | 6.7 s | `8f2a…` |
 
 夺权门控参数为 `contest_margin_m=1.5`：双方离球都近且可见投票分裂时，不强行给 H/A
@@ -143,6 +145,12 @@ D 段从 96 拉到 186，因此主线 `dwell_frames=0`，继续使用稳定的�
 
 Evidence-strength hysteresis 也实现了：合成测试里强证据快速切换、弱证据抖动被抑制；真实数据
 没有改变 384/96 的段结构，因此主线 `hysteresis_gain=0`，实验配置保留。
+
+Relative time-to-ball 已实现为实验：先用球员/球速度投影计算两队 time-to-ball，再只在 tracking
+已经无效、争抢或松球的帧上使用。真实数据反而增加了 H/A 段数，因此主线 `time_to_ball_weight=0`。
+
+可选 `--decision-log` 会生成本地逐帧诊断 CSV（不进入 Git、不上传云端），记录 label、
+confidence、evidence flags 和 reason；主线输出不受影响。
 
 ## 文献依据
 

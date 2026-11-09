@@ -55,8 +55,9 @@ not create D.
 - Short H/A flicker and low-confidence short segments may be absorbed only when bracketed by the
   same team.
 
-The stable config has `dwell_frames=0` and `hysteresis_gain=0`; the duration-aware and
-evidence-strength-hysteresis paths are experiments, not part of the stable algorithm.
+The stable config has `dwell_frames=0`, `hysteresis_gain=0` and `time_to_ball_weight=0`.
+The duration-aware, hysteresis and relative-velocity paths are experiments, not part of the stable
+algorithm.
 
 ## 6. Reproduction
 
@@ -66,6 +67,7 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
   --output outputs/candidate-b.csv \
   --config configs/candidates/tang/candidate-b.json \
   --health-report outputs/candidate-b.health.json \
+  --decision-log outputs/candidate-b.decision-log.csv \
   --force
 .venv/bin/python scripts/validate_submission.py outputs/candidate-b.csv
 ```
@@ -75,6 +77,9 @@ Stable output SHA-256:
 ```text
 db2400dc0de196e814438401797326c358c1d8c2486e0cd22c24aab182127b69
 ```
+
+The optional decision log is a local diagnostic artifact only. It must remain under `outputs/`
+or another ignored local directory and must not be committed or uploaded.
 
 ## 7. Known limitations
 

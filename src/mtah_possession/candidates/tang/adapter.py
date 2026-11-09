@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from collections import Counter
 from dataclasses import dataclass
@@ -116,6 +117,12 @@ def _health(
         "smart_conflict_frames": int(features.smart_conflict.sum()),
         "contested_frames": int(features.contested.sum()),
         "loose_ball_frames": int(features.loose_ball.sum()),
+        "time_valid_frames": int(features.time_valid.sum()),
+        "time_mean_advantage_s": (
+            float(np.nanmean(features.time_advantage_s[features.time_valid]))
+            if features.time_valid.any()
+            else None
+        ),
         "smart_dead_frames": int(features.smart_dead.sum()),
         "smart_restart_frames": int(features.smart_restart.sum()),
         "smart_dead_tracking_overlap": int(
@@ -129,12 +136,93 @@ def _health(
     }
 
 
+def _write_decision_log(
+    path: str | Path,
+    labels: NDArray[np.str_],
+    confidence: NDArray[np.float64],
+    emission: Emission,
+    features: FrameFeatures,
+    config: CandidateConfig,
+) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    forced = frame_block_mask(labels.size, config.forced_dead_blocks)
+    ungraded = frame_block_mask(labels.size, config.ungraded_blocks)
+    team_names = {-1: "none", 0: "H", 1: "A"}
+    with destination.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "frame",
+                "label",
+                "confidence",
+                "valid",
+                "tracking_candidate",
+                "ball_usable",
+                "contested",
+                "loose_ball",
+                "time_advantage_s",
+                "time_valid",
+                "smart_team",
+                "smart_dead",
+                "smart_restart",
+                "forced_dead",
+                "ungraded",
+                "reason",
+            ]
+        )
+        for frame in range(labels.size):
+            if ungraded[frame]:
+                reason = "ungraded"
+            elif forced[frame]:
+                reason = "forced_dead"
+            elif labels[frame] == "D" and features.smart_dead[frame]:
+                reason = "dead_evidence"
+            elif features.tracking_candidate[frame] != NO_CANDIDATE:
+                reason = "tracking_candidate"
+            elif features.contested[frame]:
+                reason = "contested_uncertain"
+            elif features.loose_ball[frame]:
+                reason = "loose_ball_uncertain"
+            elif features.smart_team[frame] != NO_CANDIDATE:
+                reason = "smart_team_prior"
+            elif not emission.valid[frame]:
+                reason = "decoder_persistence"
+            else:
+                reason = "emission_evidence"
+            writer.writerow(
+                [
+                    frame,
+                    str(labels[frame]),
+                    f"{confidence[frame]:.6f}",
+                    int(bool(emission.valid[frame])),
+                    team_names[int(features.tracking_candidate[frame])],
+                    int(bool(features.usable_ball[frame])),
+                    int(bool(features.contested[frame])),
+                    int(bool(features.loose_ball[frame])),
+                    (
+                        f"{features.time_advantage_s[frame]:.6f}"
+                        if features.time_valid[frame]
+                        else ""
+                    ),
+                    int(bool(features.time_valid[frame])),
+                    team_names[int(features.smart_team[frame])],
+                    int(bool(features.smart_dead[frame])),
+                    int(bool(features.smart_restart[frame])),
+                    int(bool(forced[frame])),
+                    int(bool(ungraded[frame])),
+                    reason,
+                ]
+            )
+
+
 def build_candidate(
     *,
     output_path: str | Path,
     data_root: str | Path | None,
     config_path: str | Path,
     health_report: str | Path | None = None,
+    decision_log: str | Path | None = None,
 ) -> CandidateBuildResult:
     config = load_candidate_config(config_path)
     settings = load_settings(data_root, match_id=config.match_id)
@@ -200,6 +288,15 @@ def build_candidate(
         report = Path(health_report)
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(json.dumps(health, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if decision_log is not None:
+        _write_decision_log(
+            decision_log,
+            decoded.labels,
+            decoded.confidence,
+            emission,
+            features,
+            config,
+        )
     return CandidateBuildResult(
         labels=decoded.labels,
         confidence=decoded.confidence,

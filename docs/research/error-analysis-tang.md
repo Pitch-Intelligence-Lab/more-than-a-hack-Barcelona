@@ -35,6 +35,8 @@ Diagnostics: D source decomposition, pre/post restart evidence, and D segment du
 - Player identity switches can make a distant wrong player look like the nearest candidate.
 - Extreme position jumps and implausible speeds are not yet filtered frame-by-frame.
 - Missing player slots are excluded, but a single noisy visible slot can still dominate.
+- Relative time-to-ball depends on first differences of noisy positions; it can amplify tracking
+  jumps and is therefore only an experimental, ambiguity-gated feature.
 
 Diagnostics: slot jump rate, quality-conditioned confidence, and candidate disagreement.
 
@@ -49,3 +51,6 @@ Diagnostics: slot jump rate, quality-conditioned confidence, and candidate disag
 
 The stable candidate is an engineering artifact ready for design review. It is not a validated
 model. Generalisation and official private score remain unknown.
+
+The optional decision log contains derived features and labels, not raw match rows. It is a local
+diagnostic and must not be committed or uploaded.

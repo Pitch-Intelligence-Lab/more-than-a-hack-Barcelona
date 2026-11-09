@@ -20,6 +20,7 @@ from mtah_possession.candidates.tang.smart_tagging import (
     build_smart_evidence,
     load_tags,
 )
+from mtah_possession.candidates.tang.velocity import compute_time_to_ball
 from mtah_possession.data.observations import prepare_ball_observations
 from mtah_possession.data.tracking import FrameAlignment, TrackingData
 from mtah_possession.features.ball import AWAY, HOME, NO_CANDIDATE
@@ -85,6 +86,8 @@ def features_stub(
         ),
         ball_speed_mps=np.full(count, np.nan),
         ball_rest_s=np.asarray(ball_rest or [0.0] * count),
+        time_advantage_s=np.zeros(count, dtype=np.float64),
+        time_valid=np.zeros(count, dtype=bool),
         out_of_bounds=np.asarray(out_of_bounds or [False] * count),
         contested=np.zeros(count, dtype=bool),
         loose_ball=np.zeros(count, dtype=bool),
@@ -216,6 +219,58 @@ def test_ball_outside_control_radius_has_no_forced_team_candidate() -> None:
     assert features.loose_ball.tolist() == [True]
     assert features.tracking_candidate.tolist() == [NO_CANDIDATE]
     assert emission.valid.tolist() == [False]
+
+
+def test_time_to_ball_favours_closing_team() -> None:
+    data = tracking(
+        ball=[[0.5, 0.5], [0.5, 0.5]],
+        slots=[
+            [[0.48, 0.5], [0.52, 0.5]],
+            [[0.49, 0.5], [0.53, 0.5]],
+        ],
+        teams=[HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+
+    timing = compute_time_to_ball(
+        data,
+        observations.positions,
+        observations.usable_mask,
+        fps=25,
+        pitch_length_m=105.3,
+        pitch_width_m=68.0,
+        min_closing_speed_mps=0.5,
+        max_time_s=5.0,
+    )
+
+    assert timing.valid.tolist() == [False, True]
+    assert timing.home_time_s[1] < timing.away_time_s[1]
+    assert timing.advantage_s[1] > 0
+
+
+def test_time_to_ball_invalid_when_ball_is_missing() -> None:
+    data = tracking(
+        ball=[[np.nan, np.nan], [np.nan, np.nan]],
+        slots=[
+            [[0.48, 0.5], [0.52, 0.5]],
+            [[0.49, 0.5], [0.53, 0.5]],
+        ],
+        teams=[HOME, AWAY],
+    )
+    observations = prepare_ball_observations(data, fps=25, max_interpolation_gap_s=0.0)
+
+    timing = compute_time_to_ball(
+        data,
+        observations.positions,
+        observations.usable_mask,
+        fps=25,
+        pitch_length_m=105.3,
+        pitch_width_m=68.0,
+        min_closing_speed_mps=0.5,
+        max_time_s=5.0,
+    )
+
+    assert not timing.valid.any()
 
 
 def test_decoder_direct_team_switch_and_missing_ball_persistence(tmp_path: Path) -> None:
@@ -477,6 +532,7 @@ def test_adapter_end_to_end_and_deterministic(tmp_path: Path) -> None:
         output_path=tmp_path / "first.csv",
         data_root=root,
         config_path=config_path,
+        decision_log=tmp_path / "decision-log.csv",
     )
     second = build_candidate(
         output_path=tmp_path / "second.csv",
@@ -488,3 +544,6 @@ def test_adapter_end_to_end_and_deterministic(tmp_path: Path) -> None:
     assert first.health["validator_status"] == "pass"
     assert first.health["output_sha256"] == second.health["output_sha256"]
     assert first.health["generalisation"] == "GENERALISATION NOT ESTABLISHED"
+    decision_lines = (tmp_path / "decision-log.csv").read_text(encoding="utf-8").splitlines()
+    assert len(decision_lines) == 31
+    assert decision_lines[0].startswith("frame,label,")

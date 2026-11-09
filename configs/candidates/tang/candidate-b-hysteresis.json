@@ -65,6 +65,30 @@
       "source": "literature-based",
       "rationale": "The FIFA/MIT possession-zone study uses 0.5-1 m control zones with accurate tracking; 5 m is a noise-tolerant upper bound for automatic tactical tracking. Outside it, leave the team unresolved."
     },
+    "min_closing_speed_mps": {
+      "value": 0.5,
+      "unit": "m/s",
+      "source": "engineering-assumption",
+      "rationale": "A player is considered to be closing on the ball only above this relative speed."
+    },
+    "max_time_to_ball_s": {
+      "value": 5.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Cap time-to-ball when a player is stationary or moving away from the ball."
+    },
+    "time_advantage_cap_s": {
+      "value": 5.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Cap the home-minus-away time advantage before converting it to an emission logit."
+    },
+    "time_to_ball_weight": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; relative velocity is an isolated experiment."
+    },
     "ball_rest_weight": {
       "value": 1.5,
       "unit": "logit",
@@ -141,13 +165,13 @@
       "value": 2.0,
       "unit": "logit_probability",
       "source": "engineering-assumption",
-      "rationale": "Experiment: strong H/A probability margins buy a larger transition discount."
+      "rationale": "Disabled in the stable candidate; experimental evidence-strength hysteresis is configured separately."
     },
     "hysteresis_max_boost": {
       "value": 2.0,
       "unit": "logit",
       "source": "engineering-assumption",
-      "rationale": "Experiment: cap the transition discount so weak evidence cannot switch freely."
+      "rationale": "Maximum transition-cost discount for strong H/A evidence; zero disables the experiment."
     },
     "dwell_frames": {
       "value": 0,

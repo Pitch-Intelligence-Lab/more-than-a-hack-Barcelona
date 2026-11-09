@@ -18,6 +18,7 @@ from mtah_possession.features.evidence import (
 
 from .config import CandidateConfig
 from .smart_tagging import SmartEvidence
+from .velocity import compute_time_to_ball
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class FrameFeatures:
     tracking_candidate: NDArray[np.int8]
     ball_speed_mps: NDArray[np.float64]
     ball_rest_s: NDArray[np.float64]
+    time_advantage_s: NDArray[np.float64]
+    time_valid: NDArray[np.bool_]
     out_of_bounds: NDArray[np.bool_]
     contested: NDArray[np.bool_]
     loose_ball: NDArray[np.bool_]
@@ -90,6 +93,16 @@ def build_features(
         pitch_width_m=config.pitch_width_m,
         rest_speed_threshold_mps=config.number("ball_rest_speed_mps"),
     )
+    timing = compute_time_to_ball(
+        tracking,
+        observations.positions,
+        usable,
+        fps=config.fps,
+        pitch_length_m=config.pitch_length_m,
+        pitch_width_m=config.pitch_width_m,
+        min_closing_speed_mps=config.number("min_closing_speed_mps"),
+        max_time_s=config.number("max_time_to_ball_s"),
+    )
     positions = observations.positions
     out_of_bounds = usable & (
         (positions[:, 0] < 0)
@@ -111,6 +124,8 @@ def build_features(
         tracking_candidate=candidate,
         ball_speed_mps=motion.speed_mps,
         ball_rest_s=motion.rest_duration_s,
+        time_advantage_s=timing.advantage_s,
+        time_valid=timing.valid,
         out_of_bounds=out_of_bounds,
         contested=contested,
         loose_ball=loose_ball,

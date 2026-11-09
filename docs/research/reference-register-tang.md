@@ -15,6 +15,9 @@ training data were taken from them. No code was copied into Candidate B.
 - **Possession/duel zones (R-01).** Candidate B uses a 5 m noise-tolerant control limit and a
   split-contest gate. The paper's 0.5-1 m radii are stricter than this automatic tracking feed;
   the larger bound is recorded as an engineering assumption, not as a reproduced result.
+- **Relative motion (R-01).** The paper records ball displacement and incoming/outgoing direction.
+  Candidate B implements an experimental team time-to-ball feature, but does not promote it: in
+  the local aggregate it increased H/A segmentation.
 - **Segment-level filtering (R-03).** Short H/A or D segments are merged only when their mean
   emission confidence is low and both neighbours have the same team. High-confidence quick
   switches are preserved. This is a post-decoder approximation of segment-level scoring.

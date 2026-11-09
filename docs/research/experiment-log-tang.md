@@ -12,7 +12,7 @@ Never paste competition rows, video frames or screenshots into this file.
 - Code version: `research/tang/independent-v1` working tree
 - Configuration: `configs/candidates/tang/candidate-b.json` with small synthetic frame counts
 - Run command: `.venv/bin/python -m pytest tests/candidates -q`
-- Result: 17 candidate tests passed
+- Result: 19 candidate tests passed
 - Coverage: tracking-vs-Smart-Tagging conflict, missing ball, out-of-bounds D, split contest, loose-ball control limit, low-confidence segment filtering, high-confidence quick-switch preservation, evidence-strength hysteresis, hysteresis weak-flicker suppression, dwell strong-switch preservation, dwell weak-flicker suppression, dwell dead-ball transition, direct H/A switch, missing-ball persistence, dead/restart, X/forced blocks, Smart Tagging pre-restart/restart separation, adapter determinism
 - Evaluation metric: interface and behavior assertions, not model accuracy
 - Failure types: none in this run
@@ -26,7 +26,7 @@ Never paste competition rows, video frames or screenshots into this file.
 - Data source: frozen repository tests
 - Ground truth: not read
 - Run command: `.venv/bin/python -m pytest && .venv/bin/python -m pytest -W error`
-- Result: 81 passed, including 64 frozen tests and 17 candidate tests
+- Result: 83 passed, including 64 frozen tests and 19 candidate tests
 - Ruff: check and format check passed
 - Frozen DP-005 baseline: reproduced separately with SHA-256 `1de6261504c7cb539a4e78f42f18011c692b9bd148ea3e77fbca44df9c0b9401`
 - Decision: candidate is isolated in new modules; no frozen L0/L4 or stable config changes
@@ -118,3 +118,25 @@ Never paste competition rows, video frames or screenshots into this file.
 - Synthetic result: strong H→A evidence switches; a weak five-frame A flicker is suppressed.
 - Real output: 384 H/A possessions and 96 D segments, unchanged from the stable candidate; SHA `8a3f…`.
 - Decision: keep as an experimental config; the stable main remains `hysteresis_gain=0`.
+
+## E-B-010: Relative time-to-ball velocity
+
+- Date: 2026-11-07
+- Motivation: use player and ball motion, not just absolute nearest distance.
+- Implementation: estimate per-player velocity from consecutive tracked positions, project relative velocity onto the ball direction, and compute team time-to-ball. The feature is used only where tracking evidence is already ambiguous (invalid, contested or loose ball).
+- Candidate configs: `candidate-b-velocity.json` (weight 1.0) and `candidate-b-velocity-soft.json` (weight 0.4).
+- Synthetic tests: a closing home player gets a smaller time-to-ball than a receding away player; missing ball produces no time evidence.
+- Real data: time evidence valid on 112,268 frames; mean home-minus-away advantage 0.333 s.
+- Full-weight result: 419 H/A possessions, 90 D segments, SHA `11c0…`.
+- Soft-weight result: 401 H/A possessions, 94 D segments, SHA `49f8…`.
+- Stable main: 384 H/A, 96 D, SHA `db24…`.
+- Decision: keep velocity as an experiment. The feature makes more uncertain frames decisive but increases H/A fragmentation; it is not promoted without independent evidence.
+
+## E-B-011: Per-frame decision log
+
+- Date: 2026-11-07
+- Purpose: make possession transitions locally explainable without publishing competition data.
+- Implementation: optional `--decision-log` output with frame, label, confidence, validity, tracking candidate, contest/loose flags, time advantage, Smart Tagging flags, forced/ungraded flags and a human-readable reason.
+- Local artifact: 199,320 lines on the full match (header plus 199,319 frames); stored under ignored `outputs/`.
+- Test: synthetic adapter writes a 31-line log for a 30-frame run.
+- Decision: retain as a local diagnostic tool; never commit or upload it.

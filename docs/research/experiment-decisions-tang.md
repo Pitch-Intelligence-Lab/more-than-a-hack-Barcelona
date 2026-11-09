@@ -51,3 +51,20 @@
 - Observed: synthetic strong switch preserved and weak flicker suppressed; real output remained
   384 H/A and 96 D, with only boundary-frame changes.
 - Decision: keep experimental; no stable-main change without independent evidence.
+
+## ED-08: Relative time-to-ball
+
+- Hypothesis: player/ball closing motion can resolve ambiguous tracking frames.
+- Implementation: project relative velocity onto the ball direction, compute team time-to-ball,
+  and apply it only where tracking is already invalid, contested or loose.
+- Observed: synthetic closing/receding test passed; real output became 419/90 at weight 1.0 and
+  401/94 at weight 0.4, versus 384/96 in the stable main.
+- Decision: reject for the stable main because it increases H/A fragmentation. Keep both weight
+  variants for comparison.
+
+## ED-09: Local per-frame decision log
+
+- Hypothesis: transition errors need frame-level explanations, not only aggregate health.
+- Implementation: optional `--decision-log` CSV with derived features, confidence and reason.
+- Observed: 199,320 local lines on the full match; synthetic test passed.
+- Decision: retain as a local diagnostic tool; keep it outside Git and cloud uploads.

@@ -65,6 +65,30 @@
       "source": "literature-based",
       "rationale": "The FIFA/MIT possession-zone study uses 0.5-1 m control zones with accurate tracking; 5 m is a noise-tolerant upper bound for automatic tactical tracking. Outside it, leave the team unresolved."
     },
+    "min_closing_speed_mps": {
+      "value": 0.5,
+      "unit": "m/s",
+      "source": "engineering-assumption",
+      "rationale": "A player is considered to be closing on the ball only above this relative speed."
+    },
+    "max_time_to_ball_s": {
+      "value": 5.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Cap time-to-ball when a player is stationary or moving away from the ball."
+    },
+    "time_advantage_cap_s": {
+      "value": 5.0,
+      "unit": "s",
+      "source": "engineering-assumption",
+      "rationale": "Cap the home-minus-away time advantage before converting it to an emission logit."
+    },
+    "time_to_ball_weight": {
+      "value": 0.0,
+      "unit": "logit",
+      "source": "engineering-assumption",
+      "rationale": "Disabled in the stable candidate; relative velocity is an isolated experiment."
+    },
     "ball_rest_weight": {
       "value": 1.5,
       "unit": "logit",
@@ -117,7 +141,7 @@
       "value": 3.5,
       "unit": "logit",
       "source": "general-football-prior",
-      "rationale": "Experimental stronger team-change cost for the 1.2-second dwell comparison."
+      "rationale": "Team changes have a cost but remain possible without a D bridge."
     },
     "dead_enter_penalty": {
       "value": 1.5,
@@ -153,13 +177,13 @@
       "value": 30,
       "unit": "frames",
       "source": "general-football-prior",
-      "rationale": "Experimental 1.2-second dwell for semi-Markov comparison."
+      "rationale": "Disabled in the main candidate after 0.6 s and 1.2 s dwell sensitivity tests did not improve segment structure."
     },
     "dwell_penalty": {
       "value": 2.5,
       "unit": "logit",
       "source": "engineering-assumption",
-      "rationale": "Experimental stronger early-switch cost for the 1.2-second dwell."
+      "rationale": "Disabled with the main dwell model; available in candidate-b-dwell15.json for comparison."
     },
     "min_flicker_frames": {
       "value": 3,

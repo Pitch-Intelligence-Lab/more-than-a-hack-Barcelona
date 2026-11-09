@@ -55,16 +55,7 @@ def build_emission(features: FrameFeatures, config: CandidateConfig) -> Emission
     logits[features.contested, AWAY] = 0.0
     logits[features.loose_ball, HOME] = 0.0
     logits[features.loose_ball, AWAY] = 0.0
-
-    rest_min = config.number("ball_rest_min_s")
-    rest_fraction = np.clip(features.ball_rest_s / rest_min, 0.0, 1.0)
-    rest_fraction = np.where(features.usable_ball, rest_fraction, 0.0)
-    logits[:, D] += config.number("ball_rest_weight") * rest_fraction
-    logits[:, D] += config.number("out_of_bounds_weight") * features.out_of_bounds
-    logits[:, D] += config.number("smart_dead_weight") * features.smart_dead
-    logits[:, D] -= config.number("restart_suppression") * features.smart_restart
-
-    team_valid = (
+    base_team_valid = (
         (
             home_valid
             | away_valid
@@ -75,6 +66,23 @@ def build_emission(features: FrameFeatures, config: CandidateConfig) -> Emission
         & ~features.contested
         & ~features.loose_ball
     )
+    time_weight = config.number("time_to_ball_weight")
+    time_cap = config.number("time_advantage_cap_s")
+    time_evidence = features.time_valid & (time_weight > 0)
+    time_evidence &= ~base_team_valid | features.contested | features.loose_ball
+    time_advantage = np.clip(features.time_advantage_s, -time_cap, time_cap)
+    logits[time_evidence, HOME] += time_weight * time_advantage[time_evidence] / time_cap
+    logits[time_evidence, AWAY] -= time_weight * time_advantage[time_evidence] / time_cap
+
+    rest_min = config.number("ball_rest_min_s")
+    rest_fraction = np.clip(features.ball_rest_s / rest_min, 0.0, 1.0)
+    rest_fraction = np.where(features.usable_ball, rest_fraction, 0.0)
+    logits[:, D] += config.number("ball_rest_weight") * rest_fraction
+    logits[:, D] += config.number("out_of_bounds_weight") * features.out_of_bounds
+    logits[:, D] += config.number("smart_dead_weight") * features.smart_dead
+    logits[:, D] -= config.number("restart_suppression") * features.smart_restart
+
+    team_valid = base_team_valid | time_evidence
     dead_valid = features.smart_dead | features.out_of_bounds | (features.ball_rest_s >= rest_min)
     valid = team_valid | dead_valid
     logits[~valid] = 0.0

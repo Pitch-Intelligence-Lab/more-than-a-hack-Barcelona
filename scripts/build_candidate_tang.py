@@ -19,6 +19,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", required=True)
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--health-report", default=None)
+    parser.add_argument("--decision-log", default=None)
     parser.add_argument("--force", action="store_true")
     return parser
 
@@ -35,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
             data_root=args.data_dir,
             config_path=args.config,
             health_report=args.health_report,
+            decision_log=args.decision_log,
         )
     except Exception as error:
         print(f"candidate build failed: {error}", file=sys.stderr)
