@@ -23,6 +23,11 @@ class PolicyStatus(StrEnum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+class AuthorizationBasis(StrEnum):
+    EXTERNAL_RIGHT = "EXTERNAL_RIGHT"
+    SCOPED_INTERNAL_RISK = "SCOPED_INTERNAL_RISK"
+
+
 class DataUse(StrEnum):
     DOWNLOAD_STORE = "download_store"
     READ_PREPROCESS = "read_preprocess"
@@ -56,6 +61,20 @@ STATUS_AXES = frozenset(
 )
 
 USE_AXES = frozenset(use.value for use in DataUse)
+SCOPED_INTERNAL_RISK_USES = frozenset(
+    {
+        DataUse.DOWNLOAD_STORE,
+        DataUse.READ_PREPROCESS,
+    }
+)
+NEVER_SCOPED_INTERNAL_RISK_USES = frozenset(
+    {
+        "final_candidate",
+        DataUse.PUBLICATION.value,
+        DataUse.SOURCE_REDISTRIBUTION.value,
+        DataUse.DERIVED_REDISTRIBUTION.value,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +111,12 @@ class ProjectRiskAcceptance:
     accepted_at: str
     review_at: str
     status: PolicyStatus
+
+
+@dataclass(frozen=True)
+class AuthorizationDecision:
+    basis: AuthorizationBasis
+    scope_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -206,7 +231,7 @@ def require_scoped_internal_risk(
     now: datetime | None = None,
 ) -> ProjectRiskAcceptance:
     """Authorize one bounded internal use without changing external rights."""
-    if use in {"final_candidate", "publication", "source_redistribution", "derived_redistribution"}:
+    if use in NEVER_SCOPED_INTERNAL_RISK_USES:
         raise PolicyError(f"scoped internal risk cannot authorize {use}")
     provider = require_source_identity(policy, provider_name, source_revision)
     current = now or datetime.now(UTC)
@@ -222,8 +247,10 @@ def require_scoped_internal_risk(
         try:
             accepted = datetime.fromisoformat(scope.accepted_at)
             review = datetime.fromisoformat(scope.review_at)
-        except ValueError as error:
+        except (TypeError, ValueError) as error:
             raise PolicyError("project risk acceptance timestamps are invalid") from error
+        if accepted.tzinfo is None or review.tzinfo is None or accepted >= review:
+            raise PolicyError("project risk acceptance timestamps are invalid")
         if accepted > current or review <= current:
             continue
         return scope
@@ -236,8 +263,49 @@ def require_allowed(
     use: DataUse,
     *,
     source_revision: str,
-) -> None:
+    match_id: str | None = None,
+    allow_scoped_internal: bool = False,
+    now: datetime | None = None,
+) -> AuthorizationDecision:
     provider = require_source_identity(policy, provider_name, source_revision)
+    try:
+        _require_external_right(provider, use)
+    except PolicyError as external_error:
+        if not allow_scoped_internal:
+            raise
+        if use not in SCOPED_INTERNAL_RISK_USES:
+            raise
+        if not match_id:
+            raise PolicyError("scoped internal risk requires a match ID") from None
+        if provider.statuses["PUBLIC_SOURCE_VERIFIED"] != PolicyStatus.PASS:
+            raise PolicyError(
+                f"{provider_name} PUBLIC_SOURCE_VERIFIED="
+                f"{provider.statuses['PUBLIC_SOURCE_VERIFIED'].value}"
+            ) from None
+        for axis in ("LICENSE_VERIFIED", "INTERNAL_RESEARCH_AUTHORIZED"):
+            if provider.statuses[axis] == PolicyStatus.FAIL:
+                raise PolicyError(f"{provider_name} {axis}=FAIL") from None
+        if provider.uses[use].status == PolicyStatus.FAIL:
+            raise PolicyError(f"{provider_name} use {use.value} status is FAIL") from None
+        try:
+            scope = require_scoped_internal_risk(
+                policy,
+                provider_name=provider_name,
+                source_revision=source_revision,
+                match_id=match_id,
+                use=use.value,
+                now=now,
+            )
+        except PolicyError as scope_error:
+            raise PolicyError(f"{external_error}; {scope_error}") from scope_error
+        return AuthorizationDecision(
+            basis=AuthorizationBasis.SCOPED_INTERNAL_RISK,
+            scope_id=scope.scope_id,
+        )
+    return AuthorizationDecision(basis=AuthorizationBasis.EXTERNAL_RIGHT)
+
+
+def _require_external_right(provider: ProviderPolicy, use: DataUse) -> None:
     required_statuses = _required_statuses(use)
     failed = [
         f"{axis}={provider.statuses[axis].value}"
@@ -245,12 +313,12 @@ def require_allowed(
         if provider.statuses[axis] != PolicyStatus.PASS
     ]
     if failed:
-        raise PolicyError(f"{provider_name} use {use.value} is not allowed: " + ", ".join(failed))
+        raise PolicyError(f"{provider.name} use {use.value} is not allowed: " + ", ".join(failed))
     permission = provider.uses[use]
     if permission.status != PolicyStatus.PASS:
-        raise PolicyError(f"{provider_name} use {use.value} status is {permission.status.value}")
+        raise PolicyError(f"{provider.name} use {use.value} status is {permission.status.value}")
     if not permission.evidence_ids:
-        raise PolicyError(f"{provider_name} use {use.value} has no evidence IDs")
+        raise PolicyError(f"{provider.name} use {use.value} has no evidence IDs")
     unavailable = sorted(set(permission.evidence_ids).difference(provider.source_evidence))
     if unavailable:
         raise PolicyError(f"use evidence IDs are not registered: {unavailable}")

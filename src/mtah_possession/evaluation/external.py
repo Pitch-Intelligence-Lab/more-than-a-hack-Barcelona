@@ -34,7 +34,12 @@ from mtah_possession.governance.authorization import (
     EVALUATION_POSSESSION_PROFILE,
     AuthorizedExternalRun,
 )
-from mtah_possession.governance.policy import DataUse, PolicyError, PolicyStatus
+from mtah_possession.governance.policy import (
+    AuthorizationBasis,
+    DataUse,
+    PolicyError,
+    PolicyStatus,
+)
 from mtah_possession.governance.roles import model_input_field_names
 from mtah_possession.governance.temporal import validate_temporal_feature_path
 from mtah_possession.states.cleanup import apply_structural_cleanup
@@ -148,6 +153,11 @@ class EvaluationPlan:
             raise PolicyError("phase candidate declared without phase model input")
         if self.uses_evaluation_reference and not self.candidate_names:
             raise PolicyError("evaluation reference requires at least one candidate")
+
+    def validate_for_mode(self, mode: str) -> None:
+        self.validate()
+        if mode == "promotion" and not self.uses_evaluation_reference:
+            raise PolicyError("promotion requires a scored evaluation plan")
 
 
 @dataclass(frozen=True)
@@ -288,6 +298,7 @@ def evaluate_external_match(
         raise PolicyError("evaluation reference match ID does not match prediction source")
     if reference.source_checksums != prediction_source.source_checksums:
         raise PolicyError("evaluation reference checksums do not match prediction source")
+    observed = replace(observed, evaluation_reference_read=True)
     proxy = map_reference_proxy_target(
         prediction_source,
         reference,
@@ -338,7 +349,9 @@ def predict_external_candidates(
         *((DataUse.PHASE_MODEL_INPUT,) if plan.uses_phase_model_input else ()),
         *((DataUse.EVALUATION_REFERENCE,) if plan.uses_evaluation_reference else ()),
     ):
-        if authorization.use_permissions[use].status != PolicyStatus.PASS:
+        externally_allowed = authorization.use_permissions[use].status == PolicyStatus.PASS
+        scoped_allowed = authorization.use_bases.get(use) == AuthorizationBasis.SCOPED_INTERNAL_RISK
+        if not externally_allowed and not scoped_allowed:
             raise PolicyError(f"{use.value} is not authorized")
     model_input = build_model_input(source)
     adapted = replace(
@@ -406,12 +419,14 @@ def predict_external_candidates(
         raise PolicyError("runtime read roles exceed declared phase/evaluation uses")
     if "possession_reference" in read_roles and not evaluation_declared:
         raise PolicyError("runtime possession reference exceeds declared uses")
+    if "phase_event_evidence" in transformed and not phase_declared:
+        raise PolicyError("runtime phase transforms exceed declared phase use")
     observed = ObservedUses(
         declared_uses=declared,
         runtime_read_roles=read_roles,
         transformed_feature_families=tuple(transformed),
         model_input_fields=tuple(model_input_field_names(model_input)),
-        evaluation_reference_read=evaluation_declared,
+        evaluation_reference_read=False,
     )
     selected = {name: predictions[name] for name in plan.candidate_names}
     selected_sources = {name: sources[name] for name in plan.candidate_names}

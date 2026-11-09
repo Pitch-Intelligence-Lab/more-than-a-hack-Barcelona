@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +16,18 @@ from mtah_possession.evaluation.splits import (
     SplitManifest,
     require_split,
 )
+from mtah_possession.governance.exposure import (
+    ExposureRecord,
+    load_exposure_register,
+)
 from mtah_possession.governance.holdout import (
     FreezeHashes,
     HoldoutManifest,
     SplitAssignment,
 )
 from mtah_possession.governance.policy import (
+    AuthorizationBasis,
+    AuthorizationDecision,
     DataUse,
     ExternalDataPolicy,
     LabelProfile,
@@ -36,6 +44,9 @@ from mtah_possession.governance.roles import LabelRole
 EVALUATION_POSSESSION_PROFILE = "skillcorner_possession_group_v1"
 EVALUATION_PHASE_PROFILE = "skillcorner_phases_v1"
 GOVERNANCE_IDENTITY_SCHEMA_VERSION = "1.0"
+DEFAULT_EXPOSURE_REGISTER_PATH = (
+    Path(__file__).resolve().parents[3] / "configs" / "policy" / "exposure-register-v1.json"
+)
 
 
 @dataclass(frozen=True)
@@ -80,6 +91,25 @@ class AuthorizedExternalRun:
     label_profiles: dict[str, LabelProfile]
     freeze_hashes: FreezeHashes | None
     governance_identity: GovernanceAuthorizationIdentity
+    use_bases: dict[DataUse, AuthorizationBasis] = dataclass_field(default_factory=dict)
+    scope_ids: dict[DataUse, str | None] = dataclass_field(default_factory=dict)
+    exposure_records: tuple[ExposureRecord, ...] = ()
+
+    def to_authorization_record(self) -> dict[str, Any]:
+        return {
+            "uses": {
+                use.value: {
+                    "authorization_basis": (
+                        self.use_bases[use].value
+                        if use in self.use_bases
+                        else AuthorizationBasis.EXTERNAL_RIGHT.value
+                    ),
+                    "scope_id": self.scope_ids.get(use),
+                }
+                for use in sorted(self.use_permissions, key=lambda item: item.value)
+            },
+            "exposure_disclosure": [record.to_dict() for record in self.exposure_records],
+        }
 
 
 def build_governance_identity(
@@ -239,6 +269,8 @@ def authorize_external_run(
     freeze_hashes: FreezeHashes | None = None,
     governance_identity: GovernanceAuthorizationIdentity | None = None,
     verify_holdout_freeze: bool = True,
+    exposure_register_path: str | os.PathLike[str] | None = DEFAULT_EXPOSURE_REGISTER_PATH,
+    now: datetime | None = None,
 ) -> AuthorizedExternalRun:
     policy = load_policy(policy_path)
     identity = governance_identity or build_governance_identity(
@@ -251,12 +283,16 @@ def authorize_external_run(
     if identity.policy_sha256 != _sha256_file(policy_path):
         raise PolicyError("governance identity policy SHA-256 is stale")
     require_source_identity(policy, provider, source_revision)
+    decisions: dict[DataUse, AuthorizationDecision] = {}
     for use in requested_uses:
-        require_allowed(
+        decisions[use] = require_allowed(
             policy,
             provider,
             use,
             source_revision=source_revision,
+            match_id=match_id,
+            allow_scoped_internal=True,
+            now=now,
         )
     provider_policy = policy.provider(provider)
     status_axes = list(required_status_axes)
@@ -300,6 +336,16 @@ def authorize_external_run(
         if verify_holdout_freeze:
             holdout_manifest.require_frozen(freeze_hashes)
 
+    exposure_records: tuple[ExposureRecord, ...] = ()
+    if split == "holdout":
+        if exposure_register_path is None:
+            raise PolicyError("Holdout authorization requires an exposure register")
+        exposure_records = load_exposure_register(exposure_register_path).for_holdout(
+            provider=provider,
+            source_revision=source_revision,
+            match_ids=tuple(sorted(split_manifest.holdout)),
+        )
+
     return AuthorizedExternalRun(
         policy=policy,
         provider=provider_policy,
@@ -307,6 +353,9 @@ def authorize_external_run(
         label_profiles=profiles,
         freeze_hashes=freeze_hashes,
         governance_identity=identity,
+        use_bases={use: decision.basis for use, decision in decisions.items()},
+        scope_ids={use: decision.scope_id for use, decision in decisions.items()},
+        exposure_records=exposure_records,
     )
 
 

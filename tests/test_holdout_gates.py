@@ -39,7 +39,6 @@ from mtah_possession.governance.artifacts import compute_freeze_hashes
 from mtah_possession.governance.authorization import build_governance_identity
 from mtah_possession.governance.holdout import (
     SplitAssignment,
-    require_holdout_candidates_unexposed,
 )
 from mtah_possession.governance.ledger import (
     HoldoutLedgerState,
@@ -203,6 +202,39 @@ def holdout_manifest(tmp_path: Path, freeze, matches: list[str]) -> Path:
     return path
 
 
+def exposure_register(
+    tmp_path: Path,
+    match_ids: list[str],
+    *,
+    filename: str = "exposure-register.json",
+) -> Path:
+    path = tmp_path / filename
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "status": "ACTIVE",
+                "missing_record_policy": "DENY",
+                "records": [
+                    {
+                        "match_id": match_id,
+                        "provider": "skillcorner",
+                        "source_revision": SOURCE_REVISION,
+                        "exposure_level": "ID_ONLY",
+                        "evidence": ["synthetic Holdout allocation review"],
+                        "recorded_at": "2026-11-09T00:00:00+08:00",
+                        "recorded_by": "fixture-owner",
+                        "notes": "Synthetic test allocation.",
+                    }
+                    for match_id in match_ids
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 @pytest.mark.parametrize(
     ("replacement", "message"),
     [
@@ -283,6 +315,10 @@ def prepare_promotion(
         "freeze_spec_path": spec_path,
         "ledger_dir": tmp_path / "ledger",
         "code_commit": "abcdef0123456789abcdef0123456789abcdef01",
+        "exposure_register_path": exposure_register(
+            tmp_path,
+            ["holdout-1"] if holdout_matches is None else holdout_matches,
+        ),
     }
 
 
@@ -305,6 +341,7 @@ def run_prepared_promotion(fixture: dict, *, loader=None):
         freeze_spec_path=fixture["freeze_spec_path"],
         ledger_dir=fixture["ledger_dir"],
         source_set_path=fixture.get("source_set_path"),
+        exposure_register_path=fixture.get("exposure_register_path"),
         match_loader=loader or default_loader,
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
@@ -356,6 +393,7 @@ def run_snapshot_match(
         ledger_dir=base["ledger_dir"],
         source_set_path=base["source_set_path"],
         evaluation_plan=evaluation_plan,
+        exposure_register_path=base["exposure_register_path"],
         match_loader=loader or load_skillcorner_match_from_snapshot,
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
@@ -2958,10 +2996,13 @@ def test_pb01_phase_hold_does_not_block_tracking_only(
     provider["statuses"]["PHASE_SEMANTICS_VERIFIED"] = "HOLD"
     provider["uses"]["phase_model_input"]["status"] = "HOLD"
     fixture["policy_path"].write_text(json.dumps(policy), encoding="utf-8")
+    make_diagnostic_split(fixture)
     result = run_snapshot_match(
         fixture,
         "101",
         evaluation_plan=EvaluationPlan.tracking_only(),
+        mode=EvaluationMode.DIAGNOSTIC,
+        split="development",
     )
     assert isinstance(result.evaluation, ExternalPredictionBatch)
 
@@ -2971,6 +3012,7 @@ def test_pb01_phase_hold_does_not_block_tracking_only(
     full_provider["statuses"]["PHASE_SEMANTICS_VERIFIED"] = "HOLD"
     full_provider["uses"]["phase_model_input"]["status"] = "HOLD"
     full_fixture["policy_path"].write_text(json.dumps(full_policy), encoding="utf-8")
+    make_diagnostic_split(full_fixture)
     calls = 0
 
     def forbidden_loader(*_args, **_kwargs):
@@ -2984,6 +3026,8 @@ def test_pb01_phase_hold_does_not_block_tracking_only(
             "101",
             loader=forbidden_loader,
             evaluation_plan=EvaluationPlan.full_scored(),
+            mode=EvaluationMode.DIAGNOSTIC,
+            split="development",
         )
     assert calls == 0
 
@@ -2992,10 +3036,13 @@ def test_pb02_tracking_only_does_not_read_phases(
     tmp_path: Path,
 ) -> None:
     fixture = prepare_snapshot_promotion(tmp_path)
+    make_diagnostic_split(fixture)
     result = run_snapshot_match(
         fixture,
         "101",
         evaluation_plan=EvaluationPlan.tracking_only(),
+        mode=EvaluationMode.DIAGNOSTIC,
+        split="development",
     )
     assert isinstance(result.evaluation, ExternalPredictionBatch)
     assert "phases" not in result.evaluation.observed_uses.runtime_read_roles
@@ -3005,10 +3052,13 @@ def test_pb03_prediction_only_does_not_read_possession_reference(
     tmp_path: Path,
 ) -> None:
     fixture = prepare_snapshot_promotion(tmp_path)
+    make_diagnostic_split(fixture)
     result = run_snapshot_match(
         fixture,
         "101",
         evaluation_plan=EvaluationPlan.tracking_only(),
+        mode=EvaluationMode.DIAGNOSTIC,
+        split="development",
     )
     assert isinstance(result.evaluation, ExternalPredictionBatch)
     assert result.evaluation.observed_uses.evaluation_reference_read is False
@@ -3057,6 +3107,7 @@ def test_pb07_phase_candidate_or_read_without_phase_declaration_fails(
         plan.validate()
 
     fixture = prepare_snapshot_promotion(tmp_path)
+    make_diagnostic_split(fixture)
 
     def phases_read_loader(snapshot, external_root, expected_identity):
         return load_skillcorner_match_from_snapshot(
@@ -3073,6 +3124,8 @@ def test_pb07_phase_candidate_or_read_without_phase_declaration_fails(
             "101",
             loader=phases_read_loader,
             evaluation_plan=EvaluationPlan.tracking_only(),
+            mode=EvaluationMode.DIAGNOSTIC,
+            split="development",
         )
 
 
@@ -3086,9 +3139,23 @@ def test_pb11_2017461_cannot_become_holdout() -> None:
         assignment.validate()
 
 
-def test_pb12_historically_exposed_match_cannot_become_holdout() -> None:
+def test_pb12_historically_exposed_match_cannot_become_holdout(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    values = json.loads(fixture["exposure_register_path"].read_text(encoding="utf-8"))
+    values["records"][0]["exposure_level"] = "TRACKING_SEEN"
+    fixture["exposure_register_path"].write_text(json.dumps(values), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
     with pytest.raises(PolicyError, match="historically exposed"):
-        require_holdout_candidates_unexposed(("exposed-1",), ("exposed-1",))
+        run_snapshot_match(fixture, "101", loader=forbidden_loader)
+    assert calls == 0
 
 
 def test_pb13_projection_checksum_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -3294,6 +3361,11 @@ def prepare_separated_promotion(tmp_path: Path) -> dict:
         "artifact_paths": artifact_paths,
         "governance_file": governance_file,
         "freeze": freeze,
+        "exposure_register_path": exposure_register(
+            tmp_path,
+            ["holdout-1"],
+            filename="separated-exposure.json",
+        ),
     }
 
 
@@ -3343,6 +3415,11 @@ def prepare_multi_source_promotion(tmp_path: Path) -> dict:
         "source_set_path": source_set_path,
         "source_1": source_1,
         "source_2": source_2,
+        "exposure_register_path": exposure_register(
+            tmp_path,
+            ["holdout-1", "holdout-2"],
+            filename="multi-exposure.json",
+        ),
     }
 
 
@@ -3411,7 +3488,25 @@ def prepare_snapshot_promotion(
         "source_set_path": source_set_path,
         "sources": sources,
         "match_ids": match_ids,
+        "exposure_register_path": exposure_register(
+            tmp_path,
+            list(match_ids),
+            filename="snapshot-exposure.json",
+        ),
     }
+
+
+def make_diagnostic_split(fixture: dict, match_id: str = "101") -> None:
+    values = json.loads(fixture["splits_path"].read_text(encoding="utf-8"))
+    values.update(
+        {
+            "development": [match_id],
+            "validation": [],
+            "holdout": [],
+            "status": "diagnostic_only",
+        }
+    )
+    fixture["splits_path"].write_text(json.dumps(values), encoding="utf-8")
 
 
 def write_source_set_descriptor(

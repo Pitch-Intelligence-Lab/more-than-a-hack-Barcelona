@@ -33,6 +33,7 @@ from mtah_possession.evaluation.splits import (
 )
 from mtah_possession.governance.artifacts import compute_freeze_hashes
 from mtah_possession.governance.authorization import (
+    DEFAULT_EXPOSURE_REGISTER_PATH,
     EVALUATION_PHASE_PROFILE,
     EVALUATION_POSSESSION_PROFILE,
     authorize_external_run,
@@ -106,12 +107,13 @@ def run_external_evaluation(
     ledger_dir: str | os.PathLike[str] = DEFAULT_LEDGER_DIR,
     source_set_path: str | os.PathLike[str] | None = None,
     evaluation_plan: EvaluationPlan | None = None,
+    exposure_register_path: str | os.PathLike[str] | None = (DEFAULT_EXPOSURE_REGISTER_PATH),
     state_config_loader: Callable[[str | os.PathLike[str]], StateEngineConfig] = (
         load_algorithm_config
     ),
 ) -> ExternalRunResult:
     plan = evaluation_plan or EvaluationPlan.full_scored()
-    plan.validate()
+    plan.validate_for_mode(mode.value)
     splits = load_split_manifest(splits_path)
     split_manifest_sha256 = sha256_file(splits_path)
     manifest_snapshot = create_skillcorner_manifest_snapshot(config_path)
@@ -288,6 +290,7 @@ def run_external_evaluation(
             freeze_hashes=freeze_hashes,
             governance_identity=governance_identity,
             verify_holdout_freeze=True,
+            exposure_register_path=exposure_register_path,
         )
     except HoldoutCompromisedError as error:
         if ledger is not None:
@@ -449,6 +452,7 @@ def run_external_evaluation(
             }
             for profile_id, profile in authorized.label_profiles.items()
         },
+        "authorization": authorized.to_authorization_record(),
     }
     report = report_with_identity(
         report,

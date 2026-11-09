@@ -45,6 +45,16 @@ class PhaseSpan:
 
 
 @dataclass(frozen=True)
+class PredictionPhaseInterval:
+    """Interval-only phase projection available before evaluation labels."""
+
+    start_frame: int
+    end_frame: int
+    period: int
+    source: str
+
+
+@dataclass(frozen=True)
 class NeutralMatch:
     match_id: str
     fps: int
@@ -139,7 +149,7 @@ class PredictionSource:
     ball_detected: NDArray[np.bool_]
     frame_present: NDArray[np.bool_]
     periods: tuple[PeriodSpan, ...]
-    phases: tuple[PhaseSpan, ...]
+    phases: tuple[PredictionPhaseInterval, ...]
     source_checksums: dict[str, str]
     source_metadata: dict[str, Any]
     slot_source_quality: NDArray[np.int8] | None = None
@@ -220,7 +230,15 @@ def prediction_source_from_match(match: NeutralMatch) -> PredictionSource:
         ball_detected=match.ball_detected.copy(),
         frame_present=match.frame_present.copy(),
         periods=match.periods,
-        phases=match.phases,
+        phases=tuple(
+            PredictionPhaseInterval(
+                start_frame=phase.start_frame,
+                end_frame=phase.end_frame,
+                period=phase.period,
+                source=phase.source,
+            )
+            for phase in match.phases
+        ),
         source_checksums=dict(match.source_checksums),
         source_metadata=dict(match.source_metadata),
         slot_source_quality=(

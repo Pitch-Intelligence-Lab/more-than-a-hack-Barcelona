@@ -567,20 +567,40 @@ def test_pb10_scoped_internal_risk_cannot_authorize_final_candidate(
         )
 
 
-def test_pb08_structural_audit_runs_when_evaluation_is_hold(tmp_path: Path) -> None:
+def test_pb08_structural_audit_runs_when_evaluation_is_hold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fixture = prepare_audit_fixture(tmp_path)
     values = json.loads(fixture["policy"].read_text(encoding="utf-8"))
     provider = values["providers"][0]
     provider["statuses"]["EVALUATION_AUTHORIZED"] = "HOLD"
+    provider["statuses"]["PHASE_SEMANTICS_VERIFIED"] = "HOLD"
     provider["uses"]["evaluation_reference"]["status"] = "HOLD"
     for profile in provider["label_profiles"]:
         profile["status"] = "HOLD"
     fixture["policy"].write_text(json.dumps(values), encoding="utf-8")
+
+    def forbidden_phase_evidence(*_args, **_kwargs):
+        raise AssertionError("structural audit must not derive phase evidence")
+
+    monkeypatch.setattr(
+        audit_module,
+        "derive_gap_dead_directives",
+        forbidden_phase_evidence,
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "compile_phase_evidence",
+        forbidden_phase_evidence,
+    )
     output = tmp_path / "structural-audit.json"
     assert run_audit(fixture, output, mode="structural") == 0
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["audit_mode"] == "structural"
     assert "proxy_counts" not in report
+    assert "phase_gap_dead_frames" not in report
+    assert report["observed_uses"]["transformed_feature_families"] == ["phase_structure"]
     assert report["observed_uses"]["evaluation_reference_read"] is False
 
 
