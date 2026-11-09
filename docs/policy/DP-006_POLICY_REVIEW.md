@@ -86,3 +86,16 @@ SoccerTrack access: HOLD
 Real-data research activation: HOLD
 ```
 
+## Policy v2.1 review status
+
+```text
+P0 call-chain verification: PASS
+P1 implementation: FIX CANDIDATE
+PredictionSource/EvaluationReference boundary: IMPLEMENTED
+Proportional access: IMPLEMENTED
+Independent P0/P1 review: REQUIRED
+Policy v2.1 final acceptance: NOT CLAIMED
+Real-data research: HOLD
+REPAIR-007: NOT AUTHORIZED
+```
+

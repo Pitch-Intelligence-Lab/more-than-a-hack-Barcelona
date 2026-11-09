@@ -106,3 +106,16 @@ REPAIR-007: NOT AUTHORIZED
 The earlier `OPEN/HOLD` and `pending merge` lines above are preserved as
 historical review states. Current integration execution is recorded in the
 dedicated receipt.
+
+## Policy v2.1 candidate
+
+```text
+Task: DP-006-POLICY-V2.1-P0P1-001
+P0 call-chain verification: PASS
+P1 implementation: FIX CANDIDATE
+Evidence: docs/policy/v2.1/P1_EVIDENCE.md
+Receipt: docs/policy/v2.1/06_工程师交付回执.md
+Policy v2.1 final acceptance: NOT CLAIMED
+Real-data research: HOLD
+REPAIR-007: NOT AUTHORIZED
+```

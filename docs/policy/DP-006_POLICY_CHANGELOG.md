@@ -124,6 +124,33 @@ merge and real-data research authorization remain `HOLD` for PM/QA.
 Policy implementation final acceptance, merge and real-data research
 authorization remain `HOLD` for PM/QA.
 
+## DP-006-POLICY-V2.1-P0P1-001
+
+**Date:** 2026-11-09
+
+**Status:** P0 delivered; P1 FIX CANDIDATE; independent review pending
+
+### Added
+
+- Policy v2.1 config/schema and scoped project-internal risk acceptance;
+- PredictionSource/EvaluationReference boundary;
+- post-prediction evaluation-reference construction;
+- tracking-only, phase-prediction-only and full-scored evaluation plans;
+- structural/proxy audit modes;
+- runtime declared/observed use evidence;
+- PB-01 through PB-15.
+
+### Preserved
+
+- Policy v2 remains historical/compatibility configuration.
+- Source Identity, Holdout lifecycle, migration, contamination terminal state
+  and frozen data are unchanged.
+
+### Not claimed
+
+Policy v2.1 acceptance, merge, real-data access, training, tuning, real
+evaluation and final model selection remain unauthorized or HOLD.
+
 ## DP-006-INTEGRATION-METADATA-CORRECTION-001
 
 **Date:** 2026-11-09
