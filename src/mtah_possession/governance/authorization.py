@@ -259,7 +259,10 @@ def authorize_external_run(
             source_revision=source_revision,
         )
     provider_policy = policy.provider(provider)
-    for axis in ("LABEL_SEMANTICS_ALIGNED", *required_status_axes):
+    status_axes = list(required_status_axes)
+    if label_profile_ids:
+        status_axes.append("LABEL_SEMANTICS_ALIGNED")
+    for axis in sorted(set(status_axes)):
         if provider_policy.statuses[axis] != PolicyStatus.PASS:
             raise PolicyError(f"{provider} {axis}={provider_policy.statuses[axis].value}")
 

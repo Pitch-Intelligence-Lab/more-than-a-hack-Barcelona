@@ -15,10 +15,13 @@ from mtah_possession.data.skillcorner import (
     SkillCornerDataError,
     SkillCornerManifestSnapshot,
     create_skillcorner_manifest_snapshot,
+    load_skillcorner_evaluation_reference,
     load_skillcorner_match_from_snapshot,
 )
 from mtah_possession.evaluation.external import (
+    EvaluationPlan,
     ExternalMatchEvaluation,
+    ExternalPredictionBatch,
     evaluate_external_match,
 )
 from mtah_possession.evaluation.provenance import report_with_identity
@@ -63,7 +66,7 @@ from mtah_possession.governance.source import (
 from mtah_possession.validation.submission import sha256_file
 
 DEFAULT_POLICY_PATH = (
-    Path(__file__).resolve().parents[3] / "configs" / "policy" / "external-data-policy-v2.json"
+    Path(__file__).resolve().parents[3] / "configs" / "policy" / "external-data-policy-v2.1.json"
 )
 DEFAULT_HOLDOUT_MANIFEST_PATH = (
     Path(__file__).resolve().parents[3] / "configs" / "policy" / "holdout-manifest-v2.json"
@@ -76,7 +79,7 @@ DEFAULT_LEDGER_DIR = Path(__file__).resolve().parents[3] / "outputs" / "holdout"
 
 @dataclass(frozen=True)
 class ExternalRunResult:
-    evaluation: ExternalMatchEvaluation
+    evaluation: ExternalMatchEvaluation | ExternalPredictionBatch
     report: dict[str, Any]
 
 
@@ -102,10 +105,13 @@ def run_external_evaluation(
     freeze_spec_path: str | os.PathLike[str] = DEFAULT_FREEZE_SPEC_PATH,
     ledger_dir: str | os.PathLike[str] = DEFAULT_LEDGER_DIR,
     source_set_path: str | os.PathLike[str] | None = None,
+    evaluation_plan: EvaluationPlan | None = None,
     state_config_loader: Callable[[str | os.PathLike[str]], StateEngineConfig] = (
         load_algorithm_config
     ),
 ) -> ExternalRunResult:
+    plan = evaluation_plan or EvaluationPlan.full_scored()
+    plan.validate()
     splits = load_split_manifest(splits_path)
     split_manifest_sha256 = sha256_file(splits_path)
     manifest_snapshot = create_skillcorner_manifest_snapshot(config_path)
@@ -262,15 +268,17 @@ def run_external_evaluation(
             policy_path=policy_path,
             provider=provider_name,
             source_revision=source_revision,
-            requested_uses=(
-                DataUse.READ_PREPROCESS,
-                DataUse.TRACKING_MODEL_INPUT,
-                DataUse.PHASE_MODEL_INPUT,
-                DataUse.EVALUATION_REFERENCE,
-            ),
+            requested_uses=plan.requested_uses,
             label_profile_ids=(
-                EVALUATION_POSSESSION_PROFILE,
-                EVALUATION_PHASE_PROFILE,
+                (
+                    EVALUATION_POSSESSION_PROFILE,
+                    EVALUATION_PHASE_PROFILE,
+                )
+                if plan.uses_evaluation_reference
+                else ()
+            ),
+            required_status_axes=(
+                ("PHASE_SEMANTICS_VERIFIED",) if plan.uses_phase_model_input else ()
             ),
             split_manifest=splits,
             match_id=str(manifest["match_id"]),
@@ -326,11 +334,31 @@ def run_external_evaluation(
             match_id=str(manifest["match_id"]),
         )
     try:
-        loaded_source = match_loader(
-            manifest_snapshot,
-            external_root,
-            source_identity,
-        )
+        using_default_loader = match_loader is load_skillcorner_match_from_snapshot
+        if using_default_loader:
+            loaded_source = match_loader(
+                manifest_snapshot,
+                external_root,
+                source_identity,
+                read_roles=(
+                    "license",
+                    "readme",
+                    "tracking",
+                    "match",
+                    *(
+                        ("phases",)
+                        if plan.uses_phase_model_input or plan.uses_evaluation_reference
+                        else ()
+                    ),
+                ),
+                parse_reference=False,
+            )
+        else:
+            loaded_source = match_loader(
+                manifest_snapshot,
+                external_root,
+                source_identity,
+            )
         if not isinstance(loaded_source, LoadedSkillCornerSource):
             raise SkillCornerDataError(
                 "external loader must return an immutable SkillCorner source result"
@@ -355,11 +383,28 @@ def run_external_evaluation(
         state_config = state_config_loader(state_config_path)
         if not isinstance(state_config, StateEngineConfig):
             raise ValueError("external evaluation requires a state-engine configuration")
+        evaluation_kwargs: dict[str, Any] = {
+            "authorization": authorized,
+            "split": split,
+        }
+        if evaluation_plan is not None or using_default_loader:
+            evaluation_kwargs.update(
+                {
+                    "plan": plan,
+                    "runtime_read_roles": tuple(loaded_source.read_roles),
+                }
+            )
+            if using_default_loader and plan.uses_evaluation_reference:
+                evaluation_kwargs["reference_loader"] = lambda: (
+                    load_skillcorner_evaluation_reference(
+                        loaded_source,
+                        include_phases=True,
+                    )
+                )
         evaluation = evaluate_external_match(
             match,
             state_config,
-            authorization=authorized,
-            split=split,
+            **evaluation_kwargs,
         )
     except Exception as error:
         if ledger is not None:
@@ -369,7 +414,7 @@ def run_external_evaluation(
                 reason=type(error).__name__,
             )
         raise
-    if ledger is not None:
+    if ledger is not None and not isinstance(evaluation, ExternalPredictionBatch):
         prediction_hashes = ":".join(
             candidate.metrics.prediction_sha256 for candidate in evaluation.candidates.values()
         )
@@ -391,9 +436,11 @@ def run_external_evaluation(
         "provider": provider_name,
         "source_revision": source_revision,
         "governance_identity_digest": (authorized.governance_identity.authorization_status_digest),
-        "evaluation_reference_status": authorized.use_permissions[
-            DataUse.EVALUATION_REFERENCE
-        ].status.value,
+        "evaluation_reference_status": (
+            authorized.use_permissions[DataUse.EVALUATION_REFERENCE].status.value
+            if DataUse.EVALUATION_REFERENCE in authorized.use_permissions
+            else "NOT_REQUESTED"
+        ),
         "label_profiles": {
             profile_id: {
                 "target_mapping_id": profile.target_mapping_id,

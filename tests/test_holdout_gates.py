@@ -11,23 +11,36 @@ import numpy as np
 import pytest
 from helpers import loaded_source_result, write_skillcorner_source
 
+import mtah_possession.evaluation.external as external_module
 import mtah_possession.evaluation.runner as runner_module
 import mtah_possession.governance.ledger as ledger_module
 from mtah_possession.algorithm_config import load_algorithm_config
-from mtah_possession.data.neutral import ProxyTarget
+from mtah_possession.data.neutral import (
+    ProxyTarget,
+    evaluation_reference_from_match,
+    map_reference_proxy_target,
+    prediction_source_from_match,
+)
 from mtah_possession.data.skillcorner import (
     SkillCornerDataError,
+    create_skillcorner_manifest_snapshot,
     load_skillcorner_match_from_snapshot,
 )
 from mtah_possession.evaluation.external import (
+    EvaluationPlan,
     ExternalCandidateResult,
     ExternalMatchEvaluation,
+    ExternalPredictionBatch,
     evaluate_predictions,
 )
 from mtah_possession.evaluation.runner import run_external_evaluation
 from mtah_possession.evaluation.splits import EvaluationMode, SplitManifestError
 from mtah_possession.governance.artifacts import compute_freeze_hashes
 from mtah_possession.governance.authorization import build_governance_identity
+from mtah_possession.governance.holdout import (
+    SplitAssignment,
+    require_holdout_candidates_unexposed,
+)
 from mtah_possession.governance.ledger import (
     HoldoutLedgerState,
     LedgerEvent,
@@ -40,7 +53,7 @@ from mtah_possession.governance.ledger import (
     sha256_path_identity,
     stable_holdout_identity,
 )
-from mtah_possession.governance.policy import PolicyError
+from mtah_possession.governance.policy import PolicyError, load_policy
 from mtah_possession.governance.source import (
     build_single_source_identity_set,
     build_source_identity,
@@ -211,7 +224,7 @@ def test_freeze_spec_rejects_unsafe_or_incomplete_artifacts(
         compute_freeze_hashes(spec_path)
 
 
-def fake_evaluator(_match, _config, *, authorization, split: str):
+def fake_evaluator(_match, _config, *, authorization, split: str, **_kwargs):
     assert authorization.freeze_hashes is not None
     target = np.asarray(list("HHAA"), dtype="<U1")
     metrics = evaluate_predictions(
@@ -320,20 +333,29 @@ def load_multi_match_ledger(base: dict):
     )
 
 
-def run_snapshot_match(base: dict, match_id: str, *, loader=None):
+def run_snapshot_match(
+    base: dict,
+    match_id: str,
+    *,
+    loader=None,
+    evaluation_plan=None,
+    mode=EvaluationMode.PROMOTION,
+    split: str = "holdout",
+):
     return run_external_evaluation(
         config_path=base["sources"][match_id]["config"],
         state_config_path=ROOT / "configs" / "state-engine.json",
         splits_path=base["splits_path"],
         external_root=base["external_root"],
-        split="holdout",
-        mode=EvaluationMode.PROMOTION,
+        split=split,
+        mode=mode,
         code_commit=base["code_commit"],
         policy_path=base["policy_path"],
         holdout_manifest_path=base["holdout_path"],
         freeze_spec_path=base["freeze_spec_path"],
         ledger_dir=base["ledger_dir"],
         source_set_path=base["source_set_path"],
+        evaluation_plan=evaluation_plan,
         match_loader=loader or load_skillcorner_match_from_snapshot,
         state_config_loader=lambda _path: load_algorithm_config(
             ROOT / "configs" / "state-engine.json"
@@ -2378,7 +2400,7 @@ def test_tc07_prediction_from_other_holdout_is_rejected(
     monkeypatch.setattr(runner_module, "evaluate_external_match", fake_evaluator)
     run_multi_match(base_a, "holdout-1")
 
-    def alternate_evaluator(_match, _config, *, authorization, split: str):
+    def alternate_evaluator(_match, _config, *, authorization, split: str, **_kwargs):
         assert authorization.freeze_hashes is not None
         target = np.asarray(list("HHAA"), dtype="<U1")
         prediction = np.asarray(list("AAHH"), dtype="<U1")
@@ -2924,6 +2946,203 @@ def test_to12_failed_snapshot_retry_preserves_source_identity(
     assert len(identities) == 1
     assert result.evaluation.match_id == "101"
     assert records[-1]["event_type"] == "EVALUATION_COMPLETED"
+
+
+def test_pb01_phase_hold_does_not_block_tracking_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    policy = json.loads(fixture["policy_path"].read_text(encoding="utf-8"))
+    provider = policy["providers"][0]
+    provider["statuses"]["PHASE_SEMANTICS_VERIFIED"] = "HOLD"
+    provider["uses"]["phase_model_input"]["status"] = "HOLD"
+    fixture["policy_path"].write_text(json.dumps(policy), encoding="utf-8")
+    result = run_snapshot_match(
+        fixture,
+        "101",
+        evaluation_plan=EvaluationPlan.tracking_only(),
+    )
+    assert isinstance(result.evaluation, ExternalPredictionBatch)
+
+    full_fixture = prepare_snapshot_promotion(tmp_path / "full")
+    full_policy = json.loads(full_fixture["policy_path"].read_text(encoding="utf-8"))
+    full_provider = full_policy["providers"][0]
+    full_provider["statuses"]["PHASE_SEMANTICS_VERIFIED"] = "HOLD"
+    full_provider["uses"]["phase_model_input"]["status"] = "HOLD"
+    full_fixture["policy_path"].write_text(json.dumps(full_policy), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="phase_model_input"):
+        run_snapshot_match(
+            full_fixture,
+            "101",
+            loader=forbidden_loader,
+            evaluation_plan=EvaluationPlan.full_scored(),
+        )
+    assert calls == 0
+
+
+def test_pb02_tracking_only_does_not_read_phases(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    result = run_snapshot_match(
+        fixture,
+        "101",
+        evaluation_plan=EvaluationPlan.tracking_only(),
+    )
+    assert isinstance(result.evaluation, ExternalPredictionBatch)
+    assert "phases" not in result.evaluation.observed_uses.runtime_read_roles
+
+
+def test_pb03_prediction_only_does_not_read_possession_reference(
+    tmp_path: Path,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    result = run_snapshot_match(
+        fixture,
+        "101",
+        evaluation_plan=EvaluationPlan.tracking_only(),
+    )
+    assert isinstance(result.evaluation, ExternalPredictionBatch)
+    assert result.evaluation.observed_uses.evaluation_reference_read is False
+    assert "possession_reference" not in result.evaluation.observed_uses.runtime_read_roles
+
+
+def test_pb04_reference_is_built_after_prediction_hashes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    order: list[str] = []
+    original_predict = external_module.predict_external_candidates
+    original_reference = runner_module.load_skillcorner_evaluation_reference
+
+    def observed_predict(*args, **kwargs):
+        output = original_predict(*args, **kwargs)
+        assert all(prediction.prediction_sha256 for prediction in output[0].values())
+        order.append("prediction_hashed")
+        return output
+
+    def observed_reference(*args, **kwargs):
+        order.append("reference_built")
+        return original_reference(*args, **kwargs)
+
+    monkeypatch.setattr(external_module, "predict_external_candidates", observed_predict)
+    monkeypatch.setattr(
+        runner_module,
+        "load_skillcorner_evaluation_reference",
+        observed_reference,
+    )
+    result = run_snapshot_match(fixture, "101", evaluation_plan=EvaluationPlan.full_scored())
+    assert order == ["prediction_hashed", "reference_built"]
+    assert not isinstance(result.evaluation, ExternalPredictionBatch)
+
+
+def test_pb07_phase_candidate_or_read_without_phase_declaration_fails(
+    tmp_path: Path,
+) -> None:
+    plan = EvaluationPlan(
+        candidate_names=("dp006_phase_proxy",),
+        uses_phase_model_input=False,
+        uses_evaluation_reference=False,
+    )
+    with pytest.raises(PolicyError, match="without phase model input"):
+        plan.validate()
+
+    fixture = prepare_snapshot_promotion(tmp_path)
+
+    def phases_read_loader(snapshot, external_root, expected_identity):
+        return load_skillcorner_match_from_snapshot(
+            snapshot,
+            external_root,
+            expected_identity,
+            read_roles=("license", "readme", "tracking", "phases", "match"),
+            parse_reference=False,
+        )
+
+    with pytest.raises(PolicyError, match="read roles exceed"):
+        run_snapshot_match(
+            fixture,
+            "101",
+            loader=phases_read_loader,
+            evaluation_plan=EvaluationPlan.tracking_only(),
+        )
+
+
+def test_pb11_2017461_cannot_become_holdout() -> None:
+    assignment = SplitAssignment(
+        development=frozenset({"dev-1"}),
+        validation=frozenset(),
+        holdout=frozenset({"2017461"}),
+    )
+    with pytest.raises(PolicyError, match="development-only"):
+        assignment.validate()
+
+
+def test_pb12_historically_exposed_match_cannot_become_holdout() -> None:
+    with pytest.raises(PolicyError, match="historically exposed"):
+        require_holdout_candidates_unexposed(("exposed-1",), ("exposed-1",))
+
+
+def test_pb13_projection_checksum_mismatch_is_rejected(tmp_path: Path) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    snapshot = create_skillcorner_manifest_snapshot(fixture["config_path"])
+    identity = build_source_identity(fixture["config_path"])
+    loaded = load_skillcorner_match_from_snapshot(
+        snapshot,
+        fixture["external_root"],
+        identity,
+    )
+    source = prediction_source_from_match(loaded.match)
+    reference = evaluation_reference_from_match(loaded.match)
+    bad_reference = replace(
+        reference,
+        source_checksums={**reference.source_checksums, "tracking": "0" * 64},
+    )
+    policy = load_policy(fixture["policy_path"])
+    provider = policy.provider("skillcorner")
+    with pytest.raises(PolicyError, match="checksums differ"):
+        map_reference_proxy_target(
+            source,
+            bad_reference,
+            possession_profile=provider.label_profiles[0],
+            phase_profile=provider.label_profiles[2],
+        )
+
+
+def test_pb14_phase_evidence_without_temporal_metadata_fails() -> None:
+    from test_neutral_adapter import (
+        test_nonempty_phase_evidence_without_temporal_metadata_fails,
+    )
+
+    test_nonempty_phase_evidence_without_temporal_metadata_fails()
+
+
+def test_pb15_holdout_hold_fails_before_loader(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = prepare_snapshot_promotion(tmp_path)
+    policy = json.loads(fixture["policy_path"].read_text(encoding="utf-8"))
+    policy["providers"][0]["statuses"]["HOLDOUT_SEAL_VERIFIED"] = "HOLD"
+    fixture["policy_path"].write_text(json.dumps(policy), encoding="utf-8")
+    calls = 0
+
+    def forbidden_loader(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("loader must not run")
+
+    with pytest.raises(PolicyError, match="HOLDOUT_SEAL_VERIFIED=HOLD"):
+        run_snapshot_match(fixture, "101", loader=forbidden_loader)
+    assert calls == 0
 
 
 def _migrate_fixture(

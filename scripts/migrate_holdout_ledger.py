@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--policy",
-        default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.json"),
+        default=str(ROOT / "configs" / "policy" / "external-data-policy-v2.1.json"),
     )
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--source-config", required=True)

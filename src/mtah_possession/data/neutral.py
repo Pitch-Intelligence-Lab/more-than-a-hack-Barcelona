@@ -120,6 +120,134 @@ class NeutralMatch:
 
 
 @dataclass(frozen=True)
+class PredictionSource:
+    match_id: str
+    fps: int
+    frame_count: int
+    pitch_length_m: float
+    pitch_width_m: float
+    coordinate_convention: str
+    home_team_id: int
+    away_team_id: int
+    home_team_name: str
+    away_team_name: str
+    player_ids: tuple[int, ...]
+    team_by_slot: NDArray[np.int8]
+    slot_positions: NDArray[np.float32]
+    slot_detected: NDArray[np.bool_]
+    ball_positions: NDArray[np.float32]
+    ball_detected: NDArray[np.bool_]
+    frame_present: NDArray[np.bool_]
+    periods: tuple[PeriodSpan, ...]
+    phases: tuple[PhaseSpan, ...]
+    source_checksums: dict[str, str]
+    source_metadata: dict[str, Any]
+    slot_source_quality: NDArray[np.int8] | None = None
+    ball_source_quality: NDArray[np.int8] | None = None
+
+    def __post_init__(self) -> None:
+        if self.slot_source_quality is None:
+            object.__setattr__(
+                self,
+                "slot_source_quality",
+                np.where(
+                    self.slot_detected,
+                    SourceQuality.DETECTED,
+                    SourceQuality.MISSING,
+                ).astype(np.int8),
+            )
+        if self.ball_source_quality is None:
+            object.__setattr__(
+                self,
+                "ball_source_quality",
+                np.where(
+                    self.ball_detected,
+                    SourceQuality.DETECTED,
+                    SourceQuality.MISSING,
+                ).astype(np.int8),
+            )
+
+    @property
+    def slot_count(self) -> int:
+        return len(self.player_ids)
+
+    def in_period_mask(self) -> NDArray[np.bool_]:
+        return _in_period_mask(self.frame_count, self.periods)
+
+    def source_quality_counts(self) -> dict[str, dict[str, int]]:
+        assert self.slot_source_quality is not None
+        assert self.ball_source_quality is not None
+        return {
+            "players": _quality_counts(self.slot_source_quality),
+            "ball": _quality_counts(self.ball_source_quality),
+        }
+
+
+@dataclass(frozen=True)
+class EvaluationReference:
+    match_id: str
+    frame_count: int
+    player_ids: tuple[int, ...]
+    periods: tuple[PeriodSpan, ...]
+    phases: tuple[PhaseSpan, ...]
+    frame_present: NDArray[np.bool_]
+    possession_side: NDArray[np.int8]
+    possession_status: NDArray[np.int8]
+    source_checksums: dict[str, str]
+    source_metadata: dict[str, Any]
+
+    def in_period_mask(self) -> NDArray[np.bool_]:
+        return _in_period_mask(self.frame_count, self.periods)
+
+
+def prediction_source_from_match(match: NeutralMatch) -> PredictionSource:
+    return PredictionSource(
+        match_id=match.match_id,
+        fps=match.fps,
+        frame_count=match.frame_count,
+        pitch_length_m=match.pitch_length_m,
+        pitch_width_m=match.pitch_width_m,
+        coordinate_convention=match.coordinate_convention,
+        home_team_id=match.home_team_id,
+        away_team_id=match.away_team_id,
+        home_team_name=match.home_team_name,
+        away_team_name=match.away_team_name,
+        player_ids=match.player_ids,
+        team_by_slot=match.team_by_slot.copy(),
+        slot_positions=match.slot_positions.copy(),
+        slot_detected=match.slot_detected.copy(),
+        ball_positions=match.ball_positions.copy(),
+        ball_detected=match.ball_detected.copy(),
+        frame_present=match.frame_present.copy(),
+        periods=match.periods,
+        phases=match.phases,
+        source_checksums=dict(match.source_checksums),
+        source_metadata=dict(match.source_metadata),
+        slot_source_quality=(
+            match.slot_source_quality.copy() if match.slot_source_quality is not None else None
+        ),
+        ball_source_quality=(
+            match.ball_source_quality.copy() if match.ball_source_quality is not None else None
+        ),
+    )
+
+
+def evaluation_reference_from_match(match: NeutralMatch) -> EvaluationReference:
+    return EvaluationReference(
+        match_id=match.match_id,
+        frame_count=match.frame_count,
+        player_ids=match.player_ids,
+        periods=match.periods,
+        phases=match.phases,
+        frame_present=match.frame_present.copy(),
+        possession_side=match.possession_side.copy(),
+        possession_status=match.possession_status.copy(),
+        source_checksums=dict(match.source_checksums),
+        source_metadata=dict(match.source_metadata),
+    )
+
+
+@dataclass(frozen=True)
 class ProxyTarget:
     labels: NDArray[np.str_]
     sources: NDArray[np.str_]
@@ -135,6 +263,26 @@ def map_proxy_target(
     phase_profile: LabelProfile,
 ) -> ProxyTarget:
     """Map neutral possession and phases to an explicit diagnostic proxy."""
+    return map_reference_proxy_target(
+        prediction_source_from_match(match),
+        evaluation_reference_from_match(match),
+        possession_profile=possession_profile,
+        phase_profile=phase_profile,
+    )
+
+
+def map_reference_proxy_target(
+    source: PredictionSource,
+    reference: EvaluationReference,
+    *,
+    possession_profile: LabelProfile,
+    phase_profile: LabelProfile,
+) -> ProxyTarget:
+    """Build an evaluation proxy only from the separated reference projection."""
+    if source.match_id != reference.match_id:
+        raise PolicyError("prediction source and evaluation reference match IDs differ")
+    if source.source_checksums != reference.source_checksums:
+        raise PolicyError("prediction source and evaluation reference checksums differ")
     for profile in (possession_profile, phase_profile):
         if profile.status != PolicyStatus.PASS:
             raise PolicyError(
@@ -145,33 +293,33 @@ def map_proxy_target(
             raise PolicyError("phase-gap and possession proxy labels require label_kind=proxy")
         if not profile.target_mapping_id or not profile.mapping_version:
             raise PolicyError("proxy label mapping ID/version is missing")
-    labels = np.full(match.frame_count, "X", dtype="<U1")
-    sources = np.full(match.frame_count, "unknown", dtype="<U32")
-    in_period = match.in_period_mask()
-    phase_present = np.zeros(match.frame_count, dtype=bool)
-    for phase in match.phases:
+    labels = np.full(reference.frame_count, "X", dtype="<U1")
+    sources = np.full(reference.frame_count, "unknown", dtype="<U32")
+    in_period = reference.in_period_mask()
+    phase_present = np.zeros(reference.frame_count, dtype=bool)
+    for phase in reference.phases:
         phase_present[phase.start_frame : phase.end_frame] = True
 
-    home = match.possession_side == TeamSide.HOME
-    away = match.possession_side == TeamSide.AWAY
+    home = reference.possession_side == TeamSide.HOME
+    away = reference.possession_side == TeamSide.AWAY
     labels[home] = "H"
     sources[home] = "possession_group_home"
     labels[away] = "A"
     sources[away] = "possession_group_away"
 
-    missing_row = ~match.frame_present
+    missing_row = ~reference.frame_present
     labels[missing_row] = "X"
     sources[missing_row] = "missing_tracking_frame"
 
-    outside_period = ~in_period & match.frame_present
+    outside_period = ~in_period & reference.frame_present
     labels[outside_period] = "X"
     sources[outside_period] = "outside_declared_period"
 
-    unrecognized = match.frame_present & (match.possession_status == 2)
+    unrecognized = reference.frame_present & (reference.possession_status == 2)
     labels[unrecognized] = "X"
     sources[unrecognized] = "unrecognized_possession_group"
 
-    no_possession = match.frame_present & in_period & (match.possession_status == 1)
+    no_possession = reference.frame_present & in_period & (reference.possession_status == 1)
     no_possession_in_phase = no_possession & phase_present
     labels[no_possession_in_phase] = "X"
     sources[no_possession_in_phase] = "missing_possession_inside_phase"
@@ -205,7 +353,7 @@ def map_proxy_target(
     )
 
 
-def neutral_to_tracking(match: NeutralMatch) -> TrackingData:
+def neutral_to_tracking(match: NeutralMatch | PredictionSource) -> TrackingData:
     """Convert provider-neutral metres to the engine's normalised corner origin."""
     if match.coordinate_convention != "metres-center-origin":
         raise ValueError(f"unsupported coordinate convention: {match.coordinate_convention}")
@@ -257,3 +405,10 @@ def _quality_counts(values: NDArray[np.int8]) -> dict[str, int]:
         "extrapolated": int(np.sum(values == SourceQuality.EXTRAPOLATED)),
         "missing": int(np.sum(values == SourceQuality.MISSING)),
     }
+
+
+def _in_period_mask(frame_count: int, periods: tuple[PeriodSpan, ...]) -> NDArray[np.bool_]:
+    output = np.zeros(frame_count, dtype=bool)
+    for period in periods:
+        output[period.start_frame : period.end_frame] = True
+    return output

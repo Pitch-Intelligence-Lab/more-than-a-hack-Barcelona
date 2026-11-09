@@ -67,6 +67,15 @@ class SplitAssignment:
         raise PolicyError("vendor test split cannot automatically become project holdout")
 
 
+def require_holdout_candidates_unexposed(
+    candidate_match_ids: tuple[str, ...],
+    exposed_match_ids: tuple[str, ...],
+) -> None:
+    overlap = sorted(set(candidate_match_ids).intersection(exposed_match_ids))
+    if overlap:
+        raise PolicyError(f"historically exposed matches cannot become holdout: {overlap}")
+
+
 @dataclass(frozen=True)
 class HoldoutManifest:
     schema_version: str

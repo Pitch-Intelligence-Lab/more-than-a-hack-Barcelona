@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -16,9 +17,13 @@ from mtah_possession.data.model_input import (
     with_event_evidence,
 )
 from mtah_possession.data.neutral import (
+    EvaluationReference,
     NeutralMatch,
+    PredictionSource,
     ProxyTarget,
-    map_proxy_target,
+    evaluation_reference_from_match,
+    map_reference_proxy_target,
+    prediction_source_from_match,
 )
 from mtah_possession.data.observations import prepare_ball_observations
 from mtah_possession.features.ball import nearest_team_candidates
@@ -30,6 +35,7 @@ from mtah_possession.governance.authorization import (
     AuthorizedExternalRun,
 )
 from mtah_possession.governance.policy import DataUse, PolicyError, PolicyStatus
+from mtah_possession.governance.roles import model_input_field_names
 from mtah_possession.governance.temporal import validate_temporal_feature_path
 from mtah_possession.states.cleanup import apply_structural_cleanup
 from mtah_possession.states.phase_layer import (
@@ -96,6 +102,98 @@ class ModelPrediction:
 
 
 @dataclass(frozen=True)
+class EvaluationPlan:
+    candidate_names: tuple[str, ...] = (
+        "dp001_004_baseline",
+        "dp005",
+        "dp006_phase_proxy",
+    )
+    uses_phase_model_input: bool = True
+    uses_evaluation_reference: bool = True
+
+    @classmethod
+    def full_scored(cls) -> EvaluationPlan:
+        return cls()
+
+    @classmethod
+    def tracking_only(cls) -> EvaluationPlan:
+        return cls(
+            candidate_names=("dp001_004_baseline", "dp005"),
+            uses_phase_model_input=False,
+            uses_evaluation_reference=False,
+        )
+
+    @classmethod
+    def prediction_phase_only(cls) -> EvaluationPlan:
+        return cls(
+            candidate_names=("dp001_004_baseline", "dp005", "dp006_phase_proxy"),
+            uses_phase_model_input=True,
+            uses_evaluation_reference=False,
+        )
+
+    @property
+    def requested_uses(self) -> tuple[DataUse, ...]:
+        uses = [DataUse.READ_PREPROCESS, DataUse.TRACKING_MODEL_INPUT]
+        if self.uses_phase_model_input:
+            uses.append(DataUse.PHASE_MODEL_INPUT)
+        if self.uses_evaluation_reference:
+            uses.append(DataUse.EVALUATION_REFERENCE)
+        return tuple(uses)
+
+    def validate(self) -> None:
+        known = {"dp001_004_baseline", "dp005", "dp006_phase_proxy"}
+        if not self.candidate_names or not set(self.candidate_names) <= known:
+            raise PolicyError("evaluation plan contains unknown candidates")
+        if "dp006_phase_proxy" in self.candidate_names and not self.uses_phase_model_input:
+            raise PolicyError("phase candidate declared without phase model input")
+        if self.uses_evaluation_reference and not self.candidate_names:
+            raise PolicyError("evaluation reference requires at least one candidate")
+
+
+@dataclass(frozen=True)
+class ObservedUses:
+    declared_uses: tuple[str, ...]
+    runtime_read_roles: tuple[str, ...]
+    transformed_feature_families: tuple[str, ...]
+    model_input_fields: tuple[str, ...]
+    evaluation_reference_read: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "declared_uses": list(self.declared_uses),
+            "runtime_read_roles": list(self.runtime_read_roles),
+            "transformed_feature_families": list(self.transformed_feature_families),
+            "model_input_fields": list(self.model_input_fields),
+            "evaluation_reference_read": self.evaluation_reference_read,
+        }
+
+
+@dataclass(frozen=True)
+class ExternalPredictionBatch:
+    match_id: str
+    split: str
+    predictions: dict[str, ModelPrediction]
+    prediction_sources: dict[str, NDArray[np.str_]]
+    observed_uses: ObservedUses
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "match_id": self.match_id,
+            "split": self.split,
+            "prediction_only": True,
+            "predictions": {
+                name: {
+                    "prediction_sha256": prediction.prediction_sha256,
+                    "reason_counts": _value_counts(prediction.reasons),
+                    "source_counts": _value_counts(self.prediction_sources[name]),
+                }
+                for name, prediction in self.predictions.items()
+            },
+            "observed_uses": self.observed_uses.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class ExternalMatchEvaluation:
     match_id: str
     split: str
@@ -103,6 +201,7 @@ class ExternalMatchEvaluation:
     candidates: dict[str, ExternalCandidateResult]
     source_checksums: dict[str, str]
     external_aggregate: dict[str, Any]
+    observed_uses: ObservedUses | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -144,6 +243,7 @@ class ExternalMatchEvaluation:
                 }
                 for name, result in self.candidates.items()
             },
+            "observed_uses": self.observed_uses.to_dict() if self.observed_uses else None,
         }
 
 
@@ -154,70 +254,61 @@ def evaluate_external_match(
     authorization: AuthorizedExternalRun,
     split: str = "development",
     transition_tolerance_s: float = 0.5,
-) -> ExternalMatchEvaluation:
-    for use in (
-        DataUse.TRACKING_MODEL_INPUT,
-        DataUse.PHASE_MODEL_INPUT,
-        DataUse.EVALUATION_REFERENCE,
-    ):
-        if authorization.use_permissions[use].status != PolicyStatus.PASS:
-            raise PolicyError(f"{use.value} is not authorized")
-    model_input = build_model_input(match)
-    adapted = replace(
+    plan: EvaluationPlan | None = None,
+    runtime_read_roles: tuple[str, ...] = (),
+    reference_loader: Callable[[], EvaluationReference] | None = None,
+) -> ExternalMatchEvaluation | ExternalPredictionBatch:
+    plan = plan or EvaluationPlan.full_scored()
+    plan.validate()
+    prediction_source = prediction_source_from_match(match)
+    if not plan.uses_phase_model_input:
+        prediction_source = replace(prediction_source, phases=())
+    predictions, sources, observed = predict_external_candidates(
+        prediction_source,
         state_config,
-        fps=match.fps,
-        expected_frames=match.frame_count,
-        pitch_length_m=match.pitch_length_m,
-        pitch_width_m=match.pitch_width_m,
-        ungraded_blocks=(),
-        forced_dead_blocks=(),
+        authorization=authorization,
+        plan=plan,
+        runtime_read_roles=runtime_read_roles,
     )
+    if not plan.uses_evaluation_reference:
+        return ExternalPredictionBatch(
+            match_id=match.match_id,
+            split=split,
+            predictions=predictions,
+            prediction_sources=sources,
+            observed_uses=observed,
+        )
 
-    baseline = _baseline_labels(model_input)
-    dp005 = _state_labels(adapted, model_input)
-
-    dp006_params = dict(adapted.parameters)
-    rest_parameter = dp006_params["use_ball_rest_dead_ball"]
-    dp006_params["use_ball_rest_dead_ball"] = replace(rest_parameter, value=False)
-    dp006_config = replace(adapted, parameters=dp006_params)
-    phase_directives = derive_gap_dead_directives(
-        tuple((period.start_frame, period.end_frame) for period in match.periods),
-        tuple((phase.start_frame, phase.end_frame) for phase in match.phases),
-        source="skillcorner_phases_of_play_gap",
+    reference = (
+        reference_loader()
+        if reference_loader is not None
+        else evaluation_reference_from_match(match)
     )
-    phase_evidence = compile_phase_evidence(
-        match.frame_count,
-        match.fps,
-        phase_directives,
-    )
-    dp006 = _state_labels(
-        dp006_config,
-        with_event_evidence(model_input, phase_evidence),
-    )
-    proxy = map_proxy_target(
-        match,
+    if reference.match_id != prediction_source.match_id:
+        raise PolicyError("evaluation reference match ID does not match prediction source")
+    if reference.source_checksums != prediction_source.source_checksums:
+        raise PolicyError("evaluation reference checksums do not match prediction source")
+    proxy = map_reference_proxy_target(
+        prediction_source,
+        reference,
         possession_profile=authorization.label_profiles[EVALUATION_POSSESSION_PROFILE],
         phase_profile=authorization.label_profiles[EVALUATION_PHASE_PROFILE],
     )
-
     tolerance_frames = max(1, round(transition_tolerance_s * match.fps))
-    candidates = {}
-    for name, labels, sources in (
-        ("dp001_004_baseline", baseline, np.full(match.frame_count, "tracking_only", dtype="<U32")),
-        ("dp005", dp005, np.full(match.frame_count, "tracking_only", dtype="<U32")),
-        ("dp006_phase_proxy", dp006, phase_evidence.source_codes),
-    ):
-        candidates[name] = ExternalCandidateResult(
+    candidates = {
+        name: ExternalCandidateResult(
             name=name,
-            labels=labels,
-            sources=sources,
+            labels=predictions[name].labels,
+            sources=sources[name],
             metrics=evaluate_predictions(
                 proxy.labels,
-                labels,
+                predictions[name].labels,
                 fps=match.fps,
                 transition_tolerance_frames=tolerance_frames,
             ),
         )
+        for name in plan.candidate_names
+    }
     return ExternalMatchEvaluation(
         match_id=match.match_id,
         split=split,
@@ -225,7 +316,106 @@ def evaluate_external_match(
         candidates=candidates,
         source_checksums=dict(match.source_checksums),
         external_aggregate=dict(match.source_metadata.get("tracking_aggregate", {})),
+        observed_uses=observed,
     )
+
+
+def predict_external_candidates(
+    source: PredictionSource,
+    state_config: StateEngineConfig,
+    *,
+    authorization: AuthorizedExternalRun,
+    plan: EvaluationPlan,
+    runtime_read_roles: tuple[str, ...] = (),
+) -> tuple[
+    dict[str, ModelPrediction],
+    dict[str, NDArray[np.str_]],
+    ObservedUses,
+]:
+    plan.validate()
+    for use in (
+        DataUse.TRACKING_MODEL_INPUT,
+        *((DataUse.PHASE_MODEL_INPUT,) if plan.uses_phase_model_input else ()),
+        *((DataUse.EVALUATION_REFERENCE,) if plan.uses_evaluation_reference else ()),
+    ):
+        if authorization.use_permissions[use].status != PolicyStatus.PASS:
+            raise PolicyError(f"{use.value} is not authorized")
+    model_input = build_model_input(source)
+    adapted = replace(
+        state_config,
+        fps=source.fps,
+        expected_frames=source.frame_count,
+        pitch_length_m=source.pitch_length_m,
+        pitch_width_m=source.pitch_width_m,
+        ungraded_blocks=(),
+        forced_dead_blocks=(),
+    )
+    baseline = _baseline_labels(model_input)
+    dp005 = _state_labels(adapted, model_input)
+    predictions = {
+        "dp001_004_baseline": ModelPrediction(
+            labels=baseline,
+            reasons=np.full(source.frame_count, "baseline", dtype="<U32"),
+            prediction_sha256=hashlib.sha256(baseline.tobytes()).hexdigest(),
+        ),
+        "dp005": ModelPrediction(
+            labels=dp005.labels,
+            reasons=dp005.reasons,
+            prediction_sha256=dp005.prediction_sha256,
+        ),
+    }
+    sources = {
+        "dp001_004_baseline": np.full(source.frame_count, "tracking_only", dtype="<U32"),
+        "dp005": np.full(source.frame_count, "tracking_only", dtype="<U32"),
+    }
+    transformed = ["tracking_geometry"]
+    if "dp006_phase_proxy" in plan.candidate_names:
+        if not plan.uses_phase_model_input:
+            raise PolicyError("phase candidate declared without phase model input")
+        dp006_params = dict(adapted.parameters)
+        rest_parameter = dp006_params["use_ball_rest_dead_ball"]
+        dp006_params["use_ball_rest_dead_ball"] = replace(rest_parameter, value=False)
+        dp006_config = replace(adapted, parameters=dp006_params)
+        phase_directives = derive_gap_dead_directives(
+            tuple((period.start_frame, period.end_frame) for period in source.periods),
+            tuple((phase.start_frame, phase.end_frame) for phase in source.phases),
+            source="skillcorner_phases_of_play_gap",
+        )
+        phase_evidence = compile_phase_evidence(
+            source.frame_count,
+            source.fps,
+            phase_directives,
+        )
+        dp006 = _state_labels(
+            dp006_config,
+            with_event_evidence(model_input, phase_evidence),
+        )
+        predictions["dp006_phase_proxy"] = dp006
+        sources["dp006_phase_proxy"] = phase_evidence.source_codes
+        transformed.append("phase_event_evidence")
+
+    declared = tuple(use.value for use in plan.requested_uses)
+    phase_declared = DataUse.PHASE_MODEL_INPUT.value in declared
+    evaluation_declared = DataUse.EVALUATION_REFERENCE.value in declared
+    read_roles = tuple(runtime_read_roles) or (
+        ("tracking", "match", "phases")
+        if phase_declared or evaluation_declared
+        else ("tracking", "match")
+    )
+    if "phases" in read_roles and not (phase_declared or evaluation_declared):
+        raise PolicyError("runtime read roles exceed declared phase/evaluation uses")
+    if "possession_reference" in read_roles and not evaluation_declared:
+        raise PolicyError("runtime possession reference exceeds declared uses")
+    observed = ObservedUses(
+        declared_uses=declared,
+        runtime_read_roles=read_roles,
+        transformed_feature_families=tuple(transformed),
+        model_input_fields=tuple(model_input_field_names(model_input)),
+        evaluation_reference_read=evaluation_declared,
+    )
+    selected = {name: predictions[name] for name in plan.candidate_names}
+    selected_sources = {name: sources[name] for name in plan.candidate_names}
+    return selected, selected_sources, observed
 
 
 def evaluate_predictions(
@@ -334,8 +524,8 @@ def _baseline_labels(model_input: ModelInput) -> NDArray[np.str_]:
 def _state_labels(
     config: StateEngineConfig,
     model_input: ModelInput,
-) -> NDArray[np.str_]:
-    return predict_model_input(model_input, config).labels
+) -> ModelPrediction:
+    return predict_model_input(model_input, config)
 
 
 def predict_model_input(

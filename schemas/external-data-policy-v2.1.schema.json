@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pitch-intelligence-lab.local/schemas/external-data-policy-v2.1.schema.json",
+  "title": "DP-006 external data policy v2.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "policy_version", "official_rule_revision", "providers"],
+  "properties": {
+    "schema_version": {"const": "2.1"},
+    "policy_version": {"const": "DP-006-POLICY-v2.1"},
+    "official_rule_revision": {"type": "string", "minLength": 40},
+    "providers": {"type": "array", "items": {"$ref": "#/$defs/provider"}}
+  },
+  "$defs": {
+    "status": {"type": "string", "enum": ["PASS", "PROJECT_RISK_ACCEPTED_INTERNAL", "HOLD", "FAIL", "NOT_APPLICABLE"]},
+    "use_permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence_ids", "conditions"],
+      "properties": {
+        "status": {"$ref": "#/$defs/status"},
+        "evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "conditions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "label_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_label_definition_id", "source_field", "label_kind", "roles", "time_basis", "null_semantics", "target_mapping_id", "mapping_version", "mapping_evidence", "status"],
+      "properties": {
+        "provider_label_definition_id": {"type": "string", "minLength": 1},
+        "source_field": {"type": "string", "minLength": 1},
+        "label_kind": {"type": "string", "enum": ["truth", "proxy", "event-derived", "unknown"]},
+        "roles": {"type": "array", "items": {"type": "string", "enum": ["TRAINING_TARGET", "AUXILIARY_TRAINING_TARGET", "EVALUATION_REFERENCE", "POST_INFERENCE_DIAGNOSTIC"]}},
+        "time_basis": {"type": "string", "minLength": 1},
+        "null_semantics": {"type": "string", "minLength": 1},
+        "target_mapping_id": {"type": "string", "minLength": 1},
+        "mapping_version": {"type": "string", "minLength": 1},
+        "mapping_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "status": {"$ref": "#/$defs/status"}
+      }
+    },
+    "project_risk_acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope_id", "provider", "source_revision", "match_ids", "allowed_uses", "restrictions", "risk_owner", "accepted_at", "review_at", "status"],
+      "properties": {
+        "scope_id": {"type": "string", "minLength": 1},
+        "provider": {"type": "string", "minLength": 1},
+        "source_revision": {"type": "string", "minLength": 7},
+        "match_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "allowed_uses": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "restrictions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "risk_owner": {"type": "string", "minLength": 1},
+        "accepted_at": {"type": "string", "minLength": 1},
+        "review_at": {"type": "string", "minLength": 1},
+        "status": {"const": "PROJECT_RISK_ACCEPTED_INTERNAL"}
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "source_revision", "source_evidence", "statuses", "uses", "label_profiles", "project_risk_acceptances"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "source_revision": {"type": "string", "minLength": 7},
+        "source_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "statuses": {"type": "object", "minProperties": 12, "additionalProperties": {"$ref": "#/$defs/status"}},
+        "uses": {"type": "object", "minProperties": 12, "additionalProperties": {"$ref": "#/$defs/use_permission"}},
+        "label_profiles": {"type": "array", "items": {"$ref": "#/$defs/label_profile"}},
+        "project_risk_acceptances": {"type": "array", "items": {"$ref": "#/$defs/project_risk_acceptance"}}
+      }
+    }
+  }
+}

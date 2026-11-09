@@ -96,7 +96,7 @@ def test_diagnostic_selection_is_used_in_report_and_versions(
     policy_path = write_allowed_policy(tmp_path)
     observed_split = []
 
-    def fake_evaluator(_match, _config, *, authorization, split: str):
+    def fake_evaluator(_match, _config, *, authorization, split: str, **_kwargs):
         assert authorization is not None
         observed_split.append(split)
         proxy = ProxyTarget(

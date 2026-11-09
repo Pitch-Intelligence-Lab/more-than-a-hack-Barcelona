@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ class PolicyError(ValueError):
 
 class PolicyStatus(StrEnum):
     PASS = "PASS"
+    PROJECT_RISK_ACCEPTED_INTERNAL = "PROJECT_RISK_ACCEPTED_INTERNAL"
     HOLD = "HOLD"
     FAIL = "FAIL"
     NOT_APPLICABLE = "NOT_APPLICABLE"
@@ -79,6 +81,20 @@ class LabelProfile:
 
 
 @dataclass(frozen=True)
+class ProjectRiskAcceptance:
+    scope_id: str
+    provider: str
+    source_revision: str
+    match_ids: tuple[str, ...]
+    allowed_uses: tuple[str, ...]
+    restrictions: tuple[str, ...]
+    risk_owner: str
+    accepted_at: str
+    review_at: str
+    status: PolicyStatus
+
+
+@dataclass(frozen=True)
 class ProviderPolicy:
     name: str
     source_revision: str
@@ -86,9 +102,11 @@ class ProviderPolicy:
     statuses: dict[str, PolicyStatus]
     uses: dict[DataUse, UsePermission]
     label_profiles: tuple[LabelProfile, ...]
+    project_risk_acceptances: tuple[ProjectRiskAcceptance, ...] = ()
 
     @property
     def overall_status(self) -> PolicyStatus:
+        """Display-only aggregate; production authorization uses individual gates."""
         research_uses = (
             DataUse.DOWNLOAD_STORE,
             DataUse.READ_PREPROCESS,
@@ -135,9 +153,9 @@ def load_policy(path: str | os.PathLike[str]) -> ExternalDataPolicy:
     required = {"schema_version", "policy_version", "official_rule_revision", "providers"}
     if set(raw) != required:
         raise PolicyError("policy root has missing or unknown fields")
-    if raw["schema_version"] != "2.0":
-        raise PolicyError("policy schema_version must be 2.0")
-    if raw["policy_version"] != "DP-006-POLICY-v2":
+    if raw["schema_version"] not in {"2.0", "2.1"}:
+        raise PolicyError("policy schema_version must be 2.0 or 2.1")
+    if raw["policy_version"] not in {"DP-006-POLICY-v2", "DP-006-POLICY-v2.1"}:
         raise PolicyError("unexpected policy_version")
     if (
         not isinstance(raw["official_rule_revision"], str)
@@ -178,6 +196,40 @@ def require_source_identity(
     return provider
 
 
+def require_scoped_internal_risk(
+    policy: ExternalDataPolicy,
+    *,
+    provider_name: str,
+    source_revision: str,
+    match_id: str,
+    use: str,
+    now: datetime | None = None,
+) -> ProjectRiskAcceptance:
+    """Authorize one bounded internal use without changing external rights."""
+    if use in {"final_candidate", "publication", "source_redistribution", "derived_redistribution"}:
+        raise PolicyError(f"scoped internal risk cannot authorize {use}")
+    provider = require_source_identity(policy, provider_name, source_revision)
+    current = now or datetime.now(UTC)
+    for scope in provider.project_risk_acceptances:
+        if scope.status != PolicyStatus.PROJECT_RISK_ACCEPTED_INTERNAL:
+            continue
+        if scope.provider != provider_name or scope.source_revision != source_revision:
+            continue
+        if match_id not in scope.match_ids or use not in scope.allowed_uses:
+            continue
+        if not scope.restrictions or not scope.risk_owner:
+            continue
+        try:
+            accepted = datetime.fromisoformat(scope.accepted_at)
+            review = datetime.fromisoformat(scope.review_at)
+        except ValueError as error:
+            raise PolicyError("project risk acceptance timestamps are invalid") from error
+        if accepted > current or review <= current:
+            continue
+        return scope
+    raise PolicyError(f"no active scoped internal risk acceptance for {provider_name}/{use}")
+
+
 def require_allowed(
     policy: ExternalDataPolicy,
     provider_name: str,
@@ -215,7 +267,8 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
         "uses",
         "label_profiles",
     }
-    if set(raw) != required:
+    optional = {"project_risk_acceptances"}
+    if set(raw) != required and set(raw) != required | optional:
         raise PolicyError("provider entry has missing or unknown fields")
     if not isinstance(raw["provider"], str) or not raw["provider"].strip():
         raise PolicyError("provider name is missing")
@@ -227,6 +280,12 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
     statuses = _parse_statuses(raw["statuses"])
     uses = _parse_uses(raw["uses"])
     profiles = tuple(_parse_label_profile(raw["provider"], item) for item in raw["label_profiles"])
+    risks = tuple(
+        _parse_project_risk_acceptance(raw["provider"], item)
+        for item in raw.get("project_risk_acceptances", ())
+    )
+    if any(scope.source_revision != raw["source_revision"] for scope in risks):
+        raise PolicyError("project risk acceptance revision does not match provider")
     return ProviderPolicy(
         name=raw["provider"],
         source_revision=raw["source_revision"],
@@ -234,6 +293,7 @@ def _parse_provider(raw: Any) -> ProviderPolicy:
         statuses=statuses,
         uses=uses,
         label_profiles=profiles,
+        project_risk_acceptances=risks,
     )
 
 
@@ -313,6 +373,53 @@ def _parse_label_profile(provider: str, raw: Any) -> LabelProfile:
         target_mapping_id=raw["target_mapping_id"],
         mapping_version=raw["mapping_version"],
         mapping_evidence=mapping_evidence,
+        status=status,
+    )
+
+
+def _parse_project_risk_acceptance(
+    provider: str,
+    raw: Any,
+) -> ProjectRiskAcceptance:
+    required = {
+        "scope_id",
+        "provider",
+        "source_revision",
+        "match_ids",
+        "allowed_uses",
+        "restrictions",
+        "risk_owner",
+        "accepted_at",
+        "review_at",
+        "status",
+    }
+    if not isinstance(raw, dict) or set(raw) != required:
+        raise PolicyError("project risk acceptance has missing or unknown fields")
+    if raw["provider"] != provider:
+        raise PolicyError("project risk acceptance provider mismatch")
+    match_ids = _string_tuple(raw["match_ids"], "match_ids")
+    allowed_uses = _string_tuple(raw["allowed_uses"], "allowed_uses")
+    restrictions = _string_tuple(raw["restrictions"], "restrictions")
+    if not match_ids or match_ids != tuple(sorted(set(match_ids))):
+        raise PolicyError("project risk acceptance match IDs are invalid")
+    if not allowed_uses or not restrictions:
+        raise PolicyError("project risk acceptance scope is incomplete")
+    try:
+        status = PolicyStatus(raw["status"])
+    except ValueError as error:
+        raise PolicyError("project risk acceptance status is invalid") from error
+    if status != PolicyStatus.PROJECT_RISK_ACCEPTED_INTERNAL:
+        raise PolicyError("project risk acceptance must use scoped internal status")
+    return ProjectRiskAcceptance(
+        scope_id=str(raw["scope_id"]),
+        provider=provider,
+        source_revision=str(raw["source_revision"]),
+        match_ids=match_ids,
+        allowed_uses=allowed_uses,
+        restrictions=restrictions,
+        risk_owner=str(raw["risk_owner"]),
+        accepted_at=str(raw["accepted_at"]),
+        review_at=str(raw["review_at"]),
         status=status,
     )
 
