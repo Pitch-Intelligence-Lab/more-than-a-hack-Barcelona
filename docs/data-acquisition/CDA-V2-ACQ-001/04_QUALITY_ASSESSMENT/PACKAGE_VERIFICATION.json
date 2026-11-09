@@ -1,0 +1,38 @@
+{
+  "manifest_entries": 19300,
+  "manifest_errors": [],
+  "missing_required": [],
+  "status": "PASS",
+  "zip_results": [
+    {
+      "archive": "CDA_V2_SkillCorner.zip",
+      "members": 139,
+      "sha256_matches": true,
+      "testzip": null
+    },
+    {
+      "archive": "CDA_V2_IDSSE.zip",
+      "members": 23,
+      "sha256_matches": true,
+      "testzip": null
+    },
+    {
+      "archive": "CDA_V2_StatsBomb.zip",
+      "members": 8988,
+      "sha256_matches": true,
+      "testzip": null
+    },
+    {
+      "archive": "CDA_V2_Wyscout.zip",
+      "members": 3892,
+      "sha256_matches": true,
+      "testzip": null
+    },
+    {
+      "archive": "CDA_V2_Metadata_and_Tools.zip",
+      "members": 6252,
+      "sha256_matches": true,
+      "testzip": null
+    }
+  ]
+}

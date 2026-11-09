@@ -1,0 +1,6 @@
+source,item,status,reason
+SkillCorner,full bodypose 1925299,DEFERRED,Approximately 3.3 GB external bodypose object; ordinary tracking/events/phases acquired.
+SkillCorner,full bodypose 1996435,DEFERRED,Approximately 3.3 GB external bodypose object; ordinary tracking/events/phases acquired.
+Wyscout,processed v1 duplicate files,RETAINED_RAW_NOT_PRIMARY_INDEX,processed-v2 is the indexed compatibility representation; v1 remains in raw snapshot.
+StatsBomb,274 event/lineup files absent from competitions.json index,INVENTORIED_WITH_UNKNOWN_COMPETITION_SEASON,Raw files exist and are in MATCH_INVENTORY; competition/season are not inferred.
+StatsBomb,three-sixty files with official-source NUL corruption,RETAINED_RAW_PARSE_FAILURE_RECORDED,Malformed optional 360 JSON is retained byte-for-byte and marked in match quality.

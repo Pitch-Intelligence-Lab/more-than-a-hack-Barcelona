@@ -1,0 +1,10 @@
+gate,requirement,result,evidence,notes
+A,Four sources have actual acquisition records,PASS,ACQUISITION_LOG.md and DATA_SOURCE_MASTER.csv,6203 indexed match records
+A,Every included match has a row,PASS,MATCH_INVENTORY.csv,Includes 274 StatsBomb unindexed raw event files
+B,Files and pinned identities complete,PASS,SOURCE_INTEGRITY_VERIFICATION.json,All source trees match pinned Git/HF identities
+B,LFS bodies not pointers,PASS,SOURCE_INTEGRITY_VERIFICATION.json,SkillCorner 20 and IDSSE 7 LFS payloads verified
+B,SHA-256 inventory complete,PASS,FILE_INVENTORY.csv and MANIFEST.sha256,Every raw file is hashed
+C,Tracking and event data separated,PASS,DATA_SCHEMA.md and MATCH_INVENTORY.csv,Data type and research scope explicit
+C,Fields/FPS/coordinates and quality documented,PASS,DATA_SCHEMA.md and QUALITY_ASSESSMENT.csv,Q1/Q2 assigned by research scope
+C,Parsers and examples available,PASS,RESEARCHER_QUICKSTART.md,"Reader example exit 0"
+D,ZIP and manifest verify,PASS,ZIP_INDEX.csv and PACKAGE_VERIFICATION.json,All five ZIPs testzip clean and SHA-256 match
