@@ -91,3 +91,18 @@ PR #9.
 - Cross-provider semantic mappings.
 - Active independent holdout.
 - Merge approval.
+
+## Current integration status
+
+```text
+PR #8 merged: YES
+PR #9 merged only into feature/DP-006A-leakage-promotion-gate: YES
+PR #9 merge commit: 2bfcff41e1900ef087d611da02272d36983379d8
+Current integration receipt: 09_DP006_INTEGRATION_EXECUTION_RECEIPT.md
+Real-data research: HOLD
+REPAIR-007: NOT AUTHORIZED
+```
+
+The earlier `OPEN/HOLD` and `pending merge` lines above are preserved as
+historical review states. Current integration execution is recorded in the
+dedicated receipt.

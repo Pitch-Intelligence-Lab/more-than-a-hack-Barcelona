@@ -51,3 +51,18 @@ PR #9 actual merge execution: PENDING
 Real-data research: HOLD
 Final model: NOT SELECTED
 ```
+
+## Execution status addendum
+
+```text
+Original signing time: before PR #9 merge
+Historical field `PR #9 actual merge execution: PENDING`: preserved as the signing-time state
+Current PR #9 state: MERGED
+Current PR #9 merge commit: 2bfcff41e1900ef087d611da02272d36983379d8
+Current integration receipt: 09_DP006_INTEGRATION_EXECUTION_RECEIPT.md
+Real-data research: HOLD
+REPAIR-007: NOT AUTHORIZED
+```
+
+This addendum does not rewrite the original project-owner decision. It records
+the later integration execution status separately.

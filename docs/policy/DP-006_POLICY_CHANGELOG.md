@@ -124,6 +124,30 @@ merge and real-data research authorization remain `HOLD` for PM/QA.
 Policy implementation final acceptance, merge and real-data research
 authorization remain `HOLD` for PM/QA.
 
+## DP-006-INTEGRATION-METADATA-CORRECTION-001
+
+**Date:** 2026-11-09
+
+**Status:** docs-only integration metadata correction
+
+### Recorded
+
+- restored `06_工程师交付回执.md` as the REPAIR-006 historical receipt;
+- added `09_DP006_INTEGRATION_EXECUTION_RECEIPT.md` as the current integration
+  receipt;
+- separated the 78-file PR #9 payload from the CI and post-merge execution
+  deltas;
+- recorded current integration status in Policy Handoff and Final Archive;
+- preserved the original pre-merge Policy Acceptance signature and added a
+  current execution-status addendum;
+- separated main before and after the PR #8 merge.
+
+### Boundary
+
+No Python, configuration, Schema, test or CI file changed. Real-data research
+remains HOLD and REPAIR-007 is not authorized. DP-006 engineering work can be
+closed administratively after PM project-memory update.
+
 ## DP-006-POLICY-REMEDIATION-006
 
 **Date:** 2026-11-08

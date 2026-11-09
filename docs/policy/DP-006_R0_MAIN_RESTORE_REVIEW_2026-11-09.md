@@ -4,7 +4,10 @@
 **PR:** #8  
 **Recovery branch:** `repair/DP-006-R0-main-restore`  
 **Recovery head:** `59046022e2121f0c29ac29898a9c0202b82bb007`  
-**Current remote main:** `5ee9ea0102bcfb42601b8a4817ae6b58563bf3b8`  
+**Main before PR #8 merge:** `5ee9ea0102bcfb42601b8a4817ae6b58563bf3b8`
+
+**Main after PR #8 merge:** `59046022e2121f0c29ac29898a9c0202b82bb007`
+
 **Stable tag:** `foundation-stable-dp005-v1.2.0-2026-11-06`  
 **Stable commit:** `c4b80a99695fa89f97d9a4a8296f249493bdd278`
 
