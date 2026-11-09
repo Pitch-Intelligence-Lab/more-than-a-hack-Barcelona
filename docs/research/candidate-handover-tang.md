@@ -79,6 +79,8 @@ five-minute ground truth was not used for training, tuning or model selection.
 - D evidence: 32,381 frames have an exact explicit source; 377 final D frames have no exact
   current source but sit inside the five-frame smoothing halo; 0 final D frames are outside that
   halo.
+- Change scope: 3,100 of 199,319 frames changed versus the previous stable output; 2,900 are
+  D→H/A, 200 are H/A boundary shifts, and no X label changed.
 - D/tracking overlap: 1,303 frames total. Only 304 have strong forced/ball-rest/out-of-bounds
   support; the 999 weak-only overlap frames remain H=640, A=328, D=31.
 - Output SHA-256: `f24bdbcca46170ba2e42d3dff08cd7c56279a8913febb3f1aa4e26a840f06c47`.

@@ -185,6 +185,8 @@ Never paste competition rows, video frames or screenshots into this file.
 - Previous stable result: H=70,172, A=59,055, D=29,630; 195 H, 189 A and 96 D segments.
 - Provenance: final D frames without an exact current source fell from 3,270 to 377; final D
   frames outside the explicit-evidence smoothing halo are 0.
+- Frame migration versus the previous stable output: 3,100 changed frames total; D→H=1,813,
+  D→A=1,087, A→H=188, H→A=12; X unchanged.
 - D duration: mean 12.579 s, shortest 0.44 s, longest 117.36 s.
 - Output SHA-256: `f24bdbcca46170ba2e42d3dff08cd7c56279a8913febb3f1aa4e26a840f06c47`
 - Repeat generation: byte-identical with the same SHA-256.

@@ -99,7 +99,8 @@
 - Synthetic tests: high D probability without evidence is rejected; D stays within an explicit
   evidence halo.
 - Observed: no-source D fell from 3,270 to 377 frames; D segments fell from 96 to 85; H/A
-  possessions remained 384; D outside the evidence halo was 0.
+  possessions remained 384; D outside the evidence halo was 0. Of 3,100 changed frames, 2,900
+  were D→H/A and only 200 were H/A boundary shifts; X did not change.
 - Decision: retain in the stable candidate. This is provenance and semantic consistency, not an
   accuracy claim.
 
