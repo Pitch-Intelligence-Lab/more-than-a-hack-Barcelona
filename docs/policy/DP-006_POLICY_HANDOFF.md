@@ -1,8 +1,8 @@
 # DP-006 Policy Remediation 006 Closure Handoff
 
 > Final archive notice: independent DP-006 Final Assurance A1-A5 is PASS.
-> Policy implementation signature, PR merge and real-data research remain
-> separate decisions. See `DP-006_FINAL_ARCHIVE_INDEX.md`,
+> Policy implementation is accepted. PR merge execution and real-data research
+> remain separate decisions. See `DP-006_FINAL_ARCHIVE_INDEX.md`,
 > `07_工程师交付回执.md` and `DP-006_FINAL_ASSURANCE_HANDOFF.md`.
 
 ```text
@@ -60,9 +60,9 @@ Contamination/start linearization: FIX CANDIDATE
 C1 migration atomicity: PRESERVED
 C3 Governance/Source separation: PRESERVED
 Existing authorization/lifecycle controls: PRESERVED
-Policy implementation final acceptance: HOLD
+Policy implementation final acceptance: ACCEPTED
 Real-data research activation: HOLD
-Merge: DENIED
+Merge execution: PENDING SEPARATE OWNER DECISION
 Automatic REPAIR-007: NOT APPROVED
 Next gate: Independent REPAIR-006 Re-review
 ```

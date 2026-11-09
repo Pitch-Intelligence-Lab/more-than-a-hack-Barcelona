@@ -4,7 +4,7 @@
 
 **Official rule revision:** `f8f2629ff1e0985f81d7e59d8413678514ee1530`
 
-**Status:** DP-006 Final Assurance PASS; PM Policy signature pending
+**Status:** DP-006 Policy Implementation ACCEPTED
 
 ## Scope
 
@@ -75,8 +75,8 @@ Final Assurance A5 Reproducibility: PASS
 Audit production snapshot gate: PASS
 P1 compromised trigger identity: PASS
 P1 match-event identity binding: PASS
-Policy implementation final acceptance: HOLD
-PR #9: open, unmerged, PM/QA review required
+Policy implementation final acceptance: ACCEPTED
+PR #9: open, unmerged; merge authorization separately approved
 Final Assurance: PASS
 REPAIR-007: not authorized
 Official rule traceability: PASS

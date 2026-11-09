@@ -1,5 +1,13 @@
 # DP-006 Policy Changelog
 
+## 2026-11-09 — Final Assurance and Policy Acceptance
+
+- DP-006 Final Assurance A1-A5 completed with PASS.
+- Policy implementation accepted by project-owner authorization.
+- REPAIR-006 closed; REPAIR-007 not authorized.
+- PR merge execution remains a separate change-control action.
+- Real-data research, training, tuning and real evaluation remain HOLD.
+
 ## DP-006-POLICY-v2
 
 **Date:** 2026-11-08

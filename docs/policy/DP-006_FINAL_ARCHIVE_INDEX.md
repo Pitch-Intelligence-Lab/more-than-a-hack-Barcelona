@@ -32,8 +32,8 @@ A5 Reproducibility: PASS
 DP-006 Final Assurance: PASS
 ```
 
-This archive does not itself sign Policy implementation acceptance, merge the PR
-or authorize real-data research. Those remain PM decisions.
+Policy implementation acceptance was signed by the project owner on 2026-11-09.
+The signature does not merge the PR or authorize real-data research.
 
 ## Verification record
 
@@ -112,8 +112,8 @@ random value or a replacement for checksum verification.
 Real-data research: HOLD
 Real external data authorization: HOLD
 Real evaluation/training/tuning: HOLD
-PR merge: requires PM approval
-Policy implementation signature: PM decision
+PR merge: separately authorized; execution pending
+Policy implementation signature: ACCEPTED
 REPAIR-007: NOT AUTHORIZED
 ```
 
