@@ -1,7 +1,7 @@
 # Candidate Handover Card — Tang Candidate B
 
 **Candidate name:** Tang Candidate B — Evidence → H/A/D Emission → Viterbi  
-**Git Commit:** `abc5539` (pressure and restart experiments; stable main remains `db24…`)  
+**Git Commit:** `18971f8` (tracking quality gating experiment; stable main remains `db24…`)  
 **Work branch:** `research/tang/independent-v1`  
 **Model overview:** L1 frame evidence with a split-contest gate and 5 m control-zone limit, L2
 normalized H/A/D emission probabilities with 50-frame H/A smoothing and 5-frame D smoothing, L3
