@@ -51,9 +51,9 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 23 passed.
-- Full repository: 87 passed (64 frozen + 23 candidate).
-- `pytest -W error`: 87 passed.
+- Candidate synthetic tests: 24 passed.
+- Full repository: 88 passed (64 frozen + 24 candidate).
+- `pytest -W error`: 88 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
@@ -79,6 +79,8 @@ five-minute ground truth was not used for training, tuning or model selection.
 - D evidence: 32,381 frames have an exact explicit source; 377 final D frames have no exact
   current source but sit inside the five-frame smoothing halo; 0 final D frames are outside that
   halo.
+- D/tracking overlap: 1,303 frames total. Only 304 have strong forced/ball-rest/out-of-bounds
+  support; the 999 weak-only overlap frames remain H=640, A=328, D=31.
 - Output SHA-256: `f24bdbcca46170ba2e42d3dff08cd7c56279a8913febb3f1aa4e26a840f06c47`.
 - Repeat run: byte-identical.
 

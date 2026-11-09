@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from helpers import make_data_root
 
-from mtah_possession.candidates.tang.adapter import build_candidate
+from mtah_possession.candidates.tang.adapter import _overlap_diagnostics, build_candidate
 from mtah_possession.candidates.tang.config import load_candidate_config
 from mtah_possession.candidates.tang.decoder import (
     _filter_low_confidence_short_segments,
@@ -133,6 +133,33 @@ def test_tracking_candidate_wins_conflicting_smart_prior() -> None:
     assert features.tracking_candidate.tolist() == [HOME]
     assert features.smart_conflict.tolist() == [True]
     assert emission.probabilities[0, HOME] > emission.probabilities[0, AWAY]
+
+
+def test_dead_ball_tracking_overlap_diagnostics_separate_strong_and_weak_evidence() -> None:
+    features = features_stub(
+        4,
+        tracking_candidate=[HOME, AWAY, HOME, NO_CANDIDATE],
+        smart_dead=[True, True, True, True],
+        out_of_bounds=[False, True, False, False],
+        ball_rest=[0.0, 0.0, 2.0, 2.0],
+    )
+    features.smart_team[0] = HOME
+    features.smart_team[1] = AWAY
+    features.smart_team[2] = AWAY
+
+    result = _overlap_diagnostics(
+        np.asarray(["H", "D", "D", "H"], dtype="<U1"),
+        features,
+        np.zeros(4, dtype=bool),
+        rest_min_s=1.5,
+    )
+
+    assert result["smart_dead_tracking_overlap"] == 3
+    assert result["smart_dead_tracking_overlap_final_labels"] == {"D": 2, "H": 1}
+    assert result["smart_dead_tracking_overlap_strong_evidence_frames"] == 2
+    assert result["smart_dead_tracking_overlap_weak_only_frames"] == 1
+    assert result["smart_dead_tracking_overlap_same_team_frames"] == 2
+    assert result["smart_dead_tracking_overlap_opposite_team_frames"] == 1
 
 
 def test_smart_tagging_ablation_config_is_explicit() -> None:

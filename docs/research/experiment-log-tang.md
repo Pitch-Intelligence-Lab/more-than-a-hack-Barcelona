@@ -191,3 +191,20 @@ Never paste competition rows, video frames or screenshots into this file.
 - Validator: project validator pass.
 - Decision: retain. The H/A possession count remains 384 while unsupported D tails are removed.
   This is a provenance/semantic improvement, not an accuracy or generalisation claim.
+
+## E-B-016: D/tracking overlap provenance breakdown
+
+- Date: 2026-11-10
+- Research question: Are Smart Tagging dead/tracking overlaps explained by stronger D evidence,
+  or does tracking still lose to a weak prior?
+- Data source: local tactical ATD and Smart Tagging through `MTAH_DATA_DIR`
+- Ground truth: not read; public scoring not run
+- Implementation: health JSON now splits overlaps by final H/A/D label, strong evidence,
+  weak-only evidence and tracking/Smart-Tagging team agreement.
+- Result: 1,303 overlaps total; 304 have forced/ball-rest/out-of-bounds support and 999 are
+  weak Smart-Tagging-only.
+- Final labels, weak-only: H=640, A=328, D=31.
+- Final labels, strong-evidence subset: H=48, A=72, D=184.
+- Team relation: 402 overlaps agree and 34 disagree; 867 have no Smart Tagging team value.
+- Decision: retain the automatic diagnostics. The aggregate overlap is not itself evidence of
+  an error, and the weak subset mostly preserves tracking-selected H/A.

@@ -102,3 +102,13 @@
   possessions remained 384; D outside the evidence halo was 0.
 - Decision: retain in the stable candidate. This is provenance and semantic consistency, not an
   accuracy claim.
+
+## ED-16: D/tracking overlap provenance breakdown
+
+- Hypothesis: the same overlap total can mix strong dead-ball evidence with weak Smart Tagging
+  priors and therefore needs separate reporting.
+- Implementation: health reports split Smart Tagging dead/tracking overlap by final label,
+  strong evidence, weak-only evidence and team agreement.
+- Observed: of 1,303 overlap frames, 304 have forced/ball-rest/out-of-bounds support and 999 are
+  Smart-Tagging-only. Weak-only overlap ends as H=640, A=328, D=31; tracking is not cleared.
+- Decision: retain as an automatic diagnostic. Do not treat overlap count alone as an error.

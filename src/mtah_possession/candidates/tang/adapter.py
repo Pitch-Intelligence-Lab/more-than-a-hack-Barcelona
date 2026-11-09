@@ -71,6 +71,46 @@ def _source_counts(
     return dict(sorted(result.items(), key=lambda item: -item[1]))
 
 
+def _overlap_diagnostics(
+    labels: NDArray[np.str_],
+    features: FrameFeatures,
+    forced: NDArray[np.bool_],
+    rest_min_s: float,
+) -> dict[str, Any]:
+    overlap = features.smart_dead & (features.tracking_candidate != NO_CANDIDATE)
+    strong = (
+        forced
+        | features.out_of_bounds
+        | (features.usable_ball & (features.ball_rest_s >= rest_min_s))
+    )
+    strong_overlap = overlap & strong
+    weak_overlap = overlap & ~strong
+    same_team = (
+        overlap
+        & (features.smart_team != NO_CANDIDATE)
+        & (features.tracking_candidate == features.smart_team)
+    )
+    opposite_team = (
+        overlap
+        & (features.smart_team != NO_CANDIDATE)
+        & (features.tracking_candidate != features.smart_team)
+    )
+
+    def label_counts(mask: NDArray[np.bool_]) -> dict[str, int]:
+        return dict(sorted(Counter(labels[mask].tolist()).items()))
+
+    return {
+        "smart_dead_tracking_overlap": int(overlap.sum()),
+        "smart_dead_tracking_overlap_final_labels": label_counts(overlap),
+        "smart_dead_tracking_overlap_strong_evidence_frames": int(strong_overlap.sum()),
+        "smart_dead_tracking_overlap_strong_evidence_final_labels": label_counts(strong_overlap),
+        "smart_dead_tracking_overlap_weak_only_frames": int(weak_overlap.sum()),
+        "smart_dead_tracking_overlap_weak_only_final_labels": label_counts(weak_overlap),
+        "smart_dead_tracking_overlap_same_team_frames": int(same_team.sum()),
+        "smart_dead_tracking_overlap_opposite_team_frames": int(opposite_team.sum()),
+    }
+
+
 def _health(
     labels: NDArray[np.str_],
     emission: Emission,
@@ -144,9 +184,7 @@ def _health(
         "tracking_anomaly_frames": int(features.tracking_anomaly.sum()),
         "smart_dead_frames": int(features.smart_dead.sum()),
         "smart_restart_frames": int(features.smart_restart.sum()),
-        "smart_dead_tracking_overlap": int(
-            (features.smart_dead & (features.tracking_candidate != NO_CANDIDATE)).sum()
-        ),
+        **_overlap_diagnostics(labels, features, forced, rest_min),
         "final_d_frames": int(final_d.sum()),
         "d_source_counts": _source_counts(labels, features, forced, config),
         "explicit_dead_source_frames": int(explicit_dead.sum()),
