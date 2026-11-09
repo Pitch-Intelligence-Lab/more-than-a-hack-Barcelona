@@ -15,7 +15,7 @@ Tang Candidate B: Evidence → H/A/D Emission → Viterbi Adapter
 
 1. 从冻结输入提取弱/强证据，并明确每个证据的缺失语义。
 2. 将证据融合为可比较、可消融的逐帧 H/A/D 概率。
-3. 用时间转移约束解码，减少短碎片和错误切换，同时保留死球与 restart。
+3. 用时间转移约束解码，减少短碎片和错误切换；最终 D 必须靠近明确死球证据。
 4. 通过独立 Adapter 输出 199,319 行 CSV 和聚合健康报告。
 
 ## 输入
@@ -29,7 +29,7 @@ Tang Candidate B: Evidence → H/A/D Emission → Viterbi Adapter
 
 - `frame,label` CSV，frame 0..199318，label ∈ {H, A, D, X}
 - 聚合 health JSON：标签计数、段统计、转移统计、输入/输出 SHA-256、emission validity、
-  Smart Tagging 冲突计数
+  Smart Tagging 冲突计数、D 来源计数和 D 证据窗口覆盖
 - 不输出原始比赛行、截图或视频内容
 
 ## Schema
@@ -129,6 +129,7 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 | + D 独立短时平滑 | 406 | 101 | 12.9 s | 11.2 s | `42e0…` |
 | + 低置信短片段过滤 | 406 | 101 | 12.9 s | 11.2 s | `42e0…` |
 | + 5 m 控制区上限 | 384 | 96 | 13.5 s | 12.3 s | `db24…` |
+| + D 证据来源硬约束 | 384 | 85 | 13.5 s | 12.6 s | `f24b…` |
 | + 0.6 s dwell（实验） | 384 | 96 | 13.5 s | 12.3 s | `4cd5…` |
 | + 1.2 s 强 dwell（实验） | 377 | 186 | 13.5 s | 6.8 s | `ab90…` |
 | + evidence hysteresis（实验） | 384 | 96 | 13.5 s | 12.3 s | `8a3f…` |
@@ -160,6 +161,10 @@ Restart recovery 实验降低 D→H/A cost，却产生 208 个 D 段，已拒绝
 
 Tracking-anomaly gating 只将异常 slot 在当前帧置为 missing；真实数据段数仍为 384/96，只改变少量
 invalid frame，因此不晋升主线。
+
+D 来源硬约束允许 D 只出现在 forced-dead、球静止、越界或 Smart Tagging dead 证据及其 5 帧
+平滑窗口内。真实数据中无当前来源的 D 从 3,270 帧降到 377 帧，D 段从 96 降到 85；
+证据窗口外 D 为 0。H/A 总 possession 仍为 384，说明改进主要去掉了缺少依据的死球尾部。
 
 ## 文献依据
 

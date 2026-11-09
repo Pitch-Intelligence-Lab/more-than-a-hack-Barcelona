@@ -50,13 +50,17 @@ not create D.
 - Three-state Viterbi over H/A/D.
 - Self-transition cost 0; H↔A switch cost; H/A↔D entry/exit costs.
 - D→H/A cost is reduced by active restart evidence.
+- D is allowed only where forced-dead, visible ball rest, out-of-bounds or Smart Tagging dead
+  evidence exists, plus the configured 5-frame D-smoothing halo. Temporal persistence cannot
+  create an unsupported D tail.
 - Ungraded blocks emit X and reset temporal state.
 - Frames 110808..113741 are forced D.
 - Short H/A flicker and low-confidence short segments may be absorbed only when bracketed by the
   same team.
 
 The stable config has `dwell_frames=0`, `hysteresis_gain=0`, `time_to_ball_weight=0`,
-`pressure_weight=0` and `enable_tracking_anomaly_gating=false`.
+`pressure_weight=0`, `enable_tracking_anomaly_gating=false` and
+`enforce_dead_evidence_support=true`.
 The duration-aware, hysteresis and relative-velocity paths are experiments, not part of the stable
 algorithm.
 
@@ -76,7 +80,7 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 Stable output SHA-256:
 
 ```text
-db2400dc0de196e814438401797326c358c1d8c2486e0cd22c24aab182127b69
+f24bdbcca46170ba2e42d3dff08cd7c56279a8913febb3f1aa4e26a840f06c47
 ```
 
 The optional decision log is a local diagnostic artifact only. It must remain under `outputs/`
@@ -88,4 +92,6 @@ or another ignored local directory and must not be committed or uploaded.
 - Tracking gaps and identity switches remain major error sources.
 - Smart Tagging phases are weak evidence and are not possession labels.
 - The 5 m control gate improves continuity but increases uncertainty to 84,153 frames.
+- Final D has no frame outside the explicit-evidence smoothing halo; 377 D frames have no exact
+  current source and are explained only by that halo.
 - Aggregate possession counts are diagnostics, not accuracy evidence.

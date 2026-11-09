@@ -31,6 +31,7 @@ class CandidateConfig:
     forced_dead_blocks: tuple[tuple[int, int], ...]
     enable_smart_tagging: bool
     enable_tracking_anomaly_gating: bool
+    enforce_dead_evidence_support: bool
     parameters: dict[str, CandidateParameter]
 
     def number(self, name: str) -> float:
@@ -251,6 +252,9 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
     enable_tracking_anomaly_gating = values.get("enable_tracking_anomaly_gating", False)
     if not isinstance(enable_tracking_anomaly_gating, bool):
         raise CandidateConfigError("enable_tracking_anomaly_gating must be boolean")
+    enforce_dead_evidence_support = values.get("enforce_dead_evidence_support", False)
+    if not isinstance(enforce_dead_evidence_support, bool):
+        raise CandidateConfigError("enforce_dead_evidence_support must be boolean")
 
     ungraded = _blocks(values.get("ungraded_blocks"), expected_frames, "ungraded_blocks")
     forced = _blocks(values.get("forced_dead_blocks"), expected_frames, "forced_dead_blocks")
@@ -269,5 +273,6 @@ def load_candidate_config(path: str | Path) -> CandidateConfig:
         forced_dead_blocks=forced,
         enable_smart_tagging=enable_smart_tagging,
         enable_tracking_anomaly_gating=enable_tracking_anomaly_gating,
+        enforce_dead_evidence_support=enforce_dead_evidence_support,
         parameters=parameters,
     )

@@ -22,7 +22,7 @@ from mtah_possession.states.cleanup import label_segments
 from mtah_possession.validation.submission import sha256_file, validate_submission
 
 from .config import CandidateConfig, load_candidate_config
-from .decoder import decode
+from .decoder import dead_evidence_support, decode
 from .emission import Emission, build_emission
 from .features import FrameFeatures, build_features
 from .smart_tagging import SmartEvidence, build_smart_evidence, load_tags
@@ -97,6 +97,18 @@ def _health(
         previous = label
     forced = frame_block_mask(labels.size, config.forced_dead_blocks)
     forced_labels = labels[forced]
+    rest_min = config.number("ball_rest_min_s")
+    explicit_dead = (
+        forced
+        | (features.usable_ball & (features.ball_rest_s >= rest_min))
+        | features.out_of_bounds
+        | features.smart_dead
+    )
+    if config.enforce_dead_evidence_support:
+        supported_dead = dead_evidence_support(features, config, forced)
+    else:
+        supported_dead = np.ones(labels.size, dtype=bool)
+    final_d = labels == "D"
     return {
         "candidate": "tang-candidate-b",
         "rows": int(labels.size),
@@ -135,8 +147,12 @@ def _health(
         "smart_dead_tracking_overlap": int(
             (features.smart_dead & (features.tracking_candidate != NO_CANDIDATE)).sum()
         ),
-        "final_d_frames": int((labels == "D").sum()),
+        "final_d_frames": int(final_d.sum()),
         "d_source_counts": _source_counts(labels, features, forced, config),
+        "explicit_dead_source_frames": int(explicit_dead.sum()),
+        "final_d_frames_without_explicit_source": int((final_d & ~explicit_dead).sum()),
+        "final_d_frames_outside_evidence_halo": int((final_d & ~supported_dead).sum()),
+        "dead_evidence_support_enforced": config.enforce_dead_evidence_support,
         "forced_dead_frames": int(forced.sum()),
         "forced_dead_all_d": bool(forced.any() and np.all(forced_labels == "D")),
         "generalisation": "GENERALISATION NOT ESTABLISHED",

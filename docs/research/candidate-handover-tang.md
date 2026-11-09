@@ -1,12 +1,12 @@
 # Candidate Handover Card — Tang Candidate B
 
 **Candidate name:** Tang Candidate B — Evidence → H/A/D Emission → Viterbi  
-**Git Commit:** `18971f8` (tracking quality gating experiment; stable main remains `db24…`)  
+**Git Commit:** D evidence-support optimization commit on `research/tang/independent-v1`
 **Work branch:** `research/tang/independent-v1`  
 **Model overview:** L1 frame evidence with a split-contest gate and 5 m control-zone limit, L2
 normalized H/A/D emission probabilities with 50-frame H/A smoothing and 5-frame D smoothing, L3
 three-state Viterbi decoder with explicit transition costs, low-confidence segment filtering,
-X/forced-block handling and conservative H/A flicker absorption.
+D evidence-support constraints, X/forced-block handling and conservative H/A flicker absorption.
 
 ## Module structure
 
@@ -51,22 +51,17 @@ MTAH_DATA_DIR=/mnt/d/mtah2027-data \
 
 ## Test results
 
-- Candidate synthetic tests: 21 passed.
-- Full repository: 85 passed (64 frozen + 21 candidate).
-- `pytest -W error`: 85 passed.
+- Candidate synthetic tests: 23 passed.
+- Full repository: 87 passed (64 frozen + 23 candidate).
+- `pytest -W error`: 87 passed.
 - Ruff check: pass.
 - Ruff format check: pass.
 
 ## Validator result
 
-Project validator: pass.
-
-Official-format validator: pass using official commit
-`f8f2629ff1e0985f81d7e59d8413678514ee1530`. The validator script's CRLF SHA-256 matches the
-Action Pack value `d716bf6fce9c8a8d334a9258a3bfca63b8153ae9cd98a4bf80fe0d04693af914`;
-the WSL/LF checkout hashes to `07ac29499acbd337e1dc1de1832d63f6e1fa1d981e22f6ad08212529e2bbee14`.
-The official validator reports 199,319 rows and 384 possessions of mean 13.5 s. This is a format
-check only, not an accuracy result.
+Project validator: pass for the current 199,319-row output. The previous official-format
+validator run passed the same row/frame contract, but must be rerun for the final handover output.
+This is a format check only, not an accuracy result.
 
 ## Legal evaluation evidence
 
@@ -77,11 +72,14 @@ five-minute ground truth was not used for training, tuning or model selection.
 
 ## Aggregate local result
 
-- Labels: H=70,172, A=59,055, D=29,630, X=40,462.
-- Segments: H=195, A=189, D=96.
-- Mean durations: H=14.394 s, A=12.498 s, D=12.346 s.
+- Labels: H=72,161, A=59,966, D=26,730, X=40,462.
+- Segments: H=201, A=189, D=85.
+- Mean durations: H=14.360 s, A=12.691 s, D=12.579 s.
 - Contested frames: 24,989; loose-ball frames: 29,815; emission valid/invalid: 115,166 / 84,153.
-- Output SHA-256: `db2400dc0de196e814438401797326c358c1d8c2486e0cd22c24aab182127b69`.
+- D evidence: 32,381 frames have an exact explicit source; 377 final D frames have no exact
+  current source but sit inside the five-frame smoothing halo; 0 final D frames are outside that
+  halo.
+- Output SHA-256: `f24bdbcca46170ba2e42d3dff08cd7c56279a8913febb3f1aa4e26a840f06c47`.
 - Repeat run: byte-identical.
 
 ## Main failure modes
@@ -107,8 +105,8 @@ material contribution to D in this dataset, not accuracy or generalisation.
 - No calibrated probabilities; `normalized_probability` is a score interface, not a statistical
   calibration claim.
 - No external training, tuning, bootstrap or cross-match generalisation.
-- D source decomposition includes 3,270 final D frames with no current declared source, which are
-  decoder persistence/context rather than an independent evidence signal.
+- The decoder no longer creates D purely from temporal persistence. The 377 D frames without an
+  exact source are bounded to the documented five-frame smoothing halo.
 - A duration-aware Viterbi path is implemented and tested but disabled in the main config:
   0.6 s dwell did not change segment counts and 1.2 s strong dwell increased D segments from 96
   to 186. The experimental configs remain for independent comparison.

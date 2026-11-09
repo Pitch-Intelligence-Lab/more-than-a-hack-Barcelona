@@ -89,3 +89,16 @@
 - Implementation: per-slot speed >15 m/s or acceleration >50 m/s² makes that slot missing for the frame.
 - Observed: synthetic jump test passed; real output remained 384/96 with only small label/invalid changes.
 - Decision: keep experimental; tracking jumps are not the dominant segmentation driver.
+
+## ED-15: D evidence-support constraint
+
+- Hypothesis: decoder persistence should not create dead-ball labels without nearby explicit
+  dead-ball evidence.
+- Implementation: D is permitted only inside forced-dead, ball-rest, out-of-bounds or Smart
+  Tagging dead evidence plus the existing five-frame D-smoothing halo.
+- Synthetic tests: high D probability without evidence is rejected; D stays within an explicit
+  evidence halo.
+- Observed: no-source D fell from 3,270 to 377 frames; D segments fell from 96 to 85; H/A
+  possessions remained 384; D outside the evidence halo was 0.
+- Decision: retain in the stable candidate. This is provenance and semantic consistency, not an
+  accuracy claim.

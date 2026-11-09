@@ -17,6 +17,7 @@
   ],
   "enable_smart_tagging": true,
   "enable_tracking_anomaly_gating": false,
+  "enforce_dead_evidence_support": true,
   "parameters": {
     "ball_interpolation_max_s": {
       "value": 0.4,

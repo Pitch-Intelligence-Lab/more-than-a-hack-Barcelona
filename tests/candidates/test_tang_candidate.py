@@ -375,6 +375,33 @@ def test_decoder_dead_ball_and_restart(tmp_path: Path) -> None:
     assert result.labels[-1] == "H"
 
 
+def test_decoder_does_not_invent_dead_ball_without_dead_evidence(tmp_path: Path) -> None:
+    config = small_config(tmp_path, 60, graded_only=True)
+    features = features_stub(60, tracking_candidate=[HOME] * 60)
+    probabilities = [[0.8, 0.1, 0.1]] * 20 + [[0.05, 0.05, 0.9]] * 20 + [[0.8, 0.1, 0.1]] * 20
+
+    result = decode(emission_stub(probabilities), features, config)
+
+    assert "D" not in result.labels
+
+
+def test_dead_ball_labels_stay_within_explicit_evidence_halo(tmp_path: Path) -> None:
+    config = small_config(tmp_path, 80, graded_only=True)
+    features = features_stub(
+        80,
+        tracking_candidate=[HOME] * 80,
+        smart_dead=[False] * 30 + [True] * 20 + [False] * 30,
+    )
+    probabilities = [[0.8, 0.1, 0.1]] * 30 + [[0.05, 0.05, 0.9]] * 20 + [[0.8, 0.1, 0.1]] * 30
+
+    result = decode(emission_stub(probabilities), features, config)
+    dead_frames = np.flatnonzero(result.labels == "D")
+
+    assert dead_frames.size > 0
+    assert dead_frames.min() >= 28
+    assert dead_frames.max() < 52
+
+
 def test_dwell_model_preserves_strong_quick_switch(tmp_path: Path) -> None:
     values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     values["expected_frames"] = 60

@@ -68,12 +68,33 @@ def _smooth_probabilities(
     return smoothed
 
 
+def dead_evidence_support(
+    features: FrameFeatures,
+    config: CandidateConfig,
+    forced: NDArray[np.bool_],
+) -> NDArray[np.bool_]:
+    """Return where explicit D evidence or its local smoothing halo exists."""
+
+    rest_min = config.number("ball_rest_min_s")
+    ball_rest = features.usable_ball & (features.ball_rest_s >= rest_min)
+    explicit = forced | ball_rest | features.out_of_bounds | features.smart_dead
+    half_width = config.integer("dead_smoothing_half_width_frames")
+    if half_width <= 0:
+        return explicit
+    supported = explicit.copy()
+    for offset in range(1, half_width + 1):
+        supported[offset:] |= explicit[:-offset]
+        supported[:-offset] |= explicit[offset:]
+    return supported
+
+
 def _decode_block_simple(
     logp: NDArray[np.float64],
     probabilities: NDArray[np.float64],
     emission: Emission,
     features: FrameFeatures,
     forced: NDArray[np.bool_],
+    dead_supported: NDArray[np.bool_],
     start: int,
     stop: int,
     config: CandidateConfig,
@@ -85,6 +106,8 @@ def _decode_block_simple(
         dp[0] = np.asarray([-np.inf, -np.inf, 0.0])
     else:
         dp[0] = logp[0]
+        if not dead_supported[start]:
+            dp[0, D] = -np.inf
     for index in range(1, length):
         frame = start + index
         transition = _transitions(config, bool(features.smart_restart[frame]))
@@ -103,6 +126,8 @@ def _decode_block_simple(
                     candidates[previous_state] += boost
             if forced[frame] and to_state != D:
                 candidates[:] = -np.inf
+            if to_state == D and not dead_supported[frame]:
+                candidates[:] = -np.inf
             back[index, to_state] = int(np.argmax(candidates))
             dp[index, to_state] = candidates[back[index, to_state]]
     state = int(np.argmax(dp[-1]))
@@ -119,6 +144,7 @@ def _decode_block(
     emission: Emission,
     features: FrameFeatures,
     forced: NDArray[np.bool_],
+    dead_supported: NDArray[np.bool_],
     start: int,
     stop: int,
     config: CandidateConfig,
@@ -140,6 +166,7 @@ def _decode_block(
             emission,
             features,
             forced,
+            dead_supported,
             start,
             stop,
             config,
@@ -153,7 +180,8 @@ def _decode_block(
         dp[D, 0] = 0.0
     else:
         for state in range(3):
-            dp[state, 0] = logp[0, state]
+            if state != D or dead_supported[start]:
+                dp[state, 0] = logp[0, state]
 
     for index in range(1, length):
         frame = start + index
@@ -162,6 +190,8 @@ def _decode_block(
         new_dp = np.full_like(dp, -np.inf)
         for current in range(3):
             if forced_frame and current != D:
+                continue
+            if current == D and not dead_supported[frame]:
                 continue
             emission_score = logp[index, current]
             # Staying in the same state increases its age.
@@ -303,6 +333,10 @@ def decode(emission: Emission, features: FrameFeatures, config: CandidateConfig)
     confidence = np.zeros(count, dtype=np.float64)
     ungraded = frame_block_mask(count, config.ungraded_blocks)
     forced = frame_block_mask(count, config.forced_dead_blocks)
+    if config.enforce_dead_evidence_support:
+        dead_supported = dead_evidence_support(features, config, forced)
+    else:
+        dead_supported = np.ones(count, dtype=bool)
 
     index = 0
     while index < count:
@@ -316,6 +350,7 @@ def decode(emission: Emission, features: FrameFeatures, config: CandidateConfig)
             emission,
             features,
             forced,
+            dead_supported,
             index,
             stop,
             config,

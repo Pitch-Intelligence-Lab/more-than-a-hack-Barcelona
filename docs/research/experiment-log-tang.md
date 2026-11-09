@@ -168,3 +168,26 @@ Never paste competition rows, video frames or screenshots into this file.
 - Synthetic result: an implausible jumping home slot is excluded and the adjacent away candidate is selected.
 - Real result: H/A=384, D=96 (unchanged segment structure), H/A mean 13.5 s, D mean 12.3 s, SHA `706c…`; invalid frames changed by only 20.
 - Decision: keep experimental. The audit-visible tracking anomalies are not the main driver of the current segmentation; no stable promotion.
+
+## E-B-015: D evidence-support constraint
+
+- Date: 2026-11-10
+- Research question: Can the final output guarantee that every D frame is close to explicit
+  dead-ball evidence?
+- Data source: local tactical ATD and Smart Tagging through `MTAH_DATA_DIR`
+- Ground truth: not read; public scoring not run
+- Implementation: Viterbi may enter or remain in D only where forced-dead, ball-rest,
+  out-of-bounds or Smart Tagging dead evidence exists, plus the existing five-frame D-smoothing
+  halo.
+- Synthetic result: high D probability without evidence is rejected; an explicit Smart Tagging
+  dead window keeps D within its local halo.
+- Real result: H=72,161, A=59,966, D=26,730, X=40,462; 201 H, 189 A and 85 D segments.
+- Previous stable result: H=70,172, A=59,055, D=29,630; 195 H, 189 A and 96 D segments.
+- Provenance: final D frames without an exact current source fell from 3,270 to 377; final D
+  frames outside the explicit-evidence smoothing halo are 0.
+- D duration: mean 12.579 s, shortest 0.44 s, longest 117.36 s.
+- Output SHA-256: `f24bdbcca46170ba2e42d3dff08cd7c56279a8913febb3f1aa4e26a840f06c47`
+- Repeat generation: byte-identical with the same SHA-256.
+- Validator: project validator pass.
+- Decision: retain. The H/A possession count remains 384 while unsupported D tails are removed.
+  This is a provenance/semantic improvement, not an accuracy or generalisation claim.
