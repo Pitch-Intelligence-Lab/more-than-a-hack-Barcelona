@@ -1,5 +1,17 @@
 # DP-006 Policy Changelog
 
+## 2026-11-09 — Policy v2.1 P1 Closure 002
+
+- Enforced scored-only Promotion before loader, ledger or lifecycle side effects.
+- Connected scoped internal risk to production authorization with explicit
+  basis/scope attribution while keeping external license facts unchanged.
+- Added the machine-readable exposure register and production Holdout checks.
+- Removed phase-derived dead evidence from structural audit mode.
+- Replaced `PredictionSource` phase spans with interval-only projections.
+- Recorded reference reads and feature families from actual production branches.
+- Real-data research remains HOLD; Policy v2.1 final acceptance and PR merge
+  remain pending independent review.
+
 ## 2026-11-09 — Final Assurance and Policy Acceptance
 
 - DP-006 Final Assurance A1-A5 completed with PASS.
