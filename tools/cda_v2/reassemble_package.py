@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import json
+import shutil
 import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -177,6 +178,15 @@ def reassemble(
         row["scope"]: extract_archive(archive_root / row["archive"], output, row["scope"])
         for row in ordered
     }
+    for filename, destination in (
+        ("ZIP_INDEX.csv", output / "archives" / "ZIP_INDEX.csv"),
+        ("MANIFEST.sha256", output / "MANIFEST.sha256"),
+    ):
+        source = archive_root / filename
+        if not source.is_file():
+            raise ReassemblyError(f"archive root metadata is missing: {filename}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
     cache_removed = remove_cache_artifacts(output)
     return {
         "archive_root": str(archive_root),

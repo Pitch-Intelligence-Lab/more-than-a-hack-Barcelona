@@ -88,6 +88,10 @@ def _tiny_index(archive_root: Path) -> list[dict[str, str | int]]:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+    (archive_root / "MANIFEST.sha256").write_text(
+        f"{'0' * 64}  README.md\n",
+        encoding="utf-8",
+    )
     return rows
 
 
