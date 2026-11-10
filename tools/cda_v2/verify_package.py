@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import zipfile
@@ -41,6 +42,7 @@ def main() -> int:
     parser.add_argument("--archive-root", type=Path, required=True)
     args = parser.parse_args()
     root = args.package_root.resolve()
+    archive_root = args.archive_root.resolve()
     missing = [relative for relative in REQUIRED if not (root / relative).exists()]
     manifest_errors = []
     manifest_count = 0
@@ -58,11 +60,9 @@ def main() -> int:
                 manifest_errors.append(f"sha mismatch: {relative}")
     zip_results = []
     with (root / "archives" / "ZIP_INDEX.csv").open(encoding="utf-8", newline="") as handle:
-        import csv
-
         archive_rows = list(csv.DictReader(handle))
     for row in archive_rows:
-        archive_path = Path(row["external_path"])
+        archive_path = archive_root / row["archive"]
         with zipfile.ZipFile(archive_path) as archive:
             bad = archive.testzip()
             zip_results.append(
@@ -73,16 +73,26 @@ def main() -> int:
                     "sha256_matches": sha256_file(archive_path) == row["sha256"],
                 }
             )
+    cache_files = [
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file()
+        and (
+            "__pycache__" in path.relative_to(root).parts or path.suffix.lower() in {".pyc", ".pyo"}
+        )
+    ]
     result = {
         "status": "PASS"
         if not missing
         and not manifest_errors
         and all(item["testzip"] is None for item in zip_results)
         and all(item["sha256_matches"] for item in zip_results)
+        and not cache_files
         else "FAIL",
         "missing_required": missing,
         "manifest_entries": manifest_count,
         "manifest_errors": manifest_errors,
+        "cache_files": cache_files,
         "zip_results": zip_results,
     }
     print(json.dumps(result, indent=2))

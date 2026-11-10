@@ -331,6 +331,19 @@ def statsbomb_inventory(
         event_path = reader.events_path(match.match_id)
         lineup_path = reader.lineups_path(match.match_id)
         three_sixty_path = reader.three_sixty_path(match.match_id)
+        metadata_path = (
+            ""
+            if match.competition_id is None or match.season_id is None
+            else (
+                repository
+                / "data"
+                / "matches"
+                / str(match.competition_id)
+                / f"{match.season_id}.json"
+            )
+            .relative_to(delivery)
+            .as_posix()
+        )
         event_error = ""
         lineup_error = ""
         three_sixty_error = ""
@@ -356,11 +369,18 @@ def statsbomb_inventory(
             level = "Q1"
         else:
             level = "Q3"
-        reasons = (
-            "Complete public event and lineup JSON for event-level research; "
-            "360 frames are optional; this is not continuous tracking and cannot be treated "
-            "as frame-level H/A/D/X truth."
-        )
+        if match.competition == "unknown":
+            reasons = (
+                "Actual public event and lineup files are present but this match is absent "
+                "from the pinned competitions.json/matches index. Competition and season "
+                "remain unknown rather than inferred. Event data is not tracking."
+            )
+        else:
+            reasons = (
+                "Complete public event and lineup JSON for event-level research; "
+                "360 frames are optional; this is not continuous tracking and cannot be treated "
+                "as frame-level H/A/D/X truth."
+            )
         if event_error:
             reasons += f" Event JSON parse error: {event_error}"
         if lineup_error:
@@ -380,15 +400,7 @@ def statsbomb_inventory(
                 "data_type": "event",
                 "tracking_path": "",
                 "event_path": event_path.relative_to(delivery).as_posix(),
-                "metadata_path": (
-                    repository
-                    / "data"
-                    / "matches"
-                    / str(match.competition_id)
-                    / f"{match.season_id}.json"
-                )
-                .relative_to(delivery)
-                .as_posix(),
+                "metadata_path": metadata_path,
                 "phase_path": "",
                 "tracking_sha256": "",
                 "event_sha256": relative_hash(hashes, event_path, delivery),
@@ -750,6 +762,13 @@ Q4: {counts["Q4"]}
 
 This status is technical readiness only. Training, evaluation, publication and
 redistribution rights remain source-specific and are not granted here.
+
+ZIP archives are resolved through the `--archive-root` argument recorded in
+`archives/ZIP_INDEX.csv`. Rebuild a portable package with:
+
+```text
+python tools/cda_v2/reassemble_package.py --archive-root <ARCHIVE_ROOT> --output <EMPTY_OUTPUT>
+```
 """,
         encoding="utf-8",
     )
@@ -778,7 +797,18 @@ No event-only dataset is a frame-level H/A/D/X ground truth.
 Run examples with the pinned package root:
 
 ```powershell
-.\.venv\Scripts\python.exe 05_ACCESS_TOOLS\BASIC_EXAMPLES\inspect_sources.py .
+$env:PYTHONDONTWRITEBYTECODE = "1"
+python 05_ACCESS_TOOLS/BASIC_EXAMPLES/inspect_sources.py .
+```
+
+POSIX shells use the same forward-slash path and `PYTHONDONTWRITEBYTECODE=1`.
+
+Reassemble from five verified archives:
+
+```powershell
+python tools/cda_v2/reassemble_package.py `
+  --archive-root <ARCHIVE_ROOT> `
+  --output <EMPTY_OUTPUT>
 ```
 
 The readers require only the Python standard library. Optional Kloppy loading was

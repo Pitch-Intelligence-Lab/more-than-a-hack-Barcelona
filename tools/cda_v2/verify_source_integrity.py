@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify source files against pinned Git/Hugging Face tree identities."""
+"""Verify source files using portable tree identities, without requiring .git."""
 
 from __future__ import annotations
 
@@ -10,6 +10,13 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+
+SOURCE_KEYS = {
+    "SkillCorner": "skillcorner",
+    "IDSSE": "idsse",
+    "StatsBomb": "statsbomb",
+    "Wyscout": "wyscout",
+}
 
 
 def git_blob_sha1(path: Path) -> str:
@@ -38,118 +45,91 @@ def git_head(repository: Path) -> str:
     return result.stdout.strip()
 
 
-def verify_idssse(root: Path, tree_path: Path) -> dict[str, Any]:
-    tree = json.loads(tree_path.read_text(encoding="utf-8"))
-    errors = []
-    checked = 0
-    for item in tree:
-        if item["type"] != "file":
-            continue
-        path = root / item["path"]
-        checked += 1
-        if not path.exists():
-            errors.append(f"missing: {item['path']}")
-            continue
-        if path.stat().st_size != item["size"]:
-            errors.append(f"size mismatch: {item['path']}")
-            continue
-        lfs = item.get("lfs")
-        if lfs is not None:
-            if sha256_file(path) != lfs["oid"]:
-                errors.append(f"LFS SHA-256 mismatch: {item['path']}")
-        elif git_blob_sha1(path) != item["oid"]:
-            errors.append(f"Git blob SHA-1 mismatch: {item['path']}")
-    return {"checked": checked, "errors": errors, "status": "PASS" if not errors else "FAIL"}
+def verify_file(item: dict[str, Any], root: Path) -> str | None:
+    path = root / item["path"]
+    if not path.is_file():
+        return f"missing: {item['path']}"
+    if path.stat().st_size != item["size"]:
+        return f"size mismatch: {item['path']}"
+    if item.get("sha256"):
+        if sha256_file(path) != item["sha256"]:
+            return f"SHA-256 mismatch: {item['path']}"
+    elif item.get("lfs_sha256"):
+        if sha256_file(path) != item["lfs_sha256"]:
+            return f"LFS SHA-256 mismatch: {item['path']}"
+    elif git_blob_sha1(path) != item["git_blob_sha1"]:
+        return f"Git blob SHA-1 mismatch: {item['path']}"
+    return None
 
 
-def verify_statsbomb(root: Path, tree_path: Path) -> dict[str, Any]:
-    raw = json.loads(tree_path.read_text(encoding="utf-8"))
-    blobs = [item for item in raw["tree"] if item["type"] == "blob"]
-
-    def check(item: dict[str, Any]) -> str | None:
-        path = root / item["path"]
-        if not path.exists():
-            return f"missing: {item['path']}"
-        if path.stat().st_size != item["size"]:
-            return f"size mismatch: {item['path']}"
-        if git_blob_sha1(path) != item["sha"]:
-            return f"Git blob SHA-1 mismatch: {item['path']}"
-        return None
-
+def verify_portable_tree(
+    source: str,
+    package_root: Path,
+    tree_path: Path,
+) -> dict[str, Any]:
+    identity = json.loads(tree_path.read_text(encoding="utf-8"))
+    root = package_root / "01_RAW_DATA" / SOURCE_KEYS[source] / "repository"
     with ThreadPoolExecutor(max_workers=8) as executor:
-        errors = [error for error in executor.map(check, blobs) if error is not None]
+        errors = [
+            error
+            for error in executor.map(
+                lambda item: verify_file(item, root),
+                identity["tree"],
+            )
+            if error is not None
+        ]
     return {
-        "checked": len(blobs),
+        "source_url": identity["source_url"],
+        "ref": identity["ref"],
+        "commit": identity["commit"],
+        "checked": len(identity["tree"]),
         "errors": errors[:50],
         "error_count": len(errors),
         "status": "PASS" if not errors else "FAIL",
     }
 
 
-def verify_skillcorner(root: Path, expected_revision: str) -> dict[str, Any]:
-    revision = git_head(root)
-    pointer_errors = []
-    tracking_files = sorted((root / "data" / "matches").glob("*/*_tracking_extrapolated.jsonl"))
-    for path in tracking_files:
-        if path.open("rb").read(129).startswith(b"version https://git-lfs.github.com/spec/v1"):
-            pointer_errors.append(str(path.relative_to(root)))
-    errors = []
-    if revision != expected_revision:
-        errors.append(f"revision mismatch: {revision}")
-    errors.extend(f"LFS pointer: {path}" for path in pointer_errors)
+def verify_optional_git(source: str, package_root: Path, expected: str) -> dict[str, Any]:
+    repository = package_root / "01_RAW_DATA" / SOURCE_KEYS[source] / "repository"
+    if not (repository / ".git").exists():
+        return {"status": "SKIPPED", "reason": ".git is absent"}
+    actual = git_head(repository)
     return {
-        "revision": revision,
-        "tracking_files": len(tracking_files),
-        "lfs_pointer_count": len(pointer_errors),
-        "errors": errors,
-        "status": "PASS" if not errors else "FAIL",
+        "status": "PASS" if actual == expected else "FAIL",
+        "actual": actual,
+        "expected": expected,
     }
 
 
-def verify_wyscout(root: Path, expected_revision: str) -> dict[str, Any]:
-    revision = git_head(root)
-    count = len(list((root / "processed-v2" / "files").glob("*.json")))
-    errors = []
-    if revision != expected_revision:
-        errors.append(f"revision mismatch: {revision}")
-    if count != 1941:
-        errors.append(f"expected 1941 match JSON files, found {count}")
-    return {
-        "revision": revision,
-        "match_json_files": count,
-        "errors": errors,
-        "status": "PASS" if not errors else "FAIL",
-    }
+def verify(package_root: Path, *, include_git: bool = False) -> dict[str, Any]:
+    registry_root = package_root / "00_SOURCE_REGISTRY"
+    identities = json.loads(
+        (registry_root / "PORTABLE_SOURCE_IDENTITIES.json").read_text(encoding="utf-8")
+    )
+    results = {}
+    for source in SOURCE_KEYS:
+        tree = registry_root / "PORTABLE_TREES" / f"{source.lower()}.json"
+        results[source] = verify_portable_tree(source, package_root, tree)
+        if include_git:
+            results[source]["git"] = verify_optional_git(
+                source,
+                package_root,
+                identities[source]["commit"],
+            )
+    results["status"] = (
+        "PASS" if all(item["status"] == "PASS" for item in results.values()) else "FAIL"
+    )
+    return results
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("package_root", type=Path)
+    parser.add_argument("--include-git", action="store_true")
     args = parser.parse_args()
-    root = args.package_root.resolve()
-    raw = root / "01_RAW_DATA"
-    result = {
-        "SkillCorner": verify_skillcorner(
-            raw / "skillcorner" / "repository",
-            "4340d274572876239c154c90bc507a9b3250a656",
-        ),
-        "IDSSE": verify_idssse(
-            raw / "idsse" / "repository",
-            raw / "idsse" / "HF_TREE.json",
-        ),
-        "StatsBomb": verify_statsbomb(
-            raw / "statsbomb" / "repository",
-            raw / "statsbomb" / "GITHUB_TREE_RAW.json",
-        ),
-        "Wyscout": verify_wyscout(
-            raw / "wyscout" / "repository",
-            "ebc4c54c1093c420a81ce442c69e4186fab33bb4",
-        ),
-    }
-    result["status"] = (
-        "PASS" if all(item["status"] == "PASS" for item in result.values()) else "FAIL"
-    )
-    output = root / "04_QUALITY_ASSESSMENT" / "SOURCE_INTEGRITY_VERIFICATION.json"
+    package_root = args.package_root.resolve()
+    result = verify(package_root, include_git=args.include_git)
+    output = package_root / "04_QUALITY_ASSESSMENT" / "SOURCE_INTEGRITY_VERIFICATION.json"
     output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["status"] == "PASS" else 1

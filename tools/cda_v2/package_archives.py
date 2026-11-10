@@ -11,6 +11,9 @@ import shutil
 import zipfile
 from pathlib import Path
 
+EXCLUDED_CACHE_NAMES = {"__pycache__"}
+EXCLUDED_CACHE_SUFFIXES = {".pyc", ".pyo"}
+
 SOURCE_ROOTS = {
     "SkillCorner": Path("01_RAW_DATA/skillcorner/repository"),
     "IDSSE": Path("01_RAW_DATA/idsse/repository"),
@@ -32,8 +35,32 @@ def source_files(root: Path) -> list[Path]:
     return sorted(
         path
         for path in root.rglob("*")
-        if path.is_file() and not EXCLUDED_PARTS.intersection(path.relative_to(root).parts)
+        if path.is_file()
+        and not EXCLUDED_PARTS.intersection(path.relative_to(root).parts)
+        and not is_cache_path(path.relative_to(root))
     )
+
+
+def is_cache_path(relative_path: str | Path) -> bool:
+    parts = Path(relative_path).parts
+    return any(part in EXCLUDED_CACHE_NAMES for part in parts) or (
+        bool(parts) and Path(parts[-1]).suffix.lower() in EXCLUDED_CACHE_SUFFIXES
+    )
+
+
+def remove_cache_artifacts(root: Path) -> int:
+    removed = 0
+    for path in sorted(root.rglob("*"), reverse=True):
+        if not path.exists():
+            continue
+        relative = path.relative_to(root)
+        if path.is_dir() and path.name in EXCLUDED_CACHE_NAMES:
+            shutil.rmtree(path)
+            removed += 1
+        elif path.is_file() and is_cache_path(relative):
+            path.unlink()
+            removed += 1
+    return removed
 
 
 def copy_tools(delivery: Path, tools_source: Path) -> None:
@@ -61,6 +88,7 @@ def copy_tools(delivery: Path, tools_source: Path) -> None:
     shutil.copy2(
         tools_source / "requirements.txt", delivery / "05_ACCESS_TOOLS" / "requirements.txt"
     )
+    remove_cache_artifacts(delivery / "05_ACCESS_TOOLS")
 
 
 def create_source_zip(
@@ -88,6 +116,7 @@ def create_source_zip(
 
 
 def create_metadata_zip(delivery: Path, archive_dir: Path) -> tuple[Path, int]:
+    archive_dir.mkdir(parents=True, exist_ok=True)
     output = archive_dir / "CDA_V2_Metadata_and_Tools.zip"
     roots = [
         delivery / "00_SOURCE_REGISTRY",
@@ -100,6 +129,8 @@ def create_metadata_zip(delivery: Path, archive_dir: Path) -> tuple[Path, int]:
     root_files = [
         delivery / "README.md",
         delivery / "06_工程师交付回执.md",
+        delivery / "archives" / "ZIP_INDEX.csv",
+        delivery / "archives" / "ARCHIVE_LOCATION.md",
     ]
     count = 0
     with zipfile.ZipFile(
@@ -114,7 +145,11 @@ def create_metadata_zip(delivery: Path, archive_dir: Path) -> tuple[Path, int]:
                 archive.write(path, path.relative_to(delivery).as_posix())
                 count += 1
         for root in roots:
-            for path in sorted(item for item in root.rglob("*") if item.is_file()):
+            for path in sorted(
+                item
+                for item in root.rglob("*")
+                if item.is_file() and not is_cache_path(item.relative_to(delivery))
+            ):
                 archive.write(path, path.relative_to(delivery).as_posix())
                 count += 1
     return output, count
@@ -129,6 +164,7 @@ def write_manifest(delivery: Path) -> int:
         if item.is_file()
         and item != output
         and not EXCLUDED_PARTS.intersection(item.relative_to(delivery).parts)
+        and not is_cache_path(item.relative_to(delivery))
     ):
         entries.append((sha256_file(path), path.relative_to(delivery).as_posix()))
     with output.open("w", encoding="utf-8", newline="\n") as handle:
@@ -137,17 +173,16 @@ def write_manifest(delivery: Path) -> int:
     return len(entries)
 
 
-def write_archive_location(delivery: Path, archive_dir: Path) -> None:
+def write_archive_location(delivery: Path) -> None:
     (delivery / "archives" / "ARCHIVE_LOCATION.md").write_text(
-        f"""# External ZIP Location
+        """# External ZIP Location
 
 The `.zip` files are stored outside the Git repository to preserve the
 repository safety test that forbids ZIP assets in the checkout.
 
 ```text
-Archive root: {archive_dir}
 Index: archives/ZIP_INDEX.csv
-External raw archives: {archive_dir.parent / "raw_archives"}
+Archive files are resolved relative to the supplied `--archive-root`.
 ```
 """,
         encoding="utf-8",
@@ -169,7 +204,6 @@ def index_rows_for_existing(archive_dir: Path) -> list[dict[str, object]]:
         rows.append(
             {
                 "archive": name,
-                "external_path": str(path),
                 "scope": scope,
                 "contents": count,
                 "bytes": path.stat().st_size,
@@ -190,6 +224,7 @@ def main() -> int:
     archive_dir = args.archive_root.resolve()
     archive_dir.mkdir(parents=True, exist_ok=True)
     copy_tools(delivery, args.tools_source.resolve())
+    remove_cache_artifacts(delivery)
 
     if args.metadata_only:
         index_rows = index_rows_for_existing(archive_dir)
@@ -200,7 +235,6 @@ def main() -> int:
             index_rows.append(
                 {
                     "archive": archive.name,
-                    "external_path": str(archive),
                     "scope": source,
                     "contents": count,
                     "bytes": archive.stat().st_size,
@@ -211,7 +245,6 @@ def main() -> int:
     index_rows.append(
         {
             "archive": metadata_archive.name,
-            "external_path": str(metadata_archive),
             "scope": "metadata_and_tools",
             "contents": metadata_count,
             "bytes": metadata_archive.stat().st_size,
@@ -225,7 +258,6 @@ def main() -> int:
             handle,
             fieldnames=[
                 "archive",
-                "external_path",
                 "scope",
                 "contents",
                 "bytes",
@@ -234,7 +266,7 @@ def main() -> int:
         )
         writer.writeheader()
         writer.writerows(index_rows)
-    write_archive_location(delivery, archive_dir)
+    write_archive_location(delivery)
     manifest_count = write_manifest(delivery)
     print(
         json.dumps(

@@ -170,8 +170,8 @@ class IDSSEReader:
 @dataclass(frozen=True)
 class StatsBombMatch:
     match_id: int
-    competition_id: int
-    season_id: int
+    competition_id: int | None
+    season_id: int | None
     competition: str
     season: str
 
@@ -191,6 +191,7 @@ class StatsBombReader:
         return values
 
     def matches(self) -> Iterator[StatsBombMatch]:
+        by_match: dict[int, StatsBombMatch] = {}
         for competition in self.competitions():
             path = (
                 self.data
@@ -203,13 +204,24 @@ class StatsBombReader:
             except (OSError, json.JSONDecodeError) as error:
                 raise DataReadError(f"could not read StatsBomb matches {path}: {error}") from error
             for match in values:
-                yield StatsBombMatch(
-                    match_id=int(match["match_id"]),
+                match_id = int(match["match_id"])
+                by_match[match_id] = StatsBombMatch(
+                    match_id=match_id,
                     competition_id=int(competition["competition_id"]),
                     season_id=int(competition["season_id"]),
                     competition=str(competition["competition_name"]),
                     season=str(competition["season_name"]),
                 )
+        event_ids = {int(path.stem) for path in (self.data / "events").glob("*.json")}
+        for match_id in sorted(event_ids.difference(by_match)):
+            by_match[match_id] = StatsBombMatch(
+                match_id=match_id,
+                competition_id=None,
+                season_id=None,
+                competition="unknown",
+                season="unknown",
+            )
+        return iter(sorted(by_match.values(), key=lambda match: match.match_id))
 
     def events_path(self, match_id: int) -> Path:
         return self.data / "events" / f"{match_id}.json"
