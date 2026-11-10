@@ -129,8 +129,13 @@ def create_metadata_zip(delivery: Path, archive_dir: Path) -> tuple[Path, int]:
     root_files = [
         delivery / "README.md",
         delivery / "06_工程师交付回执.md",
-        delivery / "archives" / "ZIP_INDEX.csv",
         delivery / "archives" / "ARCHIVE_LOCATION.md",
+        delivery / "01_RAW_DATA" / "idsse" / "HF_TREE.json",
+        delivery / "01_RAW_DATA" / "idsse" / "HF_API_DATASET.json",
+        delivery / "01_RAW_DATA" / "idsse" / "README_FROM_API.md",
+        delivery / "01_RAW_DATA" / "idsse" / "figshare" / "FIGSHARE_ARTICLE_28196177.json",
+        delivery / "01_RAW_DATA" / "statsbomb" / "GITHUB_TREE_RAW.json",
+        delivery / "01_RAW_DATA" / "statsbomb" / "GITHUB_TREE.json",
     ]
     count = 0
     with zipfile.ZipFile(
@@ -223,8 +228,10 @@ def main() -> int:
     delivery = args.delivery_root.resolve()
     archive_dir = args.archive_root.resolve()
     archive_dir.mkdir(parents=True, exist_ok=True)
+    (delivery / "archives").mkdir(parents=True, exist_ok=True)
     copy_tools(delivery, args.tools_source.resolve())
     remove_cache_artifacts(delivery)
+    write_archive_location(delivery)
 
     if args.metadata_only:
         index_rows = index_rows_for_existing(archive_dir)
@@ -266,8 +273,9 @@ def main() -> int:
         )
         writer.writeheader()
         writer.writerows(index_rows)
-    write_archive_location(delivery)
     manifest_count = write_manifest(delivery)
+    shutil.copy2(delivery / "archives" / "ZIP_INDEX.csv", archive_dir / "ZIP_INDEX.csv")
+    shutil.copy2(delivery / "MANIFEST.sha256", archive_dir / "MANIFEST.sha256")
     print(
         json.dumps(
             {
