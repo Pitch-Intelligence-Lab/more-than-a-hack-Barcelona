@@ -12,7 +12,7 @@ POSIX shells use the same forward-slash path and `PYTHONDONTWRITEBYTECODE=1`.
 Reassemble a package from the five verified archives:
 
 ```powershell
-python tools/cda_v2/reassemble_package.py `
+python 05_ACCESS_TOOLS/SOURCE_READERS/cda_v2/reassemble_package.py `
   --archive-root <ARCHIVE_ROOT> `
   --output <EMPTY_OUTPUT>
 ```

@@ -1,6 +1,6 @@
 # Cross-Match Open Data v2
 
-Status: `CLOSURE_002_IMPLEMENTATION_COMPLETE / READY_FOR_PM_RE_VERIFICATION`
+Status: `CLOSURE_003_IMPLEMENTATION_COMPLETE / READY_FOR_PM_FINAL_RELEASE_VERIFICATION`
 
 This package contains actual pinned files from four public sources:
 SkillCorner, IDSSE/Sportec, StatsBomb and Wyscout. Raw data remain separate from
@@ -28,5 +28,5 @@ Windows or POSIX path without regenerating the index.
 Rebuild the portable package with:
 
 ```text
-python tools/cda_v2/reassemble_package.py --archive-root <ARCHIVE_ROOT> --output <EMPTY_OUTPUT>
+python 05_ACCESS_TOOLS/SOURCE_READERS/cda_v2/reassemble_package.py --archive-root <ARCHIVE_ROOT> --output <EMPTY_OUTPUT>
 ```
