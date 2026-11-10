@@ -1,0 +1,154 @@
+{
+  "commit": "a715a38dfbaf5f58e431727c2b78d174101a703c",
+  "ref": "main",
+  "schema_version": "1.0",
+  "source": "IDSSE",
+  "source_url": "https://huggingface.co/datasets/pysport/idsse-data",
+  "tree": [
+    {
+      "git_blob_sha1": "72489df5bc8a7743139953deb6ae28969970f633",
+      "path": ".gitattributes",
+      "sha256": "47a51fc423d13260af988435358332efdbbc9f9960edd2c584815eb72805c83f",
+      "size": 3225
+    },
+    {
+      "git_blob_sha1": "8f2a82d84428c28e0e01f0a908c8395cc8d23900",
+      "path": "DFL_02_01_matchinformation_DFL-COM-000001_DFL-MAT-J03WMX.xml",
+      "sha256": "a884728647a564cf8b20e5223a1d04a5da6f6725e1e506c8651505327c197ba9",
+      "size": 11930
+    },
+    {
+      "git_blob_sha1": "45d2f112aed6c4212e66db8a91e8da1b8d728090",
+      "path": "DFL_02_01_matchinformation_DFL-COM-000001_DFL-MAT-J03WN1.xml",
+      "sha256": "5490286436c86e6f80a538d2b1b379d0efd016e0defcaf594bc59d9ef5079f4c",
+      "size": 11722
+    },
+    {
+      "git_blob_sha1": "a693a0cacc2b597357e65a04eec5febfdaff79aa",
+      "path": "DFL_02_01_matchinformation_DFL-COM-000002_DFL-MAT-J03WOH.xml",
+      "sha256": "f23b3ee13b988b1ff9a0bce438c416dac47e71355bbc7ee1dab21aaf3e33c18c",
+      "size": 11745
+    },
+    {
+      "git_blob_sha1": "bce56e5f518216e62d1e93a38322d4b9e357e5ab",
+      "path": "DFL_02_01_matchinformation_DFL-COM-000002_DFL-MAT-J03WOY.xml",
+      "sha256": "4c497fac683eee8292901c18ca02c0be1d9609d0b9d4bd8aa092c61f9e0b19e9",
+      "size": 11952
+    },
+    {
+      "git_blob_sha1": "46f1ffe15e1b96b12aab10594b12886c503c2f68",
+      "path": "DFL_02_01_matchinformation_DFL-COM-000002_DFL-MAT-J03WPY.xml",
+      "sha256": "566dd5e4c86e124ab90fcdba51100881f0436e22afa71832945a451a2d95a420",
+      "size": 11922
+    },
+    {
+      "git_blob_sha1": "7ec8acbff5a0c6167b632cc230d2a8b0e7b44b1c",
+      "path": "DFL_02_01_matchinformation_DFL-COM-000002_DFL-MAT-J03WQQ.xml",
+      "sha256": "e976aa0c5dba862cfa898ea57ec226efce9d1bc04b23b8d775908db86aa6fa41",
+      "size": 11932
+    },
+    {
+      "git_blob_sha1": "7a8eb84881a1631da510982c01c90a3afd1b2e23",
+      "path": "DFL_02_01_matchinformation_DFL-COM-000002_DFL-MAT-J03WR9.xml",
+      "sha256": "429b584e89df3e3e8b81f4bd0d004b38bd0b4298bb390b8fb43efccb60963e01",
+      "size": 11823
+    },
+    {
+      "git_blob_sha1": "bc2f5265763786ac8c05cd68595acc614deee50c",
+      "path": "DFL_03_02_events_raw_DFL-COM-000001_DFL-MAT-J03WMX.xml",
+      "sha256": "6f9741ea62e9dee35b604942e1dad2ac0a4dc3fce14ef2f3858aa12b74dafe00",
+      "size": 776578
+    },
+    {
+      "git_blob_sha1": "67b982007b8e3f5de83dcd104779acc92b76a813",
+      "path": "DFL_03_02_events_raw_DFL-COM-000001_DFL-MAT-J03WN1.xml",
+      "sha256": "d7fa1d4445e3215eb79ec62fabefa4779b4974e496195c2fdc25624c375a9b9b",
+      "size": 612114
+    },
+    {
+      "git_blob_sha1": "c651487e6d0defbc033f87fadb1b5ebfcad75037",
+      "path": "DFL_03_02_events_raw_DFL-COM-000002_DFL-MAT-J03WOH.xml",
+      "sha256": "abc27e3268e6126fb3e6e90bff5cca8d4586a5e0cefe9bd59bf32871e89d8544",
+      "size": 635747
+    },
+    {
+      "git_blob_sha1": "9d2bde37ff79a5a9f993882bc1d83aef70a51d8e",
+      "path": "DFL_03_02_events_raw_DFL-COM-000002_DFL-MAT-J03WOY.xml",
+      "sha256": "dbb014df1b80d5c99b7fb806a278432c445a5fdd99f59d379d601f20eaf7e142",
+      "size": 683018
+    },
+    {
+      "git_blob_sha1": "c8065cd1464a67a0312a7788bc6da6442084d141",
+      "path": "DFL_03_02_events_raw_DFL-COM-000002_DFL-MAT-J03WPY.xml",
+      "sha256": "e440a3adf9a38d3e4ce4289343a59a3b5f76018a78e97c765114f7817591fb3c",
+      "size": 698898
+    },
+    {
+      "git_blob_sha1": "081d5489af3437a7e3dbe7219226136bf61f7fd4",
+      "path": "DFL_03_02_events_raw_DFL-COM-000002_DFL-MAT-J03WQQ.xml",
+      "sha256": "b79ccc1ee3de5ba662546a9a21304784642d00a791ccc1175550eaa463ea0074",
+      "size": 732186
+    },
+    {
+      "git_blob_sha1": "1c9cc3875850b25837d37d7789554f3112ed1b76",
+      "path": "DFL_03_02_events_raw_DFL-COM-000002_DFL-MAT-J03WR9.xml",
+      "sha256": "31735a2d7b9008c44cae9b6ac43ab38ddeaa435d0416265ec0ebfebf53b3c982",
+      "size": 681050
+    },
+    {
+      "lfs_sha256": "d3dd92e509421a6466acb0a083c009035f1751bc5fd9ef42ffa8f20d01cf7d49",
+      "path": "DFL_04_03_positions_raw_observed_DFL-COM-000001_DFL-MAT-J03WMX.xml",
+      "pointer_size": 134,
+      "sha256": "d3dd92e509421a6466acb0a083c009035f1751bc5fd9ef42ffa8f20d01cf7d49",
+      "size": 418524833
+    },
+    {
+      "lfs_sha256": "56ef948961a18e150dba0b7b16869d0008ff66f3050a0c355d31fa5b8ec2fcec",
+      "path": "DFL_04_03_positions_raw_observed_DFL-COM-000001_DFL-MAT-J03WN1.xml",
+      "pointer_size": 134,
+      "sha256": "56ef948961a18e150dba0b7b16869d0008ff66f3050a0c355d31fa5b8ec2fcec",
+      "size": 391722803
+    },
+    {
+      "lfs_sha256": "ec4dcf30200aad694dea263d5289485fcd0ca42badddaeb7c81f5cd5a4229d4f",
+      "path": "DFL_04_03_positions_raw_observed_DFL-COM-000002_DFL-MAT-J03WOH.xml",
+      "pointer_size": 134,
+      "sha256": "ec4dcf30200aad694dea263d5289485fcd0ca42badddaeb7c81f5cd5a4229d4f",
+      "size": 348945715
+    },
+    {
+      "lfs_sha256": "a228ef0e676d009cefff1580fcb721b53f598454eb120ec347e0a628a3a4646b",
+      "path": "DFL_04_03_positions_raw_observed_DFL-COM-000002_DFL-MAT-J03WOY.xml",
+      "pointer_size": 134,
+      "sha256": "a228ef0e676d009cefff1580fcb721b53f598454eb120ec347e0a628a3a4646b",
+      "size": 362567859
+    },
+    {
+      "lfs_sha256": "845202c29ad93d696653436da426a7cdaefb848298e07b7343de6529581671e1",
+      "path": "DFL_04_03_positions_raw_observed_DFL-COM-000002_DFL-MAT-J03WPY.xml",
+      "pointer_size": 134,
+      "sha256": "845202c29ad93d696653436da426a7cdaefb848298e07b7343de6529581671e1",
+      "size": 371688499
+    },
+    {
+      "lfs_sha256": "cbefcb0bd7f39f3b94ee69a7bc97aac0f936425062c1cc1b144733df36804d6f",
+      "path": "DFL_04_03_positions_raw_observed_DFL-COM-000002_DFL-MAT-J03WQQ.xml",
+      "pointer_size": 134,
+      "sha256": "cbefcb0bd7f39f3b94ee69a7bc97aac0f936425062c1cc1b144733df36804d6f",
+      "size": 356219423
+    },
+    {
+      "lfs_sha256": "70b63069189019066fb7e3d9db891122edfe787f3a43ba522ebe45ed89ea0269",
+      "path": "DFL_04_03_positions_raw_observed_DFL-COM-000002_DFL-MAT-J03WR9.xml",
+      "pointer_size": 134,
+      "sha256": "70b63069189019066fb7e3d9db891122edfe787f3a43ba522ebe45ed89ea0269",
+      "size": 372934140
+    },
+    {
+      "git_blob_sha1": "85262fa883d05ab1753b817f7c387ddd95e4a4a9",
+      "path": "README.md",
+      "sha256": "eae2a73033a1d73ceb250ab90e826a57421cb90bf7b70810f8f5ce30cebfd6b0",
+      "size": 1827
+    }
+  ]
+}

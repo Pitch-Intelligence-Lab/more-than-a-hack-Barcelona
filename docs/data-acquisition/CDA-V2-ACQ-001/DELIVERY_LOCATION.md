@@ -2,13 +2,14 @@
 
 ```text
 Technical handoff package:
-E:\mtah2027-code\outputs\Cross-Match-Open-Data-v2
+<CONTROLLED_DATA_ROOT>/package
 
 External ZIP archives:
-E:\mtah2027-data\CDA-V2-ACQ-001\archives
+<CONTROLLED_DATA_ROOT>/archives
 
-External Wyscout original raw archives:
-E:\mtah2027-data\CDA-V2-ACQ-001\raw_archives
+Archive manifest/index:
+<CONTROLLED_DATA_ROOT>/archives/MANIFEST.sha256
+<CONTROLLED_DATA_ROOT>/archives/ZIP_INDEX.csv
 ```
 
 Raw and archive files are intentionally outside Git. This Git directory contains

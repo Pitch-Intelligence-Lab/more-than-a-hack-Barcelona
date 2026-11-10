@@ -1,0 +1,57 @@
+{
+  "elapsed_seconds": 296.914,
+  "matches": [
+    {
+      "elapsed_seconds": 52.585,
+      "errors": 0,
+      "frame_count": 3795142,
+      "match_id": "DFL-MAT-J03WMX",
+      "status": "PASS"
+    },
+    {
+      "elapsed_seconds": 51.976,
+      "errors": 0,
+      "frame_count": 3549641,
+      "match_id": "DFL-MAT-J03WN1",
+      "status": "PASS"
+    },
+    {
+      "elapsed_seconds": 44.551,
+      "errors": 0,
+      "frame_count": 3155922,
+      "match_id": "DFL-MAT-J03WOH",
+      "status": "PASS"
+    },
+    {
+      "elapsed_seconds": 45.648,
+      "errors": 0,
+      "frame_count": 3278328,
+      "match_id": "DFL-MAT-J03WOY",
+      "status": "PASS"
+    },
+    {
+      "elapsed_seconds": 47.294,
+      "errors": 0,
+      "frame_count": 3362853,
+      "match_id": "DFL-MAT-J03WPY",
+      "status": "PASS"
+    },
+    {
+      "elapsed_seconds": 29.413,
+      "errors": 0,
+      "frame_count": 3220946,
+      "match_id": "DFL-MAT-J03WQQ",
+      "status": "PASS"
+    },
+    {
+      "elapsed_seconds": 25.445,
+      "errors": 0,
+      "frame_count": 3376630,
+      "match_id": "DFL-MAT-J03WR9",
+      "status": "PASS"
+    }
+  ],
+  "parse_errors": 0,
+  "total_frames": 23739462,
+  "tracemalloc_peak_mib": 6.24
+}

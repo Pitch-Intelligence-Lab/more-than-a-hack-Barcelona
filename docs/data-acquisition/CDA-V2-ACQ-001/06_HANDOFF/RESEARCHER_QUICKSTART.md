@@ -3,7 +3,18 @@
 Run examples with the pinned package root:
 
 ```powershell
-.\.venv\Scripts\python.exe 05_ACCESS_TOOLS\BASIC_EXAMPLES\inspect_sources.py .
+$env:PYTHONDONTWRITEBYTECODE = "1"
+python 05_ACCESS_TOOLS/BASIC_EXAMPLES/inspect_sources.py .
+```
+
+POSIX shells use the same forward-slash path and `PYTHONDONTWRITEBYTECODE=1`.
+
+Reassemble a package from the five verified archives:
+
+```powershell
+python tools/cda_v2/reassemble_package.py `
+  --archive-root <ARCHIVE_ROOT> `
+  --output <EMPTY_OUTPUT>
 ```
 
 The readers require only the Python standard library. Optional Kloppy loading was

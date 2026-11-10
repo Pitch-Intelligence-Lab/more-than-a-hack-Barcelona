@@ -6,10 +6,12 @@ The maintained reader and example code is committed under
 Use:
 
 ```powershell
-$env:PYTHONPATH = "E:\mtah2027-code"
+$env:PYTHONPATH = "<REPO_ROOT>"
 .\.venv\Scripts\python.exe tools\cda_v2\examples\inspect_sources.py `
-  "E:\mtah2027-code\outputs\Cross-Match-Open-Data-v2"
+  "<CONTROLLED_PACKAGE_ROOT>"
 ```
+
+Use the reassembled controlled package root, not the Git repository root.
 
 The readers use only the Python standard library. Kloppy was not available
 because PyPI was unreachable; the source-specific parsing method is recorded in

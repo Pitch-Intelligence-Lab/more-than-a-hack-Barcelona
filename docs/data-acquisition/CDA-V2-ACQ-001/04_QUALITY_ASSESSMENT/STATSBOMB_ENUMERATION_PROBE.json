@@ -1,0 +1,16 @@
+{
+  "duplicate_ids": 0,
+  "indexed_matches": 3961,
+  "missing_indexed_event_files": 0,
+  "total_matches": 4235,
+  "unindexed_event_files": 274,
+  "unindexed_examples": [
+    "7298",
+    "69143",
+    "3890259",
+    "3890261",
+    "3890262"
+  ],
+  "unknown_competition": "unknown",
+  "unknown_season": "unknown"
+}

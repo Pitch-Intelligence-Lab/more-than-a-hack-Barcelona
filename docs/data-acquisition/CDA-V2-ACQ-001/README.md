@@ -1,6 +1,6 @@
 # Cross-Match Open Data v2
 
-Status: `READY_FOR_TECHNICAL_RESEARCH_HANDOFF`
+Status: `CLOSURE_002_IMPLEMENTATION_COMPLETE / READY_FOR_PM_RE_VERIFICATION`
 
 This package contains actual pinned files from four public sources:
 SkillCorner, IDSSE/Sportec, StatsBomb and Wyscout. Raw data remain separate from
@@ -17,9 +17,16 @@ Q3: 0
 Q4: 0
 ```
 
-This status is technical readiness only. Training, evaluation, publication and
-redistribution rights remain source-specific and are not granted here.
+This status requests PM re-verification only. It does not approve technical
+research handoff and does not grant training, evaluation, publication or
+redistribution rights.
 
-ZIP archives are stored outside the Git checkout in
-`E:\mtah2027-data\CDA-V2-ACQ-001\archives`; `archives/ZIP_INDEX.csv` records
-absolute external paths and SHA-256 values.
+ZIP archives are resolved through the `--archive-root` argument and the
+relative names in `archives/ZIP_INDEX.csv`. The archives may be relocated to any
+Windows or POSIX path without regenerating the index.
+
+Rebuild the portable package with:
+
+```text
+python tools/cda_v2/reassemble_package.py --archive-root <ARCHIVE_ROOT> --output <EMPTY_OUTPUT>
+```

@@ -1,0 +1,30 @@
+{
+  "IDSSE": {
+    "commit": "a715a38dfbaf5f58e431727c2b78d174101a703c",
+    "files": 23,
+    "portable_tree": "00_SOURCE_REGISTRY/PORTABLE_TREES/idsse.json",
+    "ref": "main",
+    "source_url": "https://huggingface.co/datasets/pysport/idsse-data"
+  },
+  "SkillCorner": {
+    "commit": "4340d274572876239c154c90bc507a9b3250a656",
+    "files": 139,
+    "portable_tree": "00_SOURCE_REGISTRY/PORTABLE_TREES/skillcorner.json",
+    "ref": "refs/heads/master",
+    "source_url": "https://github.com/SkillCorner/opendata"
+  },
+  "StatsBomb": {
+    "commit": "4b73468fc5b0f1950f9f66fada70ad3a4f9327cb",
+    "files": 8988,
+    "portable_tree": "00_SOURCE_REGISTRY/PORTABLE_TREES/statsbomb.json",
+    "ref": "refs/heads/master",
+    "source_url": "https://github.com/hudl/open-data"
+  },
+  "Wyscout": {
+    "commit": "ebc4c54c1093c420a81ce442c69e4186fab33bb4",
+    "files": 3892,
+    "portable_tree": "00_SOURCE_REGISTRY/PORTABLE_TREES/wyscout.json",
+    "ref": "refs/heads/main",
+    "source_url": "https://github.com/koenvo/wyscout-soccer-match-event-dataset"
+  }
+}
