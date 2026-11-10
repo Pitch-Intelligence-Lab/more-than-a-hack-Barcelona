@@ -45,6 +45,7 @@ LICENSE_STATUS = {
     "Wyscout": "CC BY 4.0; attribution/citation required",
 }
 RETRIEVED_AT = "2026-11-10T00:00:00+08:00"
+REASSEMBLE_PACKAGE_RELATIVE_PATH = "05_ACCESS_TOOLS/SOURCE_READERS/cda_v2/reassemble_package.py"
 
 
 @dataclass(frozen=True)
@@ -743,7 +744,7 @@ def write_handoff_docs(
     (delivery / "README.md").write_text(
         f"""# Cross-Match Open Data v2
 
-Status: `CLOSURE_002_IMPLEMENTATION_COMPLETE / READY_FOR_PM_RE_VERIFICATION`
+Status: `CLOSURE_003_IMPLEMENTATION_COMPLETE / READY_FOR_PM_FINAL_RELEASE_VERIFICATION`
 
 This package contains actual pinned files from four public sources:
 SkillCorner, IDSSE/Sportec, StatsBomb and Wyscout. Raw data remain separate from
@@ -768,7 +769,7 @@ ZIP archives are resolved through the `--archive-root` argument recorded in
 `archives/ZIP_INDEX.csv`. Rebuild a portable package with:
 
 ```text
-python tools/cda_v2/reassemble_package.py --archive-root <ARCHIVE_ROOT> --output <EMPTY_OUTPUT>
+python {REASSEMBLE_PACKAGE_RELATIVE_PATH} --archive-root <ARCHIVE_ROOT> --output <EMPTY_OUTPUT>
 ```
 """,
         encoding="utf-8",
@@ -793,7 +794,7 @@ No event-only dataset is a frame-level H/A/D/X ground truth.
         encoding="utf-8",
     )
     (delivery / "06_HANDOFF" / "RESEARCHER_QUICKSTART.md").write_text(
-        r"""# Researcher Quickstart
+        f"""# Researcher Quickstart
 
 Run examples with the pinned package root:
 
@@ -807,7 +808,7 @@ POSIX shells use the same forward-slash path and `PYTHONDONTWRITEBYTECODE=1`.
 Reassemble from five verified archives:
 
 ```powershell
-python tools/cda_v2/reassemble_package.py `
+python {REASSEMBLE_PACKAGE_RELATIVE_PATH} `
   --archive-root <ARCHIVE_ROOT> `
   --output <EMPTY_OUTPUT>
 ```

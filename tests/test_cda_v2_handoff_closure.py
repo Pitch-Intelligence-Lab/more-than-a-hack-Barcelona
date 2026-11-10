@@ -8,6 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from tools.cda_v2.build_catalog import (
+    REASSEMBLE_PACKAGE_RELATIVE_PATH,
+    write_handoff_docs,
+)
 from tools.cda_v2.package_archives import (
     create_metadata_zip,
     is_cache_path,
@@ -93,6 +97,21 @@ def _tiny_index(archive_root: Path) -> list[dict[str, str | int]]:
         encoding="utf-8",
     )
     return rows
+
+
+def _write_generated_handoff_docs(root: Path) -> None:
+    (root / "04_QUALITY_ASSESSMENT").mkdir(parents=True)
+    (root / "06_HANDOFF").mkdir(parents=True)
+    source_rows = [
+        {
+            "source": "SkillCorner",
+            "matches": 20,
+            "raw_file_count": 10,
+            "raw_bytes": 1024,
+        }
+    ]
+    quality_rows = [{"quality_level": "Q2"}]
+    write_handoff_docs(root, source_rows, quality_rows)
 
 
 def test_hc2_01_02_statsbomb_reader_merges_unknown_event_matches(tmp_path: Path) -> None:
@@ -283,3 +302,39 @@ def test_hc2_13_verify_package_uses_archive_root(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["status"] == "PASS"
+
+
+def test_hc3_01_05_generated_handoff_paths_exist_in_package(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    script = package / REASSEMBLE_PACKAGE_RELATIVE_PATH
+    script.parent.mkdir(parents=True)
+    script.write_text("print('fixture')\n", encoding="utf-8")
+
+    _write_generated_handoff_docs(package)
+
+    documents = (
+        package / "README.md",
+        package / "06_HANDOFF" / "RESEARCHER_QUICKSTART.md",
+    )
+    for document in documents:
+        text = document.read_text(encoding="utf-8")
+        assert REASSEMBLE_PACKAGE_RELATIVE_PATH in text
+        assert "tools/cda_v2/reassemble_package.py" not in text
+        assert (package / REASSEMBLE_PACKAGE_RELATIVE_PATH).is_file()
+
+
+def test_hc3_02_03_repository_handoff_docs_use_package_relative_path() -> None:
+    repository = Path(__file__).resolve().parents[1]
+    documents = (
+        repository / "docs" / "data-acquisition" / "CDA-V2-ACQ-001" / "README.md",
+        repository
+        / "docs"
+        / "data-acquisition"
+        / "CDA-V2-ACQ-001"
+        / "06_HANDOFF"
+        / "RESEARCHER_QUICKSTART.md",
+    )
+    for document in documents:
+        text = document.read_text(encoding="utf-8")
+        assert REASSEMBLE_PACKAGE_RELATIVE_PATH in text
+        assert "tools/cda_v2/reassemble_package.py" not in text
