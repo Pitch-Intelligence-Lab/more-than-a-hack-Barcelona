@@ -743,7 +743,7 @@ def write_handoff_docs(
     (delivery / "README.md").write_text(
         f"""# Cross-Match Open Data v2
 
-Status: `READY_FOR_TECHNICAL_RESEARCH_HANDOFF`
+Status: `CLOSURE_002_IMPLEMENTATION_COMPLETE / READY_FOR_PM_RE_VERIFICATION`
 
 This package contains actual pinned files from four public sources:
 SkillCorner, IDSSE/Sportec, StatsBomb and Wyscout. Raw data remain separate from
@@ -760,8 +760,9 @@ Q3: {counts["Q3"]}
 Q4: {counts["Q4"]}
 ```
 
-This status is technical readiness only. Training, evaluation, publication and
-redistribution rights remain source-specific and are not granted here.
+This status requests PM re-verification only. It does not approve technical
+research handoff and does not grant training, evaluation, publication or
+redistribution rights.
 
 ZIP archives are resolved through the `--archive-root` argument recorded in
 `archives/ZIP_INDEX.csv`. Rebuild a portable package with:
