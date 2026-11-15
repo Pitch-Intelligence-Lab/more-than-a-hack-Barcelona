@@ -67,6 +67,25 @@ The tests need no match data.
 .\.venv\Scripts\ruff.exe format --check .
 ```
 
+## Phase-2 IDSSE feature extractor
+
+The bounded Phase-2 extractor reads the authorized public IDSSE package and writes
+geometry-only features separately from provider reference labels:
+
+```powershell
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe -m mtah_possession.research.phase2.cli extract-idss `
+  --package-root E:\mtah2027-data\CDA-V2-ACQ-001\package `
+  --match-id DFL-MAT-J03WMX `
+  --output-dir outputs\phase2\features\J03WMX
+```
+
+The command writes `features.csv.gz`, `reference.csv.gz`, `metadata.json` and
+`split_manifest.json`. Outputs are ignored by Git. The default split is
+match-level, and provider `BallStatus`/`BallPossession` remain isolated in the
+reference file. See
+[Phase-2 feature extraction](docs/research/phase2-feature-extractor.md).
+
 ## Build and validate the state engine
 
 ```powershell

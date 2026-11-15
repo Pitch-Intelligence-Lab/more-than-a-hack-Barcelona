@@ -1,0 +1,50 @@
+{
+  "schema_version": "idss-split-v1",
+  "split_unit": "match",
+  "random_frame_split": false,
+  "historical_exposure": "metadata+tracking_aggregate+event_aggregate",
+  "matches": [
+    {
+      "match_id": "DFL-MAT-J03WMX",
+      "competition": "Bundesliga",
+      "season": "2022/2023",
+      "split_role": "development"
+    },
+    {
+      "match_id": "DFL-MAT-J03WOH",
+      "competition": "2. Bundesliga",
+      "season": "2022/2023",
+      "split_role": "development"
+    },
+    {
+      "match_id": "DFL-MAT-J03WOY",
+      "competition": "2. Bundesliga",
+      "season": "2022/2023",
+      "split_role": "development"
+    },
+    {
+      "match_id": "DFL-MAT-J03WPY",
+      "competition": "2. Bundesliga",
+      "season": "2022/2023",
+      "split_role": "development"
+    },
+    {
+      "match_id": "DFL-MAT-J03WQQ",
+      "competition": "2. Bundesliga",
+      "season": "2022/2023",
+      "split_role": "development"
+    },
+    {
+      "match_id": "DFL-MAT-J03WN1",
+      "competition": "Bundesliga",
+      "season": "2022/2023",
+      "split_role": "operational_lockbox"
+    },
+    {
+      "match_id": "DFL-MAT-J03WR9",
+      "competition": "2. Bundesliga",
+      "season": "2022/2023",
+      "split_role": "operational_lockbox"
+    }
+  ]
+}
