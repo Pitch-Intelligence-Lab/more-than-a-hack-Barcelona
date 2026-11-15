@@ -86,6 +86,20 @@ match-level, and provider `BallStatus`/`BallPossession` remain isolated in the
 reference file. See
 [Phase-2 feature extraction](docs/research/phase2-feature-extractor.md).
 
+### Phase-3 G2 dynamics
+
+The G2 layer derives causal 5-frame and 25-frame changes without modifying the
+accepted P2 base schema:
+
+```powershell
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe -m mtah_possession.research.phase2.g2_cli derive-g2 `
+  --features outputs\phase2\features\J03WMX-p2\features.csv.gz `
+  --output-dir outputs\phase3\g2\J03WMX
+```
+
+See [G2 dynamics](docs/research/phase3-g2-dynamics.md).
+
 ## Build and validate the state engine
 
 ```powershell
