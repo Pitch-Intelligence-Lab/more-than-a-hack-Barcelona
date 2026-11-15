@@ -1,0 +1,4 @@
+source,available_data,available_labels,usable_supervision_for_HAD,not_available,licence_restriction,acquisition_status
+SoccerTrack-v2,"remote tree metadata only; 244 entries / 144,847,069,949 bytes","documentation mentions BAS classes and tracking annotations; not payload-verified","NONE FOR THIS BLOCKED RUN","GSR/MOT/BAS/ball/videos payloads; H/A/D/X truth not verified","CC BY 4.0 dataset; MIT code; gated access","BLOCKED"
+Afriskaut-2024,"public repository metadata only","event-map and event data documented; not payload-verified","NONE; event-only source expected","frame-level tracking and H/A/D/X truth","Apache-2.0; acquisition deferred","DEFERRED"
+Metrica-sample,"not acquired","not acquired","NONE","all data and labels","LICENSE_UNRESOLVED","DEFERRED"
