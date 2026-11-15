@@ -6,8 +6,8 @@
 Task ID: MTAH-IND-DATA-001
 Repository baseline: 8801ac724ae3d8cc14fdeb5bc5d55493030b53b8
 Source branch: data/MTAH-IND-DATA-001
-PR: pending creation
-Final commit: pending docs-only commit
+PR: #13 https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/13
+Final commit: docs-only receipt commit containing this file
 ```
 
 ## SoccerTrack v2
