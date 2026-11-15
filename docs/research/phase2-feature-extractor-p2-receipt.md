@@ -6,10 +6,10 @@
 task_id: MTAH-PHASE2-FEATURE-EXTRACTOR-P2-001
 branch: feature/MTAH-PHASE2-FEATURE-EXTRACTOR-001
 baseline: b42aef00ff7bbbd90fc0f1fff98323e5d97150c0
-implementation_commit: f51c093dec2e959d270141f4d409545150f4ec8d
+implementation_commit: b1050663bfd02ee39187c68b981e88587ed180dc
 pull_request: https://github.com/Pitch-Intelligence-Lab/more-than-a-hack-Barcelona/pull/11
-repository_head_at_wmx_run: f51c093dec2e959d270141f4d409545150f4ec8d
-implementation_commit_at_wmx_run: f51c093dec2e959d270141f4d409545150f4ec8d
+repository_head_at_wmx_run: 5009bb074a08a073d3ad18052cf4bb22f29db08f
+implementation_commit_at_wmx_run: b1050663bfd02ee39187c68b981e88587ed180dc
 source_tree_dirty_at_wmx_run: false
 merge: withheld
 training: not started
@@ -36,10 +36,10 @@ a clean repaired tree would be inaccurate.
 The extractor therefore reports the actual values:
 
 ```text
-repository_head=f51c093dec2e959d270141f4d409545150f4ec8d
-implementation_commit=f51c093dec2e959d270141f4d409545150f4ec8d
+repository_head=5009bb074a08a073d3ad18052cf4bb22f29db08f
+implementation_commit=b1050663bfd02ee39187c68b981e88587ed180dc
 source_tree_dirty=false
-code_commit=f51c093dec2e959d270141f4d409545150f4ec8d
+code_commit=5009bb074a08a073d3ad18052cf4bb22f29db08f
 ```
 
 `code_commit` remains only as a compatibility alias for `repository_head`.
@@ -86,8 +86,8 @@ provenance clean/dirty/unavailable tests: PASS
 ```text
 Output: outputs\phase2\features\J03WMX-p2
 Rows: 145,967
-Elapsed: 42.667 s
-Peak memory: 592,228,352 bytes
+Elapsed: 43.033 s
+Peak memory: 593,227,776 bytes
 ```
 
 | Artifact | Old SHA-256 | New SHA-256 | Match |
