@@ -4,6 +4,7 @@ import csv
 import gzip
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,9 +16,11 @@ from mtah_possession.research.phase2.constants import (
 )
 from mtah_possession.research.phase2.extractor import (
     ExtractionError,
+    collect_source_identity,
     extract_idss,
     load_split_config,
     read_ball_timeline,
+    smoke_idss,
 )
 from mtah_possession.research.phase2.geometry import (
     event_xy_to_centered,
@@ -176,7 +179,13 @@ def _make_package(
         encoding="utf-8",
         newline="\n",
     )
-    inventory = quality / "FILE_INVENTORY.csv"
+    _write_inventory(package)
+    return package
+
+
+def _write_inventory(package: Path) -> None:
+    repository = package / "01_RAW_DATA" / "idsse" / "repository"
+    inventory = package / "04_QUALITY_ASSESSMENT" / "FILE_INVENTORY.csv"
     with inventory.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
@@ -193,7 +202,6 @@ def _make_package(
                     "sha256": _sha256(path),
                 }
             )
-    return package
 
 
 def _extract(package: Path, output: Path, *, overwrite: bool = False):
@@ -313,6 +321,55 @@ def test_illegal_reference_fails_closed_without_output(tmp_path: Path) -> None:
     assert not output.exists()
 
 
+def test_player_section_must_match_ball_section(tmp_path: Path) -> None:
+    package = _make_package(tmp_path)
+    tracking = (
+        package
+        / "01_RAW_DATA"
+        / "idsse"
+        / "repository"
+        / f"DFL_04_03_positions_raw_observed_DFL-COM-000001_{MATCH_ID}.xml"
+    )
+    text = tracking.read_text(encoding="utf-8")
+    needle = (
+        f'<FrameSet GameSection="secondHalf" MatchId="{MATCH_ID}" '
+        f'TeamId="{HOME_ID}" PersonId="HOME-1">'
+    )
+    assert text.count(needle) == 1
+    tracking.write_text(
+        text.replace(needle, needle.replace("secondHalf", "firstHalf", 1), 1),
+        encoding="utf-8",
+        newline="\n",
+    )
+    _write_inventory(package)
+    output = tmp_path / "must-not-exist"
+    with pytest.raises(
+        ExtractionError,
+        match=rf"match {MATCH_ID} section firstHalf frame 200",
+    ):
+        _extract(package, output)
+    assert not output.exists()
+
+
+def test_smoke_rejects_metadata_match_id_mismatch(tmp_path: Path) -> None:
+    package = _make_package(tmp_path)
+    metadata_path = (
+        package
+        / "01_RAW_DATA"
+        / "idsse"
+        / "repository"
+        / f"DFL_02_01_matchinformation_DFL-COM-000001_{MATCH_ID}.xml"
+    )
+    metadata_path.write_text(
+        _metadata_xml("DFL-MAT-WRONGID"),
+        encoding="utf-8",
+        newline="\n",
+    )
+    _write_inventory(package)
+    with pytest.raises(ExtractionError, match="smoke match identity mismatch"):
+        smoke_idss(package_root=package, match_ids=[MATCH_ID])
+
+
 def test_ball_frames_must_be_strictly_contiguous_within_half(tmp_path: Path) -> None:
     tracking = tmp_path / "duplicate.xml"
     tracking.write_text(
@@ -424,3 +481,82 @@ def test_centroid_distance_remains_when_ball_is_outside_envelope(tmp_path: Path)
     assert rows[0]["ball_geometry_valid"] == "false"
     assert rows[0]["centroid_distance_m"] == "5.000000"
     assert float(rows[1]["centroid_distance_m"]) == 7.0
+
+
+def test_source_identity_clean_repository_returns_two_commits(tmp_path: Path) -> None:
+    repository = _identity_repository(tmp_path)
+    identity = collect_source_identity(repository)
+    head = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert identity == {
+        "repository_head": head,
+        "implementation_commit": head,
+        "source_tree_dirty": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "dirty_path",
+    (
+        "src/mtah_possession/research/phase2/extractor.py",
+        "tests/research/phase2/test_phase2_extractor.py",
+    ),
+)
+def test_source_identity_marks_implementation_or_test_changes_dirty(
+    tmp_path: Path,
+    dirty_path: str,
+) -> None:
+    repository = _identity_repository(tmp_path)
+    path = repository / dirty_path
+    path.write_text(path.read_text(encoding="utf-8") + "\n# dirty\n", encoding="utf-8")
+    identity = collect_source_identity(repository)
+    assert identity["source_tree_dirty"] is True
+
+
+def test_source_identity_git_unavailable_fails_closed(tmp_path: Path) -> None:
+    identity = collect_source_identity(tmp_path, git_executable="git-command-not-available")
+    assert identity == {
+        "repository_head": "unavailable",
+        "implementation_commit": "unavailable",
+        "source_tree_dirty": True,
+    }
+
+
+def _identity_repository(root: Path) -> Path:
+    repository = root / "identity-repository"
+    implementation = repository / "src" / "mtah_possession" / "research" / "phase2"
+    tests = repository / "tests" / "research" / "phase2"
+    config = repository / "configs" / "research" / "phase2"
+    implementation.mkdir(parents=True)
+    tests.mkdir(parents=True)
+    config.mkdir(parents=True)
+    (implementation / "extractor.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tests / "test_phase2_extractor.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (config / "idss_split.json").write_text("{}\n", encoding="utf-8")
+    subprocess.run(["git", "init", str(repository)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "add", "."],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=Phase 2 Test",
+            "-c",
+            "user.email=phase2@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return repository

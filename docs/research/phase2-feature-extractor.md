@@ -77,8 +77,20 @@ BallPossession: 1=true, 2=false
 
 Records source paths and hashes, coordinate contract, FPS, frame counts, missing
 and invalid counts, tracked-player distributions, runtime, environment, output
-hashes and the code commit. If relevant code is uncommitted, `code_commit` is
-explicitly `uncommitted`.
+hashes and source provenance:
+
+```text
+repository_head: current git HEAD
+implementation_commit: last commit touching src/mtah_possession/research/phase2
+  or configs/research/phase2
+source_tree_dirty: true when implementation or phase2 test paths are dirty
+code_commit: compatibility alias for repository_head
+```
+
+If git provenance cannot be read reliably, `repository_head` and
+`implementation_commit` are `unavailable`, and `source_tree_dirty` is `true`.
+`code_commit` retains the repository-head alias for older receipts but is not the
+unique implementation identity.
 
 ### `split_manifest.json`
 

@@ -10,7 +10,9 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
+import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -385,6 +387,11 @@ def aggregate_team_frames(
             raise ExtractionError(
                 f"player frame {frame_number} has no matching ball frame for {metadata.match_id}"
             )
+        if section != ball.game_sections[index]:
+            raise ExtractionError(
+                f"match {metadata.match_id} section {section} frame {frame_number} "
+                f"does not match ball section {ball.game_sections[index]}"
+            )
         try:
             x = float(frame["X"])
             y = float(frame["Y"])
@@ -705,25 +712,66 @@ def _peak_memory_bytes() -> int | None:
         return None
 
 
-def _code_commit(repository_root: Path) -> str:
-    import subprocess
-
+def collect_source_identity(
+    repository_root: Path,
+    *,
+    git_executable: str = "git",
+) -> dict[str, str | bool]:
+    unavailable: dict[str, str | bool] = {
+        "repository_head": "unavailable",
+        "implementation_commit": "unavailable",
+        "source_tree_dirty": True,
+    }
     try:
-        revision = subprocess.run(
-            ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
+        repository_head = subprocess.run(
+            [git_executable, "-C", str(repository_root), "rev-parse", "HEAD"],
             check=True,
             capture_output=True,
             text=True,
         ).stdout.strip()
-        status = subprocess.run(
-            ["git", "-C", str(repository_root), "status", "--porcelain", "--", "src", "configs"],
+        implementation_commit = subprocess.run(
+            [
+                git_executable,
+                "-C",
+                str(repository_root),
+                "log",
+                "-1",
+                "--format=%H",
+                "--",
+                "src/mtah_possession/research/phase2",
+                "configs/research/phase2",
+            ],
             check=True,
             capture_output=True,
             text=True,
         ).stdout.strip()
+        dirty_output = subprocess.run(
+            [
+                git_executable,
+                "-C",
+                str(repository_root),
+                "status",
+                "--porcelain",
+                "--",
+                "src/mtah_possession/research/phase2",
+                "configs/research/phase2",
+                "tests/research/phase2",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
     except (OSError, subprocess.CalledProcessError):
-        return "uncommitted"
-    return revision if revision and not status else "uncommitted"
+        return unavailable
+    if not re.fullmatch(r"[0-9a-f]{40}", repository_head) or not re.fullmatch(
+        r"[0-9a-f]{40}", implementation_commit
+    ):
+        return unavailable
+    return {
+        "repository_head": repository_head,
+        "implementation_commit": implementation_commit,
+        "source_tree_dirty": bool(dirty_output.strip()),
+    }
 
 
 def _source_record(path: Path, package_root: Path, inventory: dict[str, dict[str, str]]) -> dict:
@@ -828,6 +876,7 @@ def extract_idss(
             for path in (features_path, reference_path, split_path)
         }
         repository_root = Path(__file__).resolve().parents[4]
+        source_identity = collect_source_identity(repository_root)
         elapsed = time.perf_counter() - started
         metadata_payload = {
             "task_id": TASK_ID,
@@ -877,7 +926,8 @@ def extract_idss(
                 "platform": platform.platform(),
             },
             "outputs": output_hashes,
-            "code_commit": _code_commit(repository_root),
+            **source_identity,
+            "code_commit": source_identity["repository_head"],
         }
         _write_json(staging / "metadata.json", metadata_payload)
         _publish_staging(staging, output_dir, overwrite=overwrite)
@@ -907,6 +957,11 @@ def smoke_idss(
     for match_id in requested:
         sources = locate_source_files(package_root, match_id)
         metadata = _parse_match_metadata(sources.metadata)
+        if metadata.match_id != match_id:
+            raise ExtractionError(
+                f"smoke match identity mismatch: requested {match_id}, "
+                f"metadata declares {metadata.match_id}"
+            )
         file_records = {
             role: _source_record(path, package_root, inventory)
             for role, path in (
