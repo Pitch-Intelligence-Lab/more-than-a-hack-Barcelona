@@ -52,9 +52,16 @@ def _metadata_xml(match_id: str = MATCH_ID) -> str:
 
 
 def _frame(
-    frame_number: int, x: float, y: float, *, ball: bool, status: int, possession: int
+    frame_number: int,
+    x: float,
+    y: float,
+    *,
+    ball: bool,
+    status: int,
+    possession: int,
+    marker: int = 1,
 ) -> str:
-    suffix = f' BallPossession="{possession}" BallStatus="{status}"' if ball else ' M="1"'
+    suffix = f' BallPossession="{possession}" BallStatus="{status}"' if ball else f' M="{marker}"'
     return (
         f'<Frame N="{frame_number}" T="2023-05-27T13:30:{frame_number % 60:02d}.000+00:00" '
         f'X="{x}" Y="{y}" D="0.00" S="0.00" A="0.00"{suffix}/>'
@@ -72,6 +79,7 @@ def _tracking_xml(
     possessions: tuple[int, int] = (1, 2),
     home_players: dict[str, tuple[tuple[float, float], tuple[float, float]]] | None = None,
     away_players: dict[str, tuple[tuple[float, float], tuple[float, float]]] | None = None,
+    marker: int = 1,
 ) -> str:
     home_players = home_players or {
         "HOME-1": ((-1.0, 0.0), (-2.0, 0.0)),
@@ -93,7 +101,15 @@ def _tracking_xml(
                     f'TeamId="{team_id}" PersonId="{person_id}">'
                 )
                 lines.append(
-                    _frame(frame_numbers[half_index], x, y, ball=False, status=1, possession=1)
+                    _frame(
+                        frame_numbers[half_index],
+                        x,
+                        y,
+                        ball=False,
+                        status=1,
+                        possession=1,
+                        marker=marker,
+                    )
                 )
                 lines.append("</FrameSet>")
         x, y = ball_frames[half_index]
@@ -127,6 +143,7 @@ def _make_package(
     ),
     home_players: dict[str, tuple[tuple[float, float], tuple[float, float]]] | None = None,
     away_players: dict[str, tuple[tuple[float, float], tuple[float, float]]] | None = None,
+    marker: int = 1,
 ) -> Path:
     package = root / "package"
     repository = package / "01_RAW_DATA" / "idsse" / "repository"
@@ -149,6 +166,7 @@ def _make_package(
             ball_frames=ball_frames,
             home_players=home_players,
             away_players=away_players,
+            marker=marker,
         ),
         encoding="utf-8",
         newline="\n",
@@ -276,6 +294,15 @@ def test_second_nearest_is_blank_with_fewer_than_two_players(tmp_path: Path) -> 
     _, rows = _read_gzip_rows(output / "features.csv.gz")
     assert rows[0]["home_tracked_n"] == "1"
     assert rows[0]["second_home_m"] == ""
+
+
+def test_marker_attribute_does_not_filter_players(tmp_path: Path) -> None:
+    package = _make_package(tmp_path, marker=25)
+    output = tmp_path / "output"
+    _extract(package, output)
+    _, rows = _read_gzip_rows(output / "features.csv.gz")
+    assert rows[0]["home_tracked_n"] == "2"
+    assert rows[0]["away_tracked_n"] == "2"
 
 
 def test_illegal_reference_fails_closed_without_output(tmp_path: Path) -> None:
