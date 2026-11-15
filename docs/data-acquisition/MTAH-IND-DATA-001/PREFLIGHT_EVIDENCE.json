@@ -1,7 +1,7 @@
 {
   "acquisition_status": "BLOCKED",
   "baseline_match": true,
-  "checked_at_utc": "2026-11-15T20:01:01Z",
+  "checked_at_utc": "2026-11-15T20:12:00Z",
   "dataset_id": "atomscott/soccertrack-v2",
   "dataset_reported_sha": "325bd4c57ee8e135ab652f3921d274526ada496b",
   "expected_resolved_sha": "325bd4c57ee8e135ab652f3921d274526ada496b",

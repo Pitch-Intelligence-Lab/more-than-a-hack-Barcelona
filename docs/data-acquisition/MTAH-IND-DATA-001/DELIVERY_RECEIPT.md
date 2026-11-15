@@ -53,6 +53,29 @@ Not available: SoccerTrack payloads, field schemas, videos, Afriskaut payloads, 
 Licence restriction: gated CC BY 4.0 dataset; no training/publication/redistribution authorization
 ```
 
+## Required validation commands
+
+From the repository root:
+
+```powershell
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe -m pytest -q -W error
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\ruff.exe format --check .
+git diff --check 8801ac724ae3d8cc14fdeb5bc5d55493030b53b8...HEAD
+git status --porcelain
+```
+
+The preceding blocked-run verification passed:
+
+```text
+pytest -q -W error: 96 passed
+Ruff check: PASS
+Ruff format --check: PASS
+git diff --check: PASS
+worktree: clean
+```
+
 ## Final status
 
 ```text
