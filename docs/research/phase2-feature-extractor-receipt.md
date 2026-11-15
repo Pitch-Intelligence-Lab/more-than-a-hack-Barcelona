@@ -34,6 +34,20 @@ It preserves both halves and their independent player FrameSets, rejects
 non-contiguous ball frames within a half, and records the single half-boundary
 frame jump.
 
+| Modified file | Reason |
+|---|---|
+| `README.md` | document the bounded extraction command and output boundary |
+| `configs/research/phase2/idss_split.json` | checked-in five-development/two-lockbox match split |
+| `docs/research/phase2-feature-extractor.md` | coordinate contract, streaming design, schema and limitations |
+| `docs/research/phase2-feature-extractor-receipt.md` | PM review identity, real-run evidence and decision request |
+| `src/mtah_possession/research/__init__.py` | research package namespace |
+| `src/mtah_possession/research/phase2/__init__.py` | Phase-2 public API |
+| `src/mtah_possession/research/phase2/cli.py` | `extract-idss` and `smoke-idss` CLI |
+| `src/mtah_possession/research/phase2/constants.py` | frozen columns, coordinate bounds and split IDs |
+| `src/mtah_possession/research/phase2/extractor.py` | streaming extraction, validation, deterministic output and metadata |
+| `src/mtah_possession/research/phase2/geometry.py` | distance, event-coordinate and home/away symmetry helpers |
+| `tests/research/phase2/test_phase2_extractor.py` | synthetic regression suite for all task acceptance behaviors |
+
 Provider `BallStatus` and `BallPossession` occur only in `reference.csv.gz`.
 `features.csv.gz` contains no provider status, provider possession, speed,
 acceleration, touch, restart, direction, blackout or identity features.
