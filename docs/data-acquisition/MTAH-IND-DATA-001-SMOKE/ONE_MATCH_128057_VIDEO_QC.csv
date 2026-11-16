@@ -1,0 +1,4 @@
+path,stage,expected_bytes,codec,width,height,fps,duration_seconds,frame_count,decode_qc,status,reason
+mot/clips/128057.mp4,2_VIDEO,291142915,,,,,,,,BLOCKED,payload not downloaded
+videos/128057/128057_panorama_1st_half.mp4,2_VIDEO,3312813154,,,,,,,,BLOCKED,payload not downloaded
+videos/128057/128057_panorama_2nd_half.mp4,2_VIDEO,3450936711,,,,,,,,BLOCKED,payload not downloaded

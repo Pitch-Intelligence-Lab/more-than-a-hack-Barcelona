@@ -1,0 +1,9 @@
+component,expected_evidence,measured_value,status,reason
+GSR first half,frame and timestamp coverage,NOT_MEASURED,BLOCKED,payload not downloaded
+GSR second half,frame and timestamp coverage,NOT_MEASURED,BLOCKED,payload not downloaded
+Ball first half,frame/state/coordinate coverage,NOT_MEASURED,BLOCKED,payload not downloaded
+Ball second half,frame/state/coordinate coverage,NOT_MEASURED,BLOCKED,payload not downloaded
+BAS events,event timestamps and half boundaries,NOT_MEASURED,BLOCKED,payload not downloaded
+Raw events,event timestamps and actor references,NOT_MEASURED,BLOCKED,payload not downloaded
+GSR/ball/event alignment,cross-source frame/time agreement,NOT_MEASURED,BLOCKED,payload not downloaded
+Panorama videos,video-to-GSR temporal alignment,NOT_MEASURED,BLOCKED,payload not downloaded
