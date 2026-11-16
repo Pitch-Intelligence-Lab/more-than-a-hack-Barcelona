@@ -1,0 +1,4 @@
+source,available_data,available_labels,usable_supervision_for_HAD,not_available,licence_restriction,acquisition_status
+SoccerTrack-v2,"5 complete files: two ball NPZ, BAS events, two CHANGES docs","ball status classes 0/1/2/3; 12 BAS labels; no visibility field collected","NONE; labels not H/A/D/X controlled-possession truth","GSR complete files, raw events, MOT, calibration files, videos","CC BY 4.0 dataset; MIT code; gated access","STAGE1_FAIL"
+Afriskaut-2024,"not acquired","not acquired","NONE","all payload and labels","Apache-2.0; deferred","DEFERRED"
+Metrica-sample,"not acquired","not acquired","NONE","all data and labels","LICENSE_UNRESOLVED","DEFERRED"

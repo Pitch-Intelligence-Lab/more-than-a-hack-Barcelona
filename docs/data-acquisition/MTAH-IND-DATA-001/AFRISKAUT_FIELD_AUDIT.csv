@@ -1,0 +1,12 @@
+source,audit_scope,expected_field,observed_value,status,reason
+Afriskaut-2024,dataset,matches,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,dataset,event count,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,dataset,event types,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,metadata,match metadata,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,metadata,team IDs,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,metadata,actor IDs,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,metadata,lineups,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,coordinates,497x328 range,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,event-map,event definitions,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,tracking,frame-level tracking,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked
+Afriskaut-2024,target,H/A/D/X truth,not inspected,NOT_VERIFIED_DEFERRED,SoccerTrack preflight blocked

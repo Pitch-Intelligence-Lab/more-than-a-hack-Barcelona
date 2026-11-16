@@ -1,0 +1,15 @@
+source,audit_scope,expected_field,expected_evidence,observed_value,status,reason
+SoccerTrack-v2,GSR,image/frame identifier,GSR payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,GSR,pitch x/y,GSR payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,GSR,player identity,GSR payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,GSR,track identity,GSR payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,GSR,jersey,GSR payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,GSR,role,GSR payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,GSR,team side/ownership,GSR payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,BAS,time/half,BAS payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,BAS,class,BAS payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,BAS,team,BAS payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,BAS,actor identity,BAS payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,BAS,visibility,BAS payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,ball track,anchored/interpolated provenance,payload/docs,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
+SoccerTrack-v2,target,H/A/D/X controlled possession truth,dataset payload,not inspected,NOT_VERIFIED_BLOCKED,gated access unavailable
