@@ -1,8 +1,8 @@
 family,expected_files,expected_fields,inspection_status,reason
-Global documentation,README.md; CHANGES_v1_1.md; CHANGES_v1_2.md,dataset and release notes,NOT_INSPECTED_BLOCKED,authenticated access unavailable
-Ball,ball/128057_1st_ball.npz; ball/128057_2nd_ball.npz,NPZ members/shapes/dtypes/frame/state/coordinates,NOT_INSPECTED_BLOCKED,authenticated access unavailable
-BAS,bas/128057/128057_12_class_events.json,event time/half/class/team/actor/visibility,NOT_INSPECTED_BLOCKED,authenticated access unavailable
-GSR,gsr/128057/128057_1st.json; gsr/128057/128057_2nd.json,shipped schema/frame/pitch/player/track/jersey/role/team side,NOT_INSPECTED_BLOCKED,authenticated access unavailable
-MOT,mot/128057.txt; mot/clips/128057.mp4,tracking annotations and match clip,NOT_INSPECTED_BLOCKED,authenticated access unavailable
-Raw,raw/128057/*,calibration/map/keypoints/nodes/padding/tracker metadata,NOT_INSPECTED_BLOCKED,authenticated access unavailable
-Video,videos/128057/*.mp4,codec/dimensions/FPS/duration/frame count/decodability,NOT_INSPECTED_BLOCKED,authenticated access unavailable
+Global documentation,README.md; CHANGES_v1_1.md; CHANGES_v1_2.md,dataset and release notes,PARTIALLY_INSPECTED,CHANGES downloaded; README missing
+Ball,ball/128057_1st_ball.npz; ball/128057_2nd_ball.npz,NPZ members/shapes/dtypes/frame/state/coordinates,PARTIALLY_INSPECTED,two NPZ members loaded and summarized
+BAS,bas/128057/128057_12_class_events.json,event time/half/class/team/actor/visibility,PARSED,event classes/teams/player references counted; no visibility field observed
+GSR,gsr/128057/128057_1st.json; gsr/128057/128057_2nd.json,shipped schema/frame/pitch/player/track/jersey/role/team side,NOT_AVAILABLE,first file partial; second missing
+MOT,mot/128057.txt; mot/clips/128057.mp4,tracking annotations and match clip,NOT_DOWNLOADED,Stage 1 incomplete
+Raw,raw/128057/*,calibration/map/keypoints/nodes/padding/tracker metadata,NOT_DOWNLOADED,Stage 1 incomplete
+Video,videos/128057/*.mp4,codec/dimensions/FPS/duration/frame count/decodability,DEFERRED_PENDING_STAGE1_REVIEW,Stage 1 failed

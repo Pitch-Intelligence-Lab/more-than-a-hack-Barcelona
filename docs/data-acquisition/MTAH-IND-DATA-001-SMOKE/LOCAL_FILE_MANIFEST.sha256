@@ -1,0 +1,6 @@
+# Complete Stage 1 files only; partial .part files are not accepted payloads.
+e0b77001cbc4ba74c2ea882d9a40e5220ebac5f27aec702953eef1d3fe11b9bd  D:\mtah2027-data\INDEPENDENT-VALIDATION-001\SoccerTrack-v2\annotations\ball\128057_1st_ball.npz
+13fe13fc7bcb4bb19e8c57bd79f64281643b5e24eea0df52f1e24b5c8f5cc36b  D:\mtah2027-data\INDEPENDENT-VALIDATION-001\SoccerTrack-v2\annotations\ball\128057_2nd_ball.npz
+03bb79bdf9404ad9e8bb1c8c569676ec82614ea3e2360238d10ff8fd78c9f577  D:\mtah2027-data\INDEPENDENT-VALIDATION-001\SoccerTrack-v2\annotations\bas\128057\128057_12_class_events.json
+87bf4afa1907f9031af03bddb082d0a4622e113c964aac21737f6d070510fa9c  D:\mtah2027-data\INDEPENDENT-VALIDATION-001\SoccerTrack-v2\metadata\CHANGES_v1_1.md
+751162ed78c4643045a21d9df4cd4fdd07519a06871ef0ea82b34c209b8e90eb  D:\mtah2027-data\INDEPENDENT-VALIDATION-001\SoccerTrack-v2\metadata\CHANGES_v1_2.md

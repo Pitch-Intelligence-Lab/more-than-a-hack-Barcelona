@@ -1,9 +1,9 @@
 component,expected_evidence,measured_value,status,reason
-GSR first half,frame and timestamp coverage,NOT_MEASURED,BLOCKED,payload not downloaded
-GSR second half,frame and timestamp coverage,NOT_MEASURED,BLOCKED,payload not downloaded
-Ball first half,frame/state/coordinate coverage,NOT_MEASURED,BLOCKED,payload not downloaded
-Ball second half,frame/state/coordinate coverage,NOT_MEASURED,BLOCKED,payload not downloaded
-BAS events,event timestamps and half boundaries,NOT_MEASURED,BLOCKED,payload not downloaded
-Raw events,event timestamps and actor references,NOT_MEASURED,BLOCKED,payload not downloaded
-GSR/ball/event alignment,cross-source frame/time agreement,NOT_MEASURED,BLOCKED,payload not downloaded
-Panorama videos,video-to-GSR temporal alignment,NOT_MEASURED,BLOCKED,payload not downloaded
+GSR first half,frame and timestamp coverage,NOT_MEASURED,PARTIAL,payload is an unaccepted .part file
+GSR second half,frame and timestamp coverage,NOT_MEASURED,MISSING,payload not downloaded
+Ball first half,frame/state/coordinate coverage,67625 unique frames; status classes 0/1/2/3,PARTIALLY_MEASURED,available
+Ball second half,frame/state/coordinate coverage,70350 unique frames; status classes 0/1/2/3,PARTIALLY_MEASURED,available
+BAS events,event timestamps and half boundaries,1932 actions; frames 39..70064,PARTIALLY_MEASURED,available
+Raw events,event timestamps and actor references,NOT_MEASURED,MISSING,payload not downloaded
+GSR/ball/event alignment,cross-source frame/time agreement,NOT_MEASURED,FAIL,GSR incomplete
+Panorama videos,video-to-GSR temporal alignment,NOT_MEASURED,DEFERRED_PENDING_STAGE1_REVIEW,video not downloaded
